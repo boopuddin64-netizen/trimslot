@@ -202,6 +202,73 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     const g: any = await (await adm('GET')).json();
     check('admin settings default credit expiry 30 days', g.settings.credit_expiry_days === 30, g);
     check('admin settings rejects nonsense', (await adm('PUT', { credit_expiry_days: 0 })).status === 400);
+    // barber review workflow over HTTP
+    const A = (path: string, m = 'GET', body?: unknown) => fetch(BASE + '/api/admin' + path, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CRON0}` }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: (await r.json().catch(() => ({}))) as any }));
+    const nb = new Client(); const nbEmail = `review${stamp}@example.com`;
+    await nb.call('POST', '/api/auth/signup', { role: 'barber', name: 'Review Test', email: nbEmail, password: 'Password123', shop_name: 'Review Shop ' + stamp, location: 'Test' });
+    const list: any = (await A('/barbers?status=PENDING')).json; const nbId = list.barbers.find((b: any) => b.email === nbEmail)?.id;
+    check('admin sees new signup as PENDING with counts', !!nbId && list.counts.PENDING >= 1, list.counts);
+    check('reject without a reason -> 400', (await A(`/barbers/${nbId}/reject`, 'POST', {})).status === 400);
+    check('reject with reason', (await A(`/barbers/${nbId}/reject`, 'POST', { reason: 'Please add a shop photo.' })).json.review_status === 'REJECTED');
+    const meR: any = (await nb.call('GET', '/api/auth/me')).json.user;
+    check('barber sees REJECTED + reason', meR.review_status === 'REJECTED' && meR.review_reason === 'Please add a shop photo.', meR);
+    check('barber resubmits', (await nb.call('POST', '/api/barber/resubmit', { note: 'added' })).json.review_status === 'PENDING');
+    check('admin approves -> shop is listed', (await A(`/barbers/${nbId}/approve`, 'POST')).json.verified === true && (await anon.call('GET', '/api/barbers')).json.barbers.some((b: any) => b.id === nbId));
+    check('suspend needs a reason -> 400', (await A(`/barbers/${nbId}/suspend`, 'POST', {})).status === 400);
+    check('suspend hides the shop', (await A(`/barbers/${nbId}/suspend`, 'POST', { reason: 'e2e check' })).json.review_status === 'SUSPENDED' && !(await anon.call('GET', '/api/barbers')).json.barbers.some((b: any) => b.id === nbId));
+    check('reinstate', (await A(`/barbers/${nbId}/reinstate`, 'POST')).json.review_status === 'VERIFIED');
+    await A(`/barbers/${nbId}/suspend`, 'POST', { reason: 'e2e cleanup' });
+  }
+  if (process.env.CRON_SECRET) {
+    // admin power tools + off-app commission ledger over HTTP (mock mode, throwaway rows are the e2e's own users/bookings)
+    const CR = process.env.CRON_SECRET;
+    const AA = (path: string, m = 'GET', body?: unknown) => fetch(BASE + '/api/admin' + path, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CR}` }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) as any }));
+    const pc = new Client(); const pcEmail = `power${stamp}@example.com`;
+    await pc.call('POST', '/api/auth/signup', { role: 'customer', name: 'Power Test', email: pcEmail, password: 'Password123' });
+    const pcId = (await AA('/customers?q=' + encodeURIComponent(pcEmail))).json.customers[0]?.id;
+    check('admin finds the new customer', !!pcId);
+    const tomorrow = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);
+    const bdetail = (await pc.call('GET', '/api/barbers')).json.barbers[0];
+    const sv = (await pc.call('GET', `/api/barbers/${bdetail.id}`)).json.services[0];
+    const sl = (await pc.call('GET', `/api/barbers/${bdetail.id}/slots?service_id=${sv.id}&date=${tomorrow}`)).json.slots;
+    const off = sl.length ? await pc.call('POST', '/api/bookings', { barber_id: bdetail.id, service_id: sv.id, date: tomorrow, time: sl[0].time, payment_option: 'ON_ARRIVAL' }) : null;
+    check('off-app booking created', !!off && off.status === 201, off?.json);
+    if (off && off.status === 201) {
+      const bid = off.json.booking.id;
+      check('report needs login', (await anon.call('POST', '/api/reports', { category: 'OTHER', message: 'hello there' })).status === 401);
+      const rep = await pc.call('POST', '/api/reports', { category: 'PAYMENT', message: 'Testing the report inbox', booking_id: bid });
+      check('customer files a report', rep.status === 201, rep.json);
+      const inbox = (await AA('/reports')).json; const rid = inbox.reports.find((r: any) => r.booking_id === bid)?.id;
+      check('report appears in the admin inbox', !!rid);
+      check('resolve needs a note', (await AA(`/reports/${rid}/resolve`, 'POST', { status: 'RESOLVED' })).status === 400);
+      check('resolve report', (await AA(`/reports/${rid}/resolve`, 'POST', { status: 'RESOLVED', note: 'e2e check' })).json.status === 'RESOLVED');
+      check('admin sets a 10% platform fee (commission base)', (await AA('/settings', 'PUT', { platform_fee_percent: 10, platform_fee_naira: 0, commission_factor: 0.5 })).status === 200);
+    const before = (await AA('/ledger')).json.total_owed_kobo;
+      check('admin complete needs a reason', (await AA(`/bookings/${bid}/complete`, 'POST', { paid: true })).status === 400);
+      const cmp = await AA(`/bookings/${bid}/complete`, 'POST', { paid: true, reason: 'e2e force complete' });
+      check('admin force-completes the off-app booking and commission accrues', cmp.status === 200 && !!cmp.json.ledger_id, cmp.json);
+      const after = (await AA('/ledger')).json; const commission = after.total_owed_kobo - before;
+      check('commission = half of the 10% in-app fee', commission === Math.round(sv.price_kobo * 0.1 * 0.5), { commission, price: sv.price_kobo });
+      check('second completion is refused (idempotent ledger)', (await AA(`/bookings/${bid}/complete`, 'POST', { paid: true, reason: 'again again' })).status === 409);
+      const mineL: any = (await mike.call('GET', '/api/barber/ledger')).json;
+      check('barber sees the platform balance', typeof mineL.owed_kobo === 'number' && Array.isArray(mineL.entries), mineL);
+      const settle = await AA(`/ledger/${bdetail.id}/settle`, 'POST', { all: true, reason: 'e2e cleanup' });
+      check('admin settles the balance', settle.status === 200 || settle.status === 400, settle.json);
+      check('balance is zero afterwards', (await AA(`/ledger/${bdetail.id}`)).json.balance.outstanding_kobo === 0);
+    }
+    check('warn customer', (await AA(`/users/${pcId}/warn`, 'POST', { reason: 'e2e warning' })).json.warn_count === 1);
+    check('suspend customer', (await AA(`/users/${pcId}/suspend`, 'POST', { reason: 'e2e check' })).json.changed === true);
+    check('suspended customer cannot log in', (await new Client().call('POST', '/api/auth/login', { identifier: pcEmail, password: 'Password123' })).status === 403);
+    check('reinstate customer', (await AA(`/users/${pcId}/reinstate`, 'POST')).json.changed === true);
+    const bc = await AA('/broadcast', 'POST', { audience: 'user', user_id: pcId, title: 'Hello', body: 'e2e announcement' });
+    check('broadcast to one user', bc.json.recipients === 1, bc.json);
+    check('customer got the announcement', (await pc.call('GET', '/api/notifications')).json.notifications.some((n: any) => n.type === 'ANNOUNCEMENT'));
+    const csv = await fetch(BASE + '/api/admin/export/bookings.csv', { headers: { Authorization: `Bearer ${CR}` } });
+    check('CSV export (admin only)', csv.status === 200 && /text\/csv/.test(csv.headers.get('content-type') || '') && (await fetch(BASE + '/api/admin/export/bookings.csv')).status === 401);
+    const an = (await AA('/analytics?days=7')).json; check('analytics 7 days', an.series?.length === 7, an.totals);
+    check('global search', Array.isArray((await AA('/search?q=' + encodeURIComponent('Power'))).json.users));
+    check('audit filter', (await AA('/audit?action=ADMIN_USER&scope=all')).json.entries.every((e: any) => e.action.startsWith('ADMIN_USER')));
+    check('config exposes maintenance + features', (await anon.call('GET', '/api/config')).json.features?.plans === true);
   }
   // ---- deployment-oriented checks: cron endpoint, deep health, lazy hold expiry is exercised by unit tests ----
   const health = await anon.call('GET', '/healthz?deep=1');

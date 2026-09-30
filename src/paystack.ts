@@ -5,6 +5,7 @@ import { AppError, notFound } from './errors';
 import { applyVerifiedPayment, getBooking, PaymentOutcome } from './bookingService';
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow } from './time';
+import { applyNettingForPayment, inAppFeeKobo, planCheckoutSplit, reverseNettingForPayment } from './ledger';
 
 const PAYSTACK_API = 'https://api.paystack.co';
 
@@ -58,16 +59,16 @@ async function paystackFetch(path: string, init: RequestInit = {}) {
 export async function initializePayment(db: Db, bookingId: number, customerEmail: string | null) {
   const b = (await getBooking(db, bookingId))!;
   if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not awaiting online payment.');
-  const barber = await db.maybeOne<{ paystack_subaccount: string | null }>('SELECT paystack_subaccount FROM barbers WHERE id=$1', [b.barber_id]);
-  const subaccount: string | null = barber?.paystack_subaccount || null;
-  const reference = makeReference(b.id);
-  return startCheckout(db, { reference, amount: b.price_kobo, subaccount, email: customerEmail || `customer${b.customer_id}@trimslot.app`, metadata: { booking_id: b.id, app: 'trimslot' }, target: { booking_id: b.id } });
+    const reference = makeReference(b.id);
+  return startCheckout(db, { reference, amount: b.price_kobo, barberId: b.barber_id, email: customerEmail || `customer${b.customer_id}@trimslot.app`, metadata: { booking_id: b.id, app: 'trimslot' }, target: { booking_id: b.id } });
 }
 
 /** Shared by booking payments and plan purchases: same Paystack initialize call, subaccount + platform-fee split, and payments row. */
-async function startCheckout(db: Db, o: { reference: string; amount: number; subaccount: string | null; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
-  const { reference, amount, subaccount } = o;
-  const fee = subaccount ? platformFeeKobo(amount, await getSettings(db)) : 0;
+async function startCheckout(db: Db, o: { reference: string; amount: number; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
+  const { reference, amount } = o;
+  const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
+  const subaccount: string | null = barber.paystack_subaccount || null;
+  const { fee, netted, charge } = await planCheckoutSplit(db, barber, amount);
   let authUrl: string;
   let provider: 'PAYSTACK' | 'MOCK';
   if (config.mockMode) {
@@ -78,24 +79,27 @@ async function startCheckout(db: Db, o: { reference: string; amount: number; sub
     const payload: any = { email: o.email, amount, currency: 'NGN', reference, callback_url: `${config.appBaseUrl}/api/payments/callback`, metadata: o.metadata };
     if (subaccount) {
       payload.subaccount = subaccount;
-      if (fee > 0) payload.transaction_charge = fee; // platform keeps `fee`, subaccount gets the rest
+      if (charge > 0) payload.transaction_charge = charge; // platform keeps the fee (+ any commission debt netted), subaccount gets the rest
     }
     const json = await paystackFetch('/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     authUrl = json.data.authorization_url;
   }
-  await db.query(`INSERT INTO payments (booking_id, plan_purchase_id, reference, provider, amount_kobo, fee_kobo, subaccount, status, authorization_url, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'INITIATED',$8,$9)`,
-    [o.target.booking_id ?? null, o.target.plan_purchase_id ?? null, reference, provider, amount, fee, subaccount, authUrl, isoNow()]);
+  await db.query(`INSERT INTO payments (booking_id, plan_purchase_id, reference, provider, amount_kobo, fee_kobo, subaccount, status, authorization_url, created_at, barber_id, debt_netted_kobo) VALUES ($1,$2,$3,$4,$5,$6,$7,'INITIATED',$8,$9,$10,$11)`,
+    [o.target.booking_id ?? null, o.target.plan_purchase_id ?? null, reference, provider, amount, fee, subaccount, authUrl, isoNow(), o.barberId, netted]);
   return { reference, authorization_url: authUrl, amount_kobo: amount, mock: provider === 'MOCK' };
 }
 
 /** Customer starts buying a plan. A PENDING purchase row is created (invisible to the barber, worthless until paid); amount/terms are snapshotted server-side. */
 export async function initializePlanPurchase(db: Db, customerId: number, planId: number, customerEmail: string | null) {
+  { const st = await getSettings(db);
+    if (st.maintenance_mode) throw new AppError(503, 'MAINTENANCE', st.maintenance_message);
+    if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are switched off right now.'); }
   const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
     FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND b.verified`, [planId]);
   if (!plan) throw notFound('Plan not found');
   const purchase = await db.one<{ id: number }>(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, created_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [plan.id, customerId, plan.barber_id, plan.name, plan.price_kobo, plan.sessions, plan.validity_days, plan.service_ids, isoNow()]);
-  const out = await startCheckout(db, { reference: makePlanReference(purchase.id), amount: plan.price_kobo, subaccount: plan.paystack_subaccount || null,
+  const out = await startCheckout(db, { reference: makePlanReference(purchase.id), amount: plan.price_kobo, barberId: plan.barber_id,
     email: customerEmail || `customer${customerId}@trimslot.app`, metadata: { plan_purchase_id: purchase.id, app: 'trimslot' }, target: { plan_purchase_id: purchase.id } });
   return { ...out, purchase_id: purchase.id };
 }
@@ -135,9 +139,12 @@ export async function processReference(db: Db, reference: string): Promise<{ res
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);
       if (r === 'already_active') await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason='Duplicate payment for an already-active plan' WHERE reference=$1`, [reference]);
+      else await applyNettingForPayment(t, pay.id);
       return r;
     }
-    return applyVerifiedPayment(t, pay.booking_id, 'PAYSTACK', reference);
+    const o = await applyVerifiedPayment(t, pay.booking_id, 'PAYSTACK', reference);
+    if (o === 'confirmed') await applyNettingForPayment(t, pay.id);
+    return o;
   });
   if (outcome === null) return { result: 'already_processed', ...ids };
   const needsRefund = outcome === 'slot_taken' || outcome === 'late_payment' || outcome === 'already_paid' || outcome === 'already_active';
@@ -151,7 +158,11 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
   if (!p || p.refund_status !== 'NEEDS_REFUND') return 'not_needed';
   try {
     if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify({ transaction: reference }) });
-    await db.query(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1`, [reference, isoNow()]);
+    await db.tx(async (t) => {
+      await t.query(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1`, [reference, isoNow()]);
+      const pid = await t.maybeOne<{ id: number }>('SELECT id FROM payments WHERE reference=$1', [reference]);
+      if (pid) await reverseNettingForPayment(t, pid.id);          // a refunded payment gives back the commission it had settled
+    });
     return 'requested';
   } catch (e: any) {
     await db.query(`UPDATE payments SET refund_error=$2 WHERE reference=$1`, [reference, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});

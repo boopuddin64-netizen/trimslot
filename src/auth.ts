@@ -29,11 +29,12 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     let p: any;
     try { p = jwt.verify(token, config.jwtSecret); } catch { return next(); } // invalid token => anonymous
     // ONE round trip: user + barber profile + "does this user have an expired unpaid hold to release?"
-    const u = await req.db.maybeOne<{ id: number; role: 'customer' | 'barber'; name: string; email: string | null; phone: string | null; barber_id: number | null; verified: boolean | null; stale: boolean }>(
-      `SELECT u.id, u.role, u.name, u.email, u.phone, b.id AS barber_id, b.verified,
+    const u = await req.db.maybeOne<{ id: number; role: 'customer' | 'barber'; name: string; email: string | null; phone: string | null; barber_id: number | null; verified: boolean | null; account_status: string; stale: boolean }>(
+      `SELECT u.id, u.role, u.name, u.email, u.phone, b.id AS barber_id, b.verified, u.account_status,
               (   (u.role='customer' AND EXISTS (SELECT 1 FROM bookings k WHERE k.customer_id=u.id AND k.status='PENDING_PAYMENT' AND k.hold_expires_at < $2))
                OR (b.id IS NOT NULL AND EXISTS (SELECT 1 FROM bookings k WHERE k.barber_id=b.id AND k.status='PENDING_PAYMENT' AND k.hold_expires_at < $2))) AS stale
          FROM users u LEFT JOIN barbers b ON b.user_id=u.id WHERE u.id=$1`, [Number(p.sub), isoNow()]);
+    if (u && u.account_status !== 'ACTIVE') return next();      // suspended / banned: treated as logged out (login explains why)
     if (u) {
       const user: AuthUser = { id: u.id, role: u.role, name: u.name, email: u.email, phone: u.phone };
       if (u.role === 'barber') { user.barberId = u.barber_id ?? undefined; user.verified = !!u.verified; }

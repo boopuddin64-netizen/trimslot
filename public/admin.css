@@ -68,3 +68,39 @@ body.adm{padding-bottom:32px}
   #shell #app{margin:0;padding:24px 0 16px 24px;max-width:none;width:100%}
   .tiles{grid-template-columns:repeat(4,1fr)}
 }
+
+.pills .c{display:inline-block;margin-left:4px;min-width:18px;padding:0 5px;border-radius:8px;background:var(--bg2);color:var(--mut);font-size:11.5px;line-height:18px;text-align:center}
+.pills button.on .c{background:var(--brand);color:#fff}
+.modal{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);width:100%;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:20px 16px 0;box-shadow:0 -8px 30px rgba(0,0,0,.2)}
+.sheet h3{margin:20px 0 6px;font-size:12.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.sh-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.row-badges{margin:10px 0}
+.kv{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px;min-width:0}
+.kv span{color:var(--mut);min-width:0;overflow-wrap:anywhere}.kv b{font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
+.note{background:var(--bg2);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13.5px;overflow-wrap:anywhere}.note b{display:block;font-size:12px;color:var(--mut);margin-bottom:2px}
+.btns.end{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.btns.sticky{position:sticky;bottom:0;background:var(--card);padding:12px 0 calc(12px + env(safe-area-inset-bottom));margin-top:16px;border-top:1px solid var(--line)}
+.rform{padding-bottom:16px}.rform textarea{width:100%;resize:vertical;min-height:96px}
+.warnbox{background:var(--accent-soft);color:var(--accent-ink);border:1px solid rgba(183,121,31,.3);border-radius:10px;padding:12px;margin:12px 0}
+@media (min-width:720px){.modal{align-items:center}.sheet{max-width:560px;border-radius:16px;padding:24px 24px 0;max-height:88vh}}
+
+/* ---- admin power tools ---- */
+.fgrid{display:grid;gap:12px;margin:8px 0 4px}
+.rform input,.rform select,.rform textarea{width:100%}
+.chk.tog{display:flex;gap:12px;align-items:flex-start;margin:14px 0}.chk.tog input{margin-top:4px;flex:none}
+.chart{display:flex;align-items:flex-end;gap:2px;height:120px;padding:4px 0}
+.chart i{flex:1;min-width:2px;background:var(--brand);border-radius:3px 3px 0 0;opacity:.85}.chart.alt i{background:var(--green,#16a34a)}
+.chart i:hover{opacity:1}
+.chart-x{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-top:6px}
+.arow{padding:10px 0;border-top:1px solid var(--line)}.arow:first-child{border-top:0}.arow .when{color:var(--mut);font-size:12px}
+.arow pre{margin:4px 0 0;white-space:pre-wrap;word-break:break-word;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--mut)}
+.gsearch{position:relative;flex:1;max-width:340px;margin:0 8px;min-width:0}
+.gsearch input{width:100%;min-height:36px;padding:0 12px;font-size:14px}
+.gres{position:absolute;top:42px;left:0;right:0;z-index:70;background:var(--card);border:1px solid var(--line2);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);max-height:70vh;overflow:auto;padding:6px}
+.gres h4{margin:8px 8px 2px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--mut)}
+.gres a{display:block;padding:8px;border-radius:8px;color:var(--ink);font-size:14px;overflow-wrap:anywhere}.gres a:hover{background:var(--bg2)}
+.gres a small{display:block;color:var(--mut);font-size:12px}.gres .none{padding:12px;color:var(--mut);font-size:14px}
+.topbar{gap:4px}
+@media (max-width:719px){.gsearch{max-width:none}.topbar .brand .tag-admin{display:none}}
+@media (min-width:720px){.fgrid{grid-template-columns:1fr 1fr}.fgrid>div:has(textarea){grid-column:1/-1}}

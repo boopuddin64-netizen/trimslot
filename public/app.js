@@ -101,6 +101,8 @@ function chrome() {
   const u = state.user;
   $('#mockbar').classList.toggle('hidden', !(state.cfg && state.cfg.mock));
   if (state.cfg?.mock) $('#mockbar').textContent = 'MOCK PAYMENTS MODE — no real Paystack (set PAYSTACK_SECRET_KEY for test mode)';
+  let mb = $('#maintbar'); if (!mb) { mb = document.createElement('div'); mb.id = 'maintbar'; mb.className = 'maintbar hidden'; $('#mockbar').after(mb); }
+  mb.classList.toggle('hidden', !(state.cfg && state.cfg.maintenance)); if (state.cfg && state.cfg.maintenance) mb.textContent = state.cfg.maintenance;
   $('#topright').innerHTML = u
     ? `<a href="#/notifications" aria-label="Notifications">${ic('bell')}${state.unread ? `<span class="dot">${state.unread}</span>` : ''}</a>`
     : `<button id="theme" aria-label="Toggle dark mode">${ic(isDark() ? 'sun' : 'moon')}</button><a class="txt" href="#/login">Log in</a>`;
@@ -162,6 +164,7 @@ async function route() {
       if (parts[0] === 'upcoming') return barberUpcoming();
       if (parts[0] === 'customers') return parts[1] ? customerProfile(Number(parts[1])) : customerList();
       if (parts[0] === 'settings') return settings();
+      if (parts[0] === 'balance') return barberBalance();
       if (parts[0] === 'b') return barberBooking(Number(parts[1]));
     }
     go('#/');
@@ -254,6 +257,7 @@ async function bookWizard(barberId) {
   const planFor = () => (my.plans || []).find((p) => (p.service_ids || []).includes(w.service.id) && p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()));
   const creditFor = () => (my.credits || []).find((c) => c.value_kobo >= w.service.price_kobo && new Date(c.expires_at) >= new Date(slotIso()));
   const notices = data.notices || [];
+  const bk = data.booking || { paused: false, maintenance: false, pay_on_arrival: true };
   const closedDates = new Set(notices.filter((n) => n.type === 'CLOSED').map((n) => n.date));
   const offWeekdays = new Set((data.schedule || []).filter((d) => !d.is_working).map((d) => d.weekday));
   const noticeHtml = notices.length ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${notices.map((n) => `<div><b>${esc(n.title)}</b>${n.type === 'CLOSED' && n.reason ? ' — ' + esc(n.reason) : n.type === 'HOURS_UPDATED' ? ' — ' + esc(n.text) : ''}</div>`).join('')}</div></div>` : '';
@@ -286,9 +290,9 @@ async function bookWizard(barberId) {
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
       const cr = creditFor(), pl = planFor();
-      const opts = ['ONLINE', 'ON_ARRIVAL'].concat(pl ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
-      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : 'ON_ARRIVAL';   // credit / plan session are auto-applied by default
-      if (!opts.includes(w.pay)) w.pay = 'ON_ARRIVAL';
+      const opts = ['ONLINE'].concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pl ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
+      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : 'ONLINE';   // credit / plan session are auto-applied by default
+      if (!opts.includes(w.pay)) w.pay = opts[0];
       const free = w.pay === 'PLAN' || w.pay === 'CREDIT';
       app.innerHTML = head + `<h2>Summary &amp; payment</h2>
         <div class="card"><div class="row between"><b>${esc(w.service.name)}</b><b>${free ? '<s class="muted">' + naira(w.service.price_kobo) + '</s> ₦0' : naira(w.service.price_kobo)}</b></div>
@@ -297,10 +301,11 @@ async function bookWizard(barberId) {
         ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · valid until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
         ${pl ? `<button class="svc ${w.pay === 'PLAN' ? 'on' : ''}" data-p="PLAN"><div><b>Use plan session</b><div class="muted small">${esc(pl.plan_name)} · ${pl.sessions_left} left · ends ${dateLabel(pl.expires_at.slice(0, 10))}</div></div></button>` : ''}
         <button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}</div></div></button>
-        <button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>
+        ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>Pay on arrival isn't available for this booking right now. Please pay online.</div></div>`}
+        ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is briefly paused for maintenance.') : 'This shop has paused new bookings for now.'} You can't confirm a booking at the moment.</div></div>` : ''}
         ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your slot is only secured once payment completes.</b> Until then it stays open to other customers. If someone books it first, your booking won't be confirmed and any payment is refunded.</div></div>` : ''}
         <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before; after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
-        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm">${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
+        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
       $('#back').onclick = () => { w.step = 2; draw(); };
       $('#confirm').onclick = async () => {
@@ -371,6 +376,7 @@ async function barberProfile() {
     <h2>My shop</h2>
     <div class="list"><a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
+      <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
       ${p.verified ? `<a class="lrow" href="#/barber/${p.id}"><span class="ico">${ic('user', 'sm')}</span><span class="grow">View my public page<span class="sub">What customers see</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
     <h2>Account</h2>
     <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
@@ -488,6 +494,7 @@ async function bookingDetail(id, payResult) {
     ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">Cancel until ${lagosTime(b.cancel_deadline)}, and the slot reopens at once.${b.payment_option === 'PLAN' ? ' Your plan session is returned.' : b.payment_option === 'CREDIT' ? ' Your credit is returned.' : b.payment_status === 'PAID' ? ' Paid bookings are not auto-refunded.' : ''}</p>` : ''}
     ${locked ? `<div class="info small notice">${ic('lock', 'sm')}<div>Cancellation closed at ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The slot stays booked for you. If you miss a <b>paid</b> session it isn't refunded — you get 1 credit with this barber instead.</div></div>` : ''}
     ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Incomplete.</b> This booking wasn't completed because payment wasn't finished, so no slot was reserved. You haven't been charged.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
+    <div class="btns" style="margin-top:14px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} This session wasn't refunded, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
     ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">Your payment is marked <b>credit pending</b>. It is not refunded automatically — the shop will follow up.</div>` : ''}`;
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
@@ -498,12 +505,43 @@ async function bookingDetail(id, payResult) {
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id); });
 }
 
+/* ---------- report a problem (customers + barbers) ---------- */
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest && ev.target.closest('[data-report]'); if (!btn) return;
+  const id = Number(btn.dataset.report); let box = $('#reportbox');
+  if (box) { box.remove(); return; }
+  box = document.createElement('div'); box.id = 'reportbox'; box.className = 'card'; box.style.marginTop = '12px';
+  box.innerHTML = `<h3 style="margin-top:0">Report a problem</h3><p class="small muted">Tell us what went wrong. The TrimSlot team reads every report and may contact you.</p>
+    <form id="rform"><label>What is it about?</label><select name="category"><option value="NO_SHOW">Someone did not show up</option><option value="BEHAVIOUR">Behaviour</option><option value="PAYMENT">Payment</option><option value="QUALITY">Service quality</option><option value="SAFETY">Safety</option><option value="OTHER">Something else</option></select>
+    <label>Details</label><textarea name="message" rows="4" maxlength="1000" required placeholder="What happened?"></textarea>
+    <div class="btns cta"><button class="btn" type="submit">Send report</button></div></form>`;
+  btn.closest('.btns').after(box); box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('#rform').onsubmit = async (e) => {
+    e.preventDefault(); const sb = e.target.querySelector('button'); sb.disabled = true;
+    try { const d = Object.fromEntries(new FormData(e.target)); await api('/reports', { method: 'POST', body: { ...d, booking_id: id } }); box.innerHTML = `<div class="ok">Thanks - your report reached the TrimSlot team.</div>`; }
+    catch (err) { sb.disabled = false; toast(err.message || 'Could not send', true); }
+  };
+});
+
+/* ---------- barber: platform balance owed (off-app commission ledger) ---------- */
+async function barberBalance() {
+  const r = await api('/barber/ledger');
+  const st = { ACCRUED: ['b-amber', 'Owed'], SETTLED: ['b-green', 'Settled'], WAIVED: ['b-blue', 'Waived'] };
+  app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Platform balance owed</h1>
+    <div class="card"><div class="muted small">YOU CURRENTLY OWE</div><div style="font-size:32px;font-weight:800;margin:4px 0">${naira(r.owed_kobo)}</div>
+      <div class="small muted">When a booking is paid outside the app (cash or transfer) and completed, TrimSlot's commission on it (${Math.round(r.factor * 100)}% of the normal in-app fee) is added here. It is deducted automatically from your next online payments and plan sales - you don't need to send money.</div></div>
+    ${r.blocked.blocked ? `<div class="warn notice">${ic('warn')}<div><b>Pay on arrival is paused for your shop.</b><div class="small">Your balance ${esc(r.blocked.reason || '')}. Customers can still pay online; once the balance is cleared, pay on arrival returns.</div></div></div>` : ''}
+    <h2>Entries</h2>${r.entries.length ? r.entries.map((e) => `<div class="card"><div class="row between"><b>${e.kind === 'ADJUSTMENT' ? 'Adjustment' : e.booking_id ? `<a href="#/b/${e.booking_id}">Booking #${e.booking_id}</a>` : 'Commission'}</b><span class="badge ${st[e.status][0]}">${st[e.status][1]}</span></div>
+      <div class="row between" style="margin-top:4px"><span class="small muted">${esc(e.note || '')}</span><b>${naira(e.amount_kobo)}</b></div>
+      <div class="small muted" style="margin-top:4px">${lagosStamp(e.created_at)}${e.status === 'ACCRUED' && e.remaining_kobo < e.amount_kobo ? ' · ' + naira(e.remaining_kobo) + ' still owed' : ''}${e.settled_at ? ' · cleared ' + lagosStamp(e.settled_at) : ''}</div></div>`).join('') : '<div class="card muted center">Nothing owed. Commission shows up here after you complete a booking that was paid outside the app.</div>'}`;
+}
+
 /* ---------- notifications ---------- */
 async function notifications() {
   const r = await api('/notifications');
   app.innerHTML = `<div class="row between"><h1>Notifications</h1>${r.unread ? '<button class="btn sm sec" id="read">Mark all read</button>' : ''}</div>
     <p class="small muted">In-app only for now — push/SMS notifications come later.</p>
-    ${r.notifications.map((n) => `<a class="card notif ${n.is_read ? '' : 'unread'} ${n.type === 'AVAILABILITY_CHANGED' || n.type === 'BOOKING_INCOMPLETE' ? 'warn-n' : ''} ${n.type === 'CREDIT_ISSUED' || n.type === 'PLAN_PURCHASED' || n.type === 'PLAN_SOLD' ? 'plan-n' : ''}" style="display:block;color:inherit" href="${n.booking_id ? (state.user.role === 'barber' ? '#/b/' : '#/booking/') + n.booking_id : n.type.startsWith('PLAN_') || n.type === 'CREDIT_ISSUED' ? (state.user.role === 'barber' ? '#/settings' : '#/wallet') : '#'}">
+    ${r.notifications.map((n) => `<a class="card notif ${n.is_read ? '' : 'unread'} ${n.type === 'AVAILABILITY_CHANGED' || n.type === 'BOOKING_INCOMPLETE' || n.type === 'SHOP_PAUSED' || n.type === 'BARBER_REJECTED' || n.type === 'BARBER_NEEDS_INFO' || n.type === 'BARBER_SUSPENDED' || n.type === 'LEDGER_REMINDER' || n.type === 'ACCOUNT_WARNING' || n.type === 'ACCOUNT_SUSPENDED' || n.type === 'ACCOUNT_BANNED' || n.type === 'BARBER_PAUSE' ? 'warn-n' : ''} ${n.type === 'CREDIT_ISSUED' || n.type === 'PLAN_PURCHASED' || n.type === 'PLAN_SOLD' ? 'plan-n' : ''}" style="display:block;color:inherit" href="${n.booking_id ? (state.user.role === 'barber' ? '#/b/' : '#/booking/') + n.booking_id : n.type.startsWith('LEDGER_') ? '#/balance' : n.type.startsWith('PLAN_') || n.type === 'CREDIT_ISSUED' ? (state.user.role === 'barber' ? '#/settings' : '#/wallet') : '#'}">
       <b>${n.type === 'AVAILABILITY_CHANGED' ? ic('warn', 'sm') + ' ' : n.type === 'CREDIT_ISSUED' || n.type.startsWith('PLAN_') ? ic('ticket', 'sm') + ' ' : ''}${esc(n.title)}</b><div class="small" style="margin-top:2px">${esc(n.body)}</div><div class="small muted">${lagosStamp(n.created_at)}</div></a>`).join('') || '<p class="muted center">Nothing yet.</p>'}`;
   const b = $('#read'); if (b) b.onclick = async () => { await api('/notifications/read', { method: 'POST' }); route(); };
   startPoll(notifications);
@@ -514,8 +552,21 @@ function custLine(b) { return `<b>${esc(b.customer.name)}</b> <span class="muted
 async function act(id, action, body) {
   try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
 }
-const pendingBanner = () => state.user && state.user.role === 'barber' && state.user.verified === false
-  ? '<div class="info notice">'+ic('shield')+'<div><b>Awaiting verification.</b> Customers can\'t see or book your shop yet. Finish your profile, services and hours in Settings — we\'ll notify you when you\'re approved.</div></div>' : '';
+const pendingBanner = () => {
+  const u = state.user; if (!u || u.role !== 'barber' || u.verified !== false) return '';
+  const st = u.review_status || 'PENDING', why = u.review_reason ? `<div class="why">${esc(u.review_reason)}</div>` : '';
+  const btn = (label) => `<div class="btns" style="margin-top:10px"><button class="btn sm" data-resubmit>${label}</button></div>`;
+  if (st === 'REJECTED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>Your shop was not approved.</b>${why}<div class="small">Fix what's mentioned in Settings, then resubmit for review.</div>${btn('Resubmit for review')}</div></div>`;
+  if (st === 'NEEDS_INFO') return `<div class="warn notice" id="rvbox">${ic('shield')}<div><b>We need a bit more information.</b>${why}<div class="small">Update your shop details in Settings, then send it back for review.</div>${btn('Send for review again')}</div></div>`;
+  if (st === 'SUSPENDED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>Your shop is paused.</b>${why}<div class="small">Customers can't see or book it. Please contact support to get it reinstated.</div></div></div>`;
+  return '<div class="info notice" id="rvbox">'+ic('shield')+'<div><b>Awaiting verification.</b> Customers can\'t see or book your shop yet. Finish your profile, services and hours in Settings — we\'ll notify you when you\'re approved.</div></div>';
+};
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest && ev.target.closest('[data-resubmit]'); if (!b) return;
+  b.disabled = true;
+  try { const r = await api('/barber/resubmit', { method: 'POST', body: {} }); state.user = { ...state.user, review_status: r.review_status, review_reason: r.review_reason, verified: r.verified }; toast('Sent for review'); route(); }
+  catch (e) { b.disabled = false; toast(e.message || 'Could not resubmit', true); }
+});
 async function barberToday(keepScroll) {
   const d = await api('/barber/today');
   const ns = d.now_serving;
@@ -571,6 +622,7 @@ async function barberBooking(id) {
       ${b.payment_status === 'CREDITED' ? `<div class="small muted" style="margin-top:6px">Missed paid session: customer received one credit with you (no refund).</div>` : ''}
       <hr><div class="small">Scheduled: <b>${lagosTime(b.scheduled_time)}</b> · Arrived: <b>${lagosTime(b.arrival_time)}</b> · Started: <b>${lagosTime(b.service_start)}</b> · Completed: <b>${lagosTime(b.service_complete)}</b></div>
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
+    <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small" style="color:#92400e">${esc(t.details.note)}</div>` : ''}</div>`).join('')}</div></div>`;
 }
 

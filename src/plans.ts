@@ -10,10 +10,12 @@ export interface Settings {
   min_plan_price_kobo: number; max_plan_price_kobo: number; max_plan_validity_days: number; max_plan_sessions: number;
   platform_fee_percent: number; platform_fee_kobo: number; credit_expiry_days: number;
   credit_on_missed_session: boolean; credit_on_early_cancel_prepaid: boolean; plan_refund_policy: 'NONE' | 'MANUAL'; updated_at: string;
+  maintenance_mode: boolean; maintenance_message: string; feature_plans: boolean; feature_credits: boolean; feature_pay_on_arrival: boolean;
+  commission_enabled: boolean; commission_factor: number; min_barber_payout_percent: number; ledger_max_debt_kobo: number; ledger_max_age_days: number;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
-  return { ...r, platform_fee_percent: Number(r.platform_fee_percent) };
+  return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor) };
 }
 /** Admin-facing shape: prices in naira. */
 export const settingsView = (s: Settings) => ({
@@ -22,9 +24,13 @@ export const settingsView = (s: Settings) => ({
   platform_fee_percent: s.platform_fee_percent, platform_fee_naira: s.platform_fee_kobo / 100,
   credit_expiry_days: s.credit_expiry_days, credit_on_missed_session: s.credit_on_missed_session,
   credit_on_early_cancel_prepaid: s.credit_on_early_cancel_prepaid, plan_refund_policy: s.plan_refund_policy, updated_at: s.updated_at,
+  maintenance_mode: s.maintenance_mode, maintenance_message: s.maintenance_message, feature_plans: s.feature_plans, feature_credits: s.feature_credits, feature_pay_on_arrival: s.feature_pay_on_arrival,
+  commission_enabled: s.commission_enabled, commission_factor: s.commission_factor, min_barber_payout_percent: s.min_barber_payout_percent,
+  ledger_max_debt_naira: s.ledger_max_debt_kobo / 100, ledger_max_age_days: s.ledger_max_age_days,
 });
 export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions', 'platform_fee_percent', 'platform_fee_naira',
-  'credit_expiry_days', 'credit_on_missed_session', 'credit_on_early_cancel_prepaid', 'plan_refund_policy'] as const;
+  'credit_expiry_days', 'credit_on_missed_session', 'credit_on_early_cancel_prepaid', 'plan_refund_policy',
+  'maintenance_mode', 'maintenance_message', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
@@ -36,6 +42,10 @@ export const settingsPatchSchema = z.object({
   credit_on_missed_session: z.boolean(),
   credit_on_early_cancel_prepaid: z.boolean(),
   plan_refund_policy: z.enum(['NONE', 'MANUAL']),
+  maintenance_mode: z.boolean(), maintenance_message: z.string().trim().min(3).max(200),
+  feature_plans: z.boolean(), feature_credits: z.boolean(), feature_pay_on_arrival: z.boolean(), commission_enabled: z.boolean(),
+  commission_factor: z.coerce.number().min(0).max(1), min_barber_payout_percent: z.coerce.number().int().min(0).max(100),
+  ledger_max_debt_naira: z.coerce.number().min(0).max(100_000_000), ledger_max_age_days: z.coerce.number().int().min(0).max(3650),
 }).partial().strict();
 
 export async function updateSettings(c: Conn, patch: unknown) {
@@ -44,10 +54,14 @@ export async function updateSettings(c: Conn, patch: unknown) {
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
   if (next.min_plan_price_naira > next.max_plan_price_naira) throw badRequest('min_plan_price_naira cannot be above max_plan_price_naira');
   await c.query(`UPDATE platform_settings SET min_plan_price_kobo=$1, max_plan_price_kobo=$2, max_plan_validity_days=$3, max_plan_sessions=$4, platform_fee_percent=$5,
-      platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, credit_on_early_cancel_prepaid=$9, plan_refund_policy=$10, updated_at=$11 WHERE id=1`,
+      platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, credit_on_early_cancel_prepaid=$9, plan_refund_policy=$10, updated_at=$11,
+      maintenance_mode=$12, maintenance_message=$13, feature_plans=$14, feature_credits=$15, feature_pay_on_arrival=$16, commission_enabled=$17, commission_factor=$18,
+      min_barber_payout_percent=$19, ledger_max_debt_kobo=$20, ledger_max_age_days=$21 WHERE id=1`,
     [Math.round(next.min_plan_price_naira * 100), Math.round(next.max_plan_price_naira * 100), next.max_plan_validity_days, next.max_plan_sessions, next.platform_fee_percent,
-      Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.credit_on_early_cancel_prepaid, next.plan_refund_policy, isoNow()]);
-  await audit(c, null, { id: null, role: 'system' }, 'SETTINGS_UPDATED', { changed: Object.keys(p) });
+      Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.credit_on_early_cancel_prepaid, next.plan_refund_policy, isoNow(),
+      next.maintenance_mode, next.maintenance_message, next.feature_plans, next.feature_credits, next.feature_pay_on_arrival, next.commission_enabled, next.commission_factor,
+      next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days]);
+  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p });
   return settingsView(await getSettings(c));
 }
 
@@ -123,7 +137,7 @@ export async function customerWallet(c: Conn, customerId: number) {
     FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status='ACTIVE' ORDER BY live DESC, pp.expires_at DESC LIMIT 50`, [customerId, now]);
   const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, b.shop_name,
       (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live
-    FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id WHERE sc.customer_id=$1 AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
+    FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id WHERE sc.customer_id=$1 AND sc.status<>'REVOKED' AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
   return { rules: limitsOf(s), plans, credits };
 }
 
@@ -141,6 +155,9 @@ export interface Claimed { option: 'PLAN' | 'CREDIT'; plan_purchase_id: number |
 
 /** Atomically spend one plan session / one credit. Throws a clear 409 when nothing valid is available. The conditional UPDATEs make double-spend impossible. */
 export async function claimEntitlement(t: Conn, o: { customerId: number; barberId: number; serviceId: number; priceKobo: number; startAt: Date; option: 'PLAN' | 'CREDIT'; id?: number }): Promise<Claimed> {
+  { const fs = await getSettings(t);
+    if (o.option === 'PLAN' && !fs.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are switched off right now.');
+    if (o.option === 'CREDIT' && !fs.feature_credits) throw new AppError(409, 'FEATURE_OFF', 'Session credits are switched off right now.'); }
   if (o.option === 'PLAN') {
     const params: unknown[] = [o.customerId, o.barberId, o.serviceId, o.startAt.toISOString(), isoNow()];
     let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND id=$${params.length}`; }

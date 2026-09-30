@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import express, { NextFunction, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
@@ -20,6 +21,8 @@ import { clock, hhmmToMin, isValidDate, isoNow, lagosDate, minToHhmm } from './t
 import { TRANSITIONS } from './stateMachine';
 import { makeLimits, corsAndOriginGuard, assertLoginNotLocked, recordFailedLogin, LOGIN_LOCK_MESSAGE, cronAuth, adminAuth } from './security';
 import { registerAdmin } from './admin';
+import { registerAdminPower } from './admin2';
+import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
 import { runSweep } from './sweep';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
@@ -27,9 +30,14 @@ import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, pu
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
   Promise.resolve(fn(req, res)).catch(next);
 
+/** What a barber sees about their review: verified flag, status, and the admin's reason / message. */
+const barberReview = async (db: Db, userId: number) => {
+  const r = await db.maybeOne<any>('SELECT verified, review_status, review_reason, resubmit_note FROM barbers WHERE user_id=$1', [userId]);
+  return { verified: !!r?.verified, review_status: r?.review_status ?? 'PENDING', review_reason: r && r.review_status !== 'VERIFIED' && r.review_status !== 'PENDING' ? r.review_reason : null };
+};
 const publicUser = async (db: Db, u: any) => {
   const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null };
-  if (u.role === 'barber') out.verified = !!(await db.maybeOne<{ verified: boolean }>('SELECT verified FROM barbers WHERE user_id=$1', [u.id]))?.verified;
+  if (u.role === 'barber') Object.assign(out, await barberReview(db, u.id));
   return out;
 };
 
@@ -184,12 +192,14 @@ export function createApp(db: Db) {
   api.get('/admin/settings', adminGuard, wrap(async (_req, res) => res.json({ settings: settingsView(await getSettings(db)) })));
   api.put('/admin/settings', adminGuard, wrap(async (req, res) => res.json({ settings: await db.tx((t) => updateSettings(t, req.body)) })));
   registerAdmin(api, db, adminGuard, wrap);
+  registerAdminPower(api, db, adminGuard, wrap);
 
   /* ---------- meta ---------- */
-  api.get('/config', (_req, res) => res.json({
+  api.get('/config', wrap(async (_req, res) => res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: CANCEL_CUTOFF_MIN, plans: true, today: lagosDate(), now: clock.now().toISOString(),
-  }));
+    ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival } }; })()),
+  })));
 
   /* ---------- auth ---------- */
   api.post('/auth/signup', limits.signup, wrap(async (req, res) => {
@@ -229,6 +239,7 @@ export function createApp(db: Db) {
       await recordFailedLogin(db, id);
       throw new AppError(401, 'BAD_CREDENTIALS', 'Incorrect email/phone or password.');
     }
+    if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. Contact support if you think this is a mistake.`);
     setAuthCookie(res, signToken(u));
     res.json({ user: await publicUser(db, u) });
   }));
@@ -238,7 +249,7 @@ export function createApp(db: Db) {
     if (!req.user) return void res.json({ user: null });
     const u = req.user;
     const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [u.id])).c;
-    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, ...(u.role === 'barber' ? { verified: !!u.verified } : {}) }, unread });
+    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, ...(u.role === 'barber' ? await barberReview(db, u.id) : {}) }, unread });
   }));
 
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
@@ -272,7 +283,9 @@ export function createApp(db: Db) {
     const plans = await publicPlans(db, b.id);
     const ent = req.user?.role === 'customer' ? await entitlementsFor(db, req.user.id, b.id) : { plans: [], credits: [] };
     const qn = await db.one<{ waiting: number; serving: number }>(`SELECT COUNT(*) FILTER (WHERE status IN ('CONFIRMED','ARRIVED'))::int AS waiting, COUNT(*) FILTER (WHERE status='IN_SERVICE')::int AS serving FROM bookings WHERE barber_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE')`, [b.id, lagosDate()]);
-    res.json({ barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans, my: ent, plan_rules: limitsOf(await getSettings(db)) });
+    const st = await getSettings(db); const lb = await ledgerBlocked(db, b.id, st);
+    res.json({ barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
+      booking: { paused: !!b.booking_paused, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } });
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -364,6 +377,23 @@ export function createApp(db: Db) {
     res.json({ ok: true, next: `/api/payments/callback?reference=${encodeURIComponent(req.params.reference)}` });
   }));
 
+  /* ---------- reports / complaints (customers and barbers) ---------- */
+  api.post('/reports', requireAuth, wrap(async (req, res) => {
+    const d = parse(z.object({ category: z.enum(['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER']), message: z.string().trim().min(5, 'Tell us a bit more (at least 5 characters)').max(1000), booking_id: z.coerce.number().int().positive().optional(), target_user_id: z.coerce.number().int().positive().optional() }), req.body);
+    const me = req.user!; let target: number | null = d.target_user_id ?? null;
+    if (d.booking_id) {
+      const b = await db.maybeOne<any>('SELECT k.id, k.customer_id, bb.user_id AS barber_uid FROM bookings k JOIN barbers bb ON bb.id=k.barber_id WHERE k.id=$1', [d.booking_id]);
+      if (!b || (b.customer_id !== me.id && b.barber_uid !== me.id)) throw notFound('Booking not found');
+      target = me.id === b.customer_id ? b.barber_uid : b.customer_id;      // report the other side of your own booking
+    }
+    if (target === me.id) throw badRequest('You cannot report yourself.');
+    if (target && !(await db.maybeOne('SELECT 1 FROM users WHERE id=$1', [target]))) throw notFound('User not found');
+    if ((await db.one<any>(`SELECT COUNT(*)::int c FROM reports WHERE reporter_id=$1 AND created_at > now() - interval '1 day'`, [me.id])).c >= 10) throw new AppError(429, 'RATE_LIMITED', 'You have sent a lot of reports today. Please wait before sending more.');
+    const r = await db.one<any>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [me.id, target, d.booking_id ?? null, d.category, d.message, isoNow()]);
+    await audit(db, d.booking_id ?? null, { id: me.id, role: me.role }, 'REPORT_FILED', { report_id: r.id, category: d.category, target_user_id: target });
+    res.status(201).json({ id: r.id, message: 'Thanks - your report reached the TrimSlot team.' });
+  }));
+
   /* ---------- notifications ---------- */
   api.get('/notifications', requireAuth, wrap(async (req, res) => {
     const rows = await db.many('SELECT * FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 100', [req.user!.id]);
@@ -380,12 +410,33 @@ export function createApp(db: Db) {
   barberR.use(requireRole('barber'));
   const bid = (req: Request) => req.user!.barberId!;
 
+  /** What this barber owes the platform for bookings paid outside the app (netted automatically against the next in-app payments). */
+  barberR.get('/ledger', wrap(async (req, res) => {
+    const st = await getSettings(db); const id = bid(req);
+    const entries = await db.many(`SELECT l.id, l.booking_id, l.kind, l.amount_kobo, l.remaining_kobo, l.status, l.note, l.created_at, l.settled_at FROM commission_ledger l WHERE l.barber_id=$1 ORDER BY l.id DESC LIMIT 100`, [id]);
+    res.json({ enabled: st.commission_enabled, owed_kobo: await outstandingKobo(db, id), blocked: await ledgerBlocked(db, id, st), factor: st.commission_factor, entries });
+  }));
+  /** A rejected shop (or one asked for more info) fixes things and goes back to the review queue. */
+  barberR.post('/resubmit', wrap(async (req, res) => {
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
+    const out = await db.tx(async (t) => {
+      const b = await t.maybeOne<any>('SELECT id, shop_name, review_status FROM barbers WHERE id=$1 FOR UPDATE', [bid(req)]);
+      if (!b) throw notFound('Barber not found');
+      if (b.review_status === 'PENDING') return { review_status: 'PENDING', changed: false };
+      if (!['REJECTED', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('NOT_RESUBMITTABLE', b.review_status === 'SUSPENDED' ? 'A suspended shop cannot be resubmitted. Contact support.' : 'Your shop is already approved.');
+      await t.query(`UPDATE barbers SET review_status='PENDING', review_reason=NULL, resubmit_note=$2, resubmitted_at=$3 WHERE id=$1`, [b.id, note || null, isoNow()]);
+      await audit(t, null, { id: req.user!.id, role: 'barber' }, 'BARBER_RESUBMITTED', { barber_id: b.id, from: b.review_status, note: note || null });
+      return { review_status: 'PENDING', changed: true };
+    });
+    res.json({ ...out, ...(await barberReview(db, req.user!.id)) });
+  }));
+
   barberR.get('/profile', wrap(async (req, res) => {
     const b = await db.one('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [bid(req)]);
     const services = await db.many('SELECT id, name, price_kobo, duration_min, active FROM services WHERE barber_id=$1 AND active ORDER BY price_kobo, id', [bid(req)]);
     const schedule = (await db.many('SELECT * FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [bid(req)])).map(fmtScheduleRow);
     const days_off = await db.many('SELECT id, date, reason FROM days_off WHERE barber_id=$1 AND date >= $2 ORDER BY date', [bid(req), lagosDate()]);
-    res.json({ profile: { ...barberCard(b), paystack_subaccount: b.paystack_subaccount, verified: !!b.verified }, services, schedule, days_off });
+    res.json({ profile: { ...barberCard(b), paystack_subaccount: b.paystack_subaccount, verified: !!b.verified, review_status: b.review_status, review_reason: b.review_status === 'VERIFIED' || b.review_status === 'PENDING' ? null : b.review_reason }, services, schedule, days_off });
   }));
   barberR.put('/profile', wrap(async (req, res) => {
     const d = parse(V.profileSchema, req.body);

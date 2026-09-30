@@ -86,7 +86,7 @@ Full Paystack instructions (subaccounts, splits) are in [Paystack setup](#paysta
 
 ## 6. Verify barbers (admin portal, or script)
 
-Open `https://<your-domain>/admin.html` and enter the admin key (the `ADMIN_KEY` env var if you set one, else `CRON_SECRET`; it is kept only in that browser tab's sessionStorage). **Barbers** → *Verify* / *Suspend*. The same page handles refunds (*Payments*, *Refund decisions*), plans, credits and platform rules, and keeps an audit log. Set `ADMIN_KEY` (Production, `openssl rand -hex 24`, ≥16 chars) to use a key you can see/choose; `CRON_SECRET` keeps working as a fallback and is the only key the cron endpoint accepts. Env var changes on Vercel only apply to new deployments, so redeploy after adding `ADMIN_KEY`. Migration `005_admin_portal.sql` must be applied. The CLI below still works.
+Open `https://<your-domain>/admin.html` and enter the admin key (the `ADMIN_KEY` env var if you set one, else `CRON_SECRET`; it is kept only in that browser tab's sessionStorage). **Barbers** → filter tabs (Pending / Needs info / Verified / Suspended / Rejected) → *Details*, *Approve*, *Request info*, *Reject* (reason), *Suspend* (reason; warns about upcoming bookings) and *Reinstate*. Migrations `006_barber_review.sql` and `007_admin_power.sql` must be applied before deploying this version (007 adds customer restrictions, booking pause, fee override, platform switches, the commission ledger, broadcasts and reports). The same page handles refunds (*Payments*, *Refund decisions*), plans, credits and platform rules, and keeps an audit log. Set `ADMIN_KEY` (Production, `openssl rand -hex 24`, ≥16 chars) to use a key you can see/choose; `CRON_SECRET` keeps working as a fallback and is the only key the cron endpoint accepts. Env var changes on Vercel only apply to new deployments, so redeploy after adding `ADMIN_KEY`. Migration `005_admin_portal.sql` must be applied. The CLI below still works.
 New barbers are hidden and unbookable until verified. Run from your machine, pointing at the same database:
 ```bash
 export DATABASE_URL='postgresql://postgres.<ref>:<PASSWORD>@aws-0-<region>.pooler.supabase.com:6543/postgres'
@@ -234,3 +234,10 @@ Deploy from GitHub (Dockerfile build), add a Railway Postgres (or use Supabase) 
 
 ### Environment variables (all deployments)
 See `.env.example` (every variable is documented there). Required in production: `DATABASE_URL`, `JWT_SECRET`, `PAYSTACK_SECRET_KEY`, `APP_BASE_URL`. Recommended: `CRON_SECRET`. Long-running server only: `SWEEP_EVERY_SECONDS`, `AUTO_MIGRATE`, `TRUST_PROXY`, `PORT`, `DOMAIN`, `HOST_PORT`, `POSTGRES_PASSWORD`.
+
+## Admin power tools and the off-app commission ledger
+- Apply `migrations/007_admin_power.sql` (after 006) before deploying; then add its name to `schema_migrations` if you applied it by hand.
+- Defaults: commission factor 0.5, commission on, barber keeps at least 50% of any payment the debt is netted against, no debt/age limit. Change them under *Controls*. The in-app platform fee (*Platform rules*: percent and flat) is the base the commission is computed from; set it, or the commission is 0.
+- Netting uses Paystack `transaction_charge` on the initialize call, which needs a **subaccount on the barber**. Barbers without a subaccount cannot be netted (the platform holds their funds), so their debt carries forward.
+- The cron sweep (`/api/cron/sweep`) also sends ledger reminders.
+- Maintenance mode only pauses *new* bookings and plan purchases; it does not block admin tools, barbers' tools or payment confirmation.

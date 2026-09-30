@@ -5,6 +5,7 @@ import { assertTransition, QUEUE_ACTIVE, Status } from './stateMachine';
 import { Actor, audit, fmtWhen, naira, notify } from './helpers';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { claimEntitlement, getSettings, issueCredit, restoreEntitlement } from './plans';
+import { accrueCommission, assertBookable } from './ledger';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
@@ -89,6 +90,8 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     // 1) Serialise every booking attempt for this barber: whoever gets this row lock first books first; the other then sees the new row.
     const barber = await t.maybeOne('SELECT id FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('Barber not found');
+    await assertBookable(t, input.barber_id, input.payment_option);
+    { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot make bookings${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)
     // Price/duration ALWAYS come from the server-side service row - never from the client.
     const svc = await t.maybeOne('SELECT * FROM services WHERE id=$1 AND barber_id=$2 AND active', [input.service_id, input.barber_id]);
@@ -349,6 +352,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         if (b.payment_status === 'PAYMENT_DUE') throw new AppError(409, 'PAYMENT_REQUIRED', 'Record the cash/transfer payment before completing this pay-on-arrival booking.');
         await setStatus(t, b, 'COMPLETED', { service_complete: now });
         await audit(t, b.id, actor, 'COMPLETED', { service_start: b.service_start, service_complete: now });
+        await accrueCommission(t, b);      // off-app (pay on arrival) booking: commission debt goes on the barber's ledger
         break;
       }
       case 'no-show': {

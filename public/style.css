@@ -237,3 +237,7 @@ code{background:var(--bg2);border-radius:4px;padding:1px 6px;font-size:.9em}
 .planf .row.wrap{margin:0}
 .plan-price{font-size:18px;font-weight:700;letter-spacing:-.3px}
 .plan .meta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--mut);margin:4px 0 8px}
+
+.notice .why{margin:6px 0;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.55);font-weight:500;overflow-wrap:anywhere}[data-theme=dark] .notice .why{background:rgba(0,0,0,.25)}
+
+.maintbar{background:#fef3c7;color:#92400e;text-align:center;font-size:13px;font-weight:700;padding:8px 10px}[data-theme=dark] .maintbar{background:#422006;color:#fde68a}
