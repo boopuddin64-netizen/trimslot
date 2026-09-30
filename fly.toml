@@ -1,0 +1,42 @@
+# LEGACY / ALTERNATIVE (primary path = Vercel + Supabase, see DEPLOY.md). Fly.io config - the app is stateless now; the database is
+# external Postgres (Supabase or Fly Postgres) and no volume is needed. Before first deploy:
+#   fly apps create <your-app-name>        (then put the name below, or run `fly launch --no-deploy --copy-config`)
+#   fly secrets set JWT_SECRET=... PAYSTACK_SECRET_KEY=sk_test_... APP_BASE_URL=https://<your-app-name>.fly.dev DATABASE_URL=postgresql://...
+# Region: `jnb` (Johannesburg) is Fly's only African region; European regions (ams/cdg/lhr) are often better peered
+# from Lagos - test both with `fly platform regions` and a real phone/ISP before committing. Put the DB in the same region as the app.
+app = "trimslot-CHANGE-ME"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  AUTO_MIGRATE = "true"
+  SWEEP_EVERY_SECONDS = "60"
+  TRUST_PROXY = "1"
+  LOG_LEVEL = "info"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"     # keep running: the in-process hold sweeper needs a live process (correctness does not depend on it)
+  auto_start_machines = true
+  min_machines_running = 1       # more machines are fine now (state is in Postgres); the sweeper is idempotent
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

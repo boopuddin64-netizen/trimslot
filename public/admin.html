@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#3358d4">
+<title>TrimSlot admin</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/admin.css">
+<script src="/theme.js"></script>
+</head>
+<body class="adm">
+<header class="topbar"><a class="brand" href="/admin.html"><span class="logo"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></span>Trim<b>Slot</b> <span class="tag-admin">Admin</span></a><div id="topright"></div></header>
+<div id="shell" class="hidden">
+  <nav id="nav" class="anav" aria-label="Admin sections"></nav>
+  <main id="app" aria-live="polite"></main>
+</div>
+<main id="login" class="login hidden">
+  <div class="card">
+    <h1>Admin sign in</h1>
+    <p class="muted small">Enter the admin key. It is kept in this browser tab only and is cleared when you close the tab or sign out.</p>
+    <form id="lf" autocomplete="off">
+      <label for="key">Admin key</label>
+      <input id="key" type="password" autocomplete="off" spellcheck="false" required>
+      <div id="lmsg" class="err hidden"></div>
+      <div class="btns cta"><button class="btn" type="submit">Sign in</button></div>
+    </form>
+  </div>
+</main>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="/admin.js"></script>
+</body>
+</html>

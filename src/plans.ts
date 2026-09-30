@@ -1,0 +1,197 @@
+/** Subscriptions (barber plans / session packs), same-barber session credits and the admin-controlled platform rules. */
+import { z } from 'zod';
+import { Conn } from './db';
+import { AppError, badRequest, conflict, notFound } from './errors';
+import { audit, fmtWhen, naira, notify } from './helpers';
+import { isoNow } from './time';
+
+/* ---------------- platform settings (admin-controlled, single row) ---------------- */
+export interface Settings {
+  min_plan_price_kobo: number; max_plan_price_kobo: number; max_plan_validity_days: number; max_plan_sessions: number;
+  platform_fee_percent: number; platform_fee_kobo: number; credit_expiry_days: number;
+  credit_on_missed_session: boolean; credit_on_early_cancel_prepaid: boolean; plan_refund_policy: 'NONE' | 'MANUAL'; updated_at: string;
+}
+export async function getSettings(c: Conn): Promise<Settings> {
+  const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
+  return { ...r, platform_fee_percent: Number(r.platform_fee_percent) };
+}
+/** Admin-facing shape: prices in naira. */
+export const settingsView = (s: Settings) => ({
+  min_plan_price_naira: s.min_plan_price_kobo / 100, max_plan_price_naira: s.max_plan_price_kobo / 100,
+  max_plan_validity_days: s.max_plan_validity_days, max_plan_sessions: s.max_plan_sessions,
+  platform_fee_percent: s.platform_fee_percent, platform_fee_naira: s.platform_fee_kobo / 100,
+  credit_expiry_days: s.credit_expiry_days, credit_on_missed_session: s.credit_on_missed_session,
+  credit_on_early_cancel_prepaid: s.credit_on_early_cancel_prepaid, plan_refund_policy: s.plan_refund_policy, updated_at: s.updated_at,
+});
+export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions', 'platform_fee_percent', 'platform_fee_naira',
+  'credit_expiry_days', 'credit_on_missed_session', 'credit_on_early_cancel_prepaid', 'plan_refund_policy'] as const;
+export const settingsPatchSchema = z.object({
+  min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
+  max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
+  max_plan_validity_days: z.coerce.number().int().min(1).max(730),
+  max_plan_sessions: z.coerce.number().int().min(1).max(500),
+  platform_fee_percent: z.coerce.number().min(0).max(100),
+  platform_fee_naira: z.coerce.number().min(0).max(1_000_000),
+  credit_expiry_days: z.coerce.number().int().min(1).max(365),
+  credit_on_missed_session: z.boolean(),
+  credit_on_early_cancel_prepaid: z.boolean(),
+  plan_refund_policy: z.enum(['NONE', 'MANUAL']),
+}).partial().strict();
+
+export async function updateSettings(c: Conn, patch: unknown) {
+  const parsed = settingsPatchSchema.safeParse(patch);
+  if (!parsed.success) throw badRequest(parsed.error.issues.map((i) => `${i.path.join('.') || 'settings'}: ${i.message}`).join('; '));
+  const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
+  if (next.min_plan_price_naira > next.max_plan_price_naira) throw badRequest('min_plan_price_naira cannot be above max_plan_price_naira');
+  await c.query(`UPDATE platform_settings SET min_plan_price_kobo=$1, max_plan_price_kobo=$2, max_plan_validity_days=$3, max_plan_sessions=$4, platform_fee_percent=$5,
+      platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, credit_on_early_cancel_prepaid=$9, plan_refund_policy=$10, updated_at=$11 WHERE id=1`,
+    [Math.round(next.min_plan_price_naira * 100), Math.round(next.max_plan_price_naira * 100), next.max_plan_validity_days, next.max_plan_sessions, next.platform_fee_percent,
+      Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.credit_on_early_cancel_prepaid, next.plan_refund_policy, isoNow()]);
+  await audit(c, null, { id: null, role: 'system' }, 'SETTINGS_UPDATED', { changed: Object.keys(p) });
+  return settingsView(await getSettings(c));
+}
+
+/* ---------------- barber plans ---------------- */
+export const planSchema = z.object({
+  name: z.string().trim().min(2, 'Name is too short').max(60),
+  price_naira: z.coerce.number().positive('Price must be above zero').max(100_000_000),
+  sessions: z.coerce.number().int().min(1, 'At least 1 session').max(500),
+  validity_days: z.coerce.number().int().min(1, 'At least 1 day').max(730),
+  service_ids: z.array(z.coerce.number().int().positive()).min(1, 'Pick at least one included service').max(50),
+});
+
+/** Barbers cannot go outside the platform rules; every limit is enforced server-side. */
+export async function validatePlanInput(c: Conn, barberId: number, d: z.infer<typeof planSchema>) {
+  const s = await getSettings(c);
+  const kobo = Math.round(d.price_naira * 100);
+  const errs: string[] = [];
+  if (kobo < s.min_plan_price_kobo) errs.push(`Plan price must be at least ${naira(s.min_plan_price_kobo)}.`);
+  if (kobo > s.max_plan_price_kobo) errs.push(`Plan price cannot be more than ${naira(s.max_plan_price_kobo)}.`);
+  if (d.validity_days > s.max_plan_validity_days) errs.push(`Plans can be valid for at most ${s.max_plan_validity_days} days.`);
+  if (d.sessions > s.max_plan_sessions) errs.push(`Plans can include at most ${s.max_plan_sessions} sessions.`);
+  const ids = [...new Set(d.service_ids)];
+  const own = await c.many<{ id: number }>('SELECT id FROM services WHERE barber_id=$1 AND active AND id = ANY($2::int[])', [barberId, ids]);
+  if (own.length !== ids.length) errs.push('Included services must be your own active services.');
+  if (errs.length) throw new AppError(400, 'PLAN_RULES', errs.join(' '), { limits: limitsOf(s) });
+  return { kobo, ids, settings: s };
+}
+export const limitsOf = (s: Settings) => ({
+  min_price_kobo: s.min_plan_price_kobo, max_price_kobo: s.max_plan_price_kobo, max_validity_days: s.max_plan_validity_days, max_sessions: s.max_plan_sessions,
+  credit_expiry_days: s.credit_expiry_days, refund_policy: s.plan_refund_policy,
+});
+
+const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active,
+  COALESCE((SELECT array_agg(ps.service_id ORDER BY ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id), '{}') AS service_ids FROM plans p`;
+/** Active plans of one barber (one query: included service ids are aggregated). */
+export const publicPlans = (c: Conn, barberId: number) => c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active ORDER BY p.price_kobo, p.id`, [barberId]);
+
+export async function savePlan(c: Conn, barberId: number, planId: number | null, d: z.infer<typeof planSchema>) {
+  const { kobo, ids } = await validatePlanInput(c, barberId, d);
+  let id = planId;
+  if (id == null) id = (await c.one<{ id: number }>('INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [barberId, d.name, kobo, d.sessions, d.validity_days, isoNow()])).id;
+  else {
+    // Existing purchases keep their own snapshot: editing only affects future buyers.
+    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4 WHERE id=$5 AND barber_id=$6 AND active', [d.name, kobo, d.sessions, d.validity_days, id, barberId]);
+    if (!r.rowCount) throw notFound('Plan not found');
+    await c.query('DELETE FROM plan_services WHERE plan_id=$1', [id]);
+  }
+  await c.query('INSERT INTO plan_services (plan_id, service_id) SELECT $1, unnest($2::int[])', [id, ids]);
+  return id;
+}
+
+/** Barber dashboard: plans + who bought them (paid only - pending checkouts are invisible) + outstanding credits. */
+export async function barberPlanOverview(c: Conn, barberId: number) {
+  const s = await getSettings(c);
+  const plans = await c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active ORDER BY p.id`, [barberId]);
+  const purchases = await c.many(`SELECT pp.id, pp.plan_id, pp.plan_name, pp.price_kobo, pp.sessions_total, pp.sessions_used, pp.paid_at, pp.expires_at, u.id AS customer_id, u.name AS customer_name,
+      (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live
+    FROM plan_purchases pp JOIN users u ON u.id=pp.customer_id WHERE pp.barber_id=$1 AND pp.status='ACTIVE' ORDER BY pp.paid_at DESC LIMIT 100`, [barberId, isoNow()]);
+  const credits = await c.many(`SELECT sc.id, sc.reason, sc.status, sc.expires_at, sc.created_at, sc.used_at, sc.value_kobo, u.id AS customer_id, u.name AS customer_name,
+      (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live
+    FROM session_credits sc JOIN users u ON u.id=sc.customer_id WHERE sc.barber_id=$1 ORDER BY sc.created_at DESC LIMIT 100`, [barberId, isoNow()]);
+  const byPlan = new Map<number, { buyers: number; revenue_kobo: number; sessions_used: number }>();
+  for (const p of purchases) { const e = byPlan.get(p.plan_id) ?? { buyers: 0, revenue_kobo: 0, sessions_used: 0 }; e.buyers++; e.revenue_kobo += p.price_kobo; e.sessions_used += p.sessions_used; byPlan.set(p.plan_id, e); }
+  return { limits: limitsOf(s), plans: plans.map((p) => ({ ...p, ...(byPlan.get(p.id) ?? { buyers: 0, revenue_kobo: 0, sessions_used: 0 }) })), purchases, credits };
+}
+
+/* ---------------- customer wallet ---------------- */
+export async function customerWallet(c: Conn, customerId: number) {
+  const now = isoNow();
+  const s = await getSettings(c);
+  const plans = await c.many(`SELECT pp.id, pp.barber_id, pp.plan_name, pp.sessions_total, pp.sessions_used, pp.paid_at, pp.expires_at, pp.service_ids,
+      (pp.sessions_total - pp.sessions_used) AS sessions_left, (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live, b.shop_name
+    FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status='ACTIVE' ORDER BY live DESC, pp.expires_at DESC LIMIT 50`, [customerId, now]);
+  const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, b.shop_name,
+      (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live
+    FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id WHERE sc.customer_id=$1 AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
+  return { rules: limitsOf(s), plans, credits };
+}
+
+/** What this customer can spend at ONE barber right now (only unexpired). Used by the booking wizard. */
+export async function entitlementsFor(c: Conn, customerId: number, barberId: number) {
+  const now = isoNow();
+  const plans = await c.many(`SELECT id, plan_name, sessions_total, sessions_used, (sessions_total - sessions_used) AS sessions_left, expires_at, service_ids FROM plan_purchases
+      WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND expires_at > $3 AND sessions_used < sessions_total ORDER BY expires_at`, [customerId, barberId, now]);
+  const credits = await c.many(`SELECT id, value_kobo, expires_at, reason FROM session_credits WHERE customer_id=$1 AND barber_id=$2 AND status='AVAILABLE' AND expires_at > $3 ORDER BY expires_at`, [customerId, barberId, now]);
+  return { plans, credits };
+}
+
+/* ---------------- spending (inside the booking transaction) ---------------- */
+export interface Claimed { option: 'PLAN' | 'CREDIT'; plan_purchase_id: number | null; credit_id: number | null; label: string }
+
+/** Atomically spend one plan session / one credit. Throws a clear 409 when nothing valid is available. The conditional UPDATEs make double-spend impossible. */
+export async function claimEntitlement(t: Conn, o: { customerId: number; barberId: number; serviceId: number; priceKobo: number; startAt: Date; option: 'PLAN' | 'CREDIT'; id?: number }): Promise<Claimed> {
+  if (o.option === 'PLAN') {
+    const params: unknown[] = [o.customerId, o.barberId, o.serviceId, o.startAt.toISOString(), isoNow()];
+    let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND id=$${params.length}`; }
+    const r = await t.maybeOne<{ id: number; plan_name: string }>(`UPDATE plan_purchases SET sessions_used = sessions_used + 1 WHERE id = (
+        SELECT id FROM plan_purchases WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND $3 = ANY(service_ids) AND sessions_used < sessions_total
+          AND expires_at >= $4 AND expires_at > $5${idSql} ORDER BY expires_at, id LIMIT 1 FOR UPDATE)
+      RETURNING id, plan_name`, params);
+    if (!r) throw new AppError(409, 'NO_PLAN_SESSION', 'You have no valid plan session for this service and date. Plan sessions must be used before the plan ends.');
+    return { option: 'PLAN', plan_purchase_id: r.id, credit_id: null, label: r.plan_name };
+  }
+  const params: unknown[] = [o.customerId, o.barberId, o.priceKobo, o.startAt.toISOString(), isoNow()];
+  let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND id=$${params.length}`; }
+  const r = await t.maybeOne<{ id: number }>(`UPDATE session_credits SET status='USED', used_at=$5 WHERE id = (
+      SELECT id FROM session_credits WHERE customer_id=$1 AND barber_id=$2 AND status='AVAILABLE' AND value_kobo >= $3 AND expires_at >= $4 AND expires_at > $5${idSql}
+      ORDER BY expires_at, id LIMIT 1 FOR UPDATE) RETURNING id`, params);
+  if (!r) throw new AppError(409, 'NO_CREDIT', 'You have no valid session credit for this barber, service and date (credits are same-barber only and must be used before they expire, for a service priced within the credit value).');
+  return { option: 'CREDIT', plan_purchase_id: null, credit_id: r.id, label: 'Session credit' };
+}
+
+/** Give the spent plan session / credit back (customer cancelled in time, or the barber could not serve them). */
+export async function restoreEntitlement(t: Conn, b: { plan_purchase_id: number | null; credit_id: number | null }) {
+  if (b.plan_purchase_id) await t.query('UPDATE plan_purchases SET sessions_used = GREATEST(sessions_used - 1, 0) WHERE id=$1', [b.plan_purchase_id]);
+  if (b.credit_id) await t.query(`UPDATE session_credits SET status='AVAILABLE', used_booking_id=NULL, used_at=NULL WHERE id=$1`, [b.credit_id]);
+}
+
+/** A paid session that was missed: no refund, ONE credit with the SAME barber, not cashable, expires after `credit_expiry_days`. Idempotent per booking. */
+export async function issueCredit(t: Conn, b: { id: number; customer_id: number; barber_id: number; price_kobo: number; service_name: string; date: string; start_min: number }, reason: 'NO_SHOW' | 'LATE_CANCEL' | 'EARLY_CANCEL', settings?: Settings) {
+  const s = settings ?? await getSettings(t);
+  const expires = new Date(new Date(isoNow()).getTime() + s.credit_expiry_days * 86400000).toISOString();
+  const r = await t.maybeOne<{ id: number }>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (source_booking_id) DO NOTHING RETURNING id`, [b.customer_id, b.barber_id, b.id, reason, b.price_kobo, expires, isoNow()]);
+  if (!r) return null;
+  await audit(t, b.id, { id: null, role: 'system' }, 'CREDIT_ISSUED', { credit_id: r.id, reason, expires_at: expires, note: 'no refund; one same-barber session credit' });
+  const exp = new Date(expires);
+  await notify(t, b.customer_id, 'CREDIT_ISSUED', 'Session credit added',
+    `Your ${b.service_name} session on ${fmtWhen(b.date, b.start_min)} was missed, so it is not refunded - but you now have 1 session credit with this barber (not cashable), valid until ${exp.toISOString().slice(0, 10)}. It is applied to your next booking with them.`, b.id);
+  return { id: r.id, expires_at: expires };
+}
+
+/* ---------------- plan purchase payment (called after server-side gateway verification, inside the caller's transaction) ---------------- */
+export async function applyPlanPayment(t: Conn, purchaseId: number): Promise<'activated' | 'already_active'> {
+  const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [purchaseId]);
+  if (!p) throw notFound('Plan purchase not found');
+  if (p.status === 'ACTIVE') return 'already_active';
+  const now = isoNow();
+  const exp = new Date(new Date(now).getTime() + p.validity_days * 86400000).toISOString();
+  await t.query(`UPDATE plan_purchases SET status='ACTIVE', paid_at=$1, expires_at=$2 WHERE id=$3`, [now, exp, p.id]);
+  await audit(t, null, { id: null, role: 'system' }, 'PLAN_PURCHASED', { purchase_id: p.id, plan: p.plan_name, price_kobo: p.price_kobo, expires_at: exp });
+  await notify(t, p.customer_id, 'PLAN_PURCHASED', 'Plan purchased', `${p.plan_name}: ${p.sessions_total} session${p.sessions_total === 1 ? '' : 's'}, valid until ${exp.slice(0, 10)}. Pick "Use plan session" when you book.`);
+  const bu = await t.one<{ user_id: number }>('SELECT user_id FROM barbers WHERE id=$1', [p.barber_id]);
+  const cu = await t.one<{ name: string }>('SELECT name FROM users WHERE id=$1', [p.customer_id]);
+  await notify(t, bu.user_id, 'PLAN_SOLD', 'Plan sold', `${cu.name} bought "${p.plan_name}" (${naira(p.price_kobo)}, ${p.sessions_total} sessions).`);
+  return 'activated';
+}

@@ -1,0 +1,35 @@
+// Live admin smoke test. Needs CRON_SECRET in env (never printed). Creates only smoketest+adm-*@example.com throwaway accounts.
+const B = process.env.BASE || 'https://trimslot-eight.vercel.app', KEY = process.env.CRON_SECRET; if (!KEY) throw new Error('CRON_SECRET missing');
+const tag = Date.now().toString(36);
+const call = async (p, o = {}, ck) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(ck ? { Cookie: ck } : {}), ...(o.auth ? { Authorization: 'Bearer ' + KEY } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); const j = await r.json().catch(() => ({})); return { s: r.status, j, r }; };
+const A = (p, o = {}) => call(p, { ...o, auth: true });
+let bad = 0; const ck = (ok, m) => { if (!ok) bad++; console.log((ok ? 'ok   ' : 'FAIL ') + m); };
+const bEmail = `smoketest+adm-b-${tag}@example.com`, cEmail = `smoketest+adm-c-${tag}@example.com`;
+const sb = await call('/auth/signup', { method: 'POST', body: { role: 'barber', name: 'Admin Smoke Barber', email: bEmail, password: 'Smoke12345!', shop_name: 'Admin Smoke Shop', location: 'Test' } });
+const sc = await call('/auth/signup', { method: 'POST', body: { role: 'customer', name: 'Admin Smoke Cust', email: cEmail, password: 'Smoke12345!' } });
+ck(sb.s === 201 && sc.s === 201, 'signup throwaway barber + customer ' + sb.s + '/' + sc.s);
+const bck = sb.r.headers.get('set-cookie').split(';')[0], cck = sc.r.headers.get('set-cookie').split(';')[0];
+const svc = await call('/barber/services', { method: 'POST', body: { name: 'Smoke cut', price_naira: 3000, duration_min: 30 } }, bck); ck(svc.s < 300, 'barber adds a service ' + svc.s);
+const ov = await A('/admin/overview'); ck(ov.s === 200 && typeof ov.j.barbers_pending === 'number', `overview: verified=${ov.j.barbers_verified} pending=${ov.j.barbers_pending} customers=${ov.j.customers} today=${ov.j.bookings_today} revenue_kobo=${ov.j.revenue_kobo} fees_kobo=${ov.j.fees_kobo}`);
+const bl = await A('/admin/barbers'); const mine = bl.j.barbers.find((x) => x.email === bEmail); ck(!!mine && !mine.verified, 'throwaway barber listed as pending, subaccount=' + mine?.subaccount_status);
+const id = mine.id; if (id === 2) throw new Error('refusing to touch barber 2');
+ck((await call('/barbers')).j.barbers.every((b) => b.id !== id), 'pending shop hidden from customers');
+const v = await A(`/admin/barbers/${id}/verify`, { method: 'POST', body: {} }); ck(v.s === 200 && v.j.changed === true, 'verify -> changed');
+ck((await call('/barbers')).j.barbers.some((b) => b.id === id), 'verified shop visible to customers');
+ck((await A(`/admin/barbers/${id}/verify`, { method: 'POST', body: {} })).j.changed === false, 'verify again is a no-op');
+ck((await A(`/admin/barbers/${id}/suspend`, { method: 'POST', body: {} })).j.changed === true, 'suspend -> changed');
+ck((await call('/barbers')).j.barbers.every((b) => b.id !== id), 'suspended shop hidden again');
+ck((await A(`/admin/barbers/${id}/verify`, { method: 'POST', body: {} })).j.changed === true, 're-verified for booking');
+const d = new Date(Date.now() + 86400000 + 3600000).toISOString().slice(0, 10);
+const sid = svc.j.id ?? svc.j.service?.id;
+const bk = await call('/bookings', { method: 'POST', body: { barber_id: id, service_id: sid, date: d, time: '10:00', payment_option: 'ONLINE' } }, cck); ck(bk.s === 201, 'customer books ' + bk.s + (bk.s !== 201 ? ' ' + JSON.stringify(bk.j).slice(0, 150) : ''));
+const bid = bk.j.booking?.id;
+const pay = await call(`/bookings/${bid}/pay`, { method: 'POST', body: {} }, cck); ck(pay.s < 300 && !!pay.j.reference, 'payment initialised (Paystack TEST) ' + pay.s);
+const ref = pay.j.reference;
+const pl = await A('/admin/payments?filter=initiated'); ck(pl.s === 200 && pl.j.payments.some((p) => p.reference === ref), 'payments list (not paid) contains it');
+ck((await A(`/admin/bookings?barber_id=${id}&date=${d}`)).j.bookings.length === 1, 'bookings filter by barber+date -> 1');
+ck((await A(`/admin/bookings?barber_id=${id}&status=CANCELLED`)).j.bookings.length === 0, 'bookings filter by status -> 0');
+for (const p of ['/admin/plans', '/admin/credits', '/admin/cancellations', '/admin/settings', '/admin/refunds', '/admin/payments?filter=needs_refund']) { const r = await A(p); ck(r.s === 200, p + ' ' + r.s); }
+const acts = (await A('/admin/audit')).j.entries.map((e) => e.action); ck(['ADMIN_BARBER_VERIFIED', 'ADMIN_BARBER_SUSPENDED'].every((a) => acts.includes(a)), 'audit log has verify + suspend');
+ck((await call('/admin/login', { method: 'POST' })).s === 401, 'login without key 401'); ck((await A('/admin/login', { method: 'POST', body: {} })).s === 200, 'login with key 200');
+console.log(JSON.stringify({ tag, barber_id: id, booking_id: bid, ref })); console.log(bad ? bad + ' FAILED' : 'ALL OK'); process.exit(bad ? 1 : 0);

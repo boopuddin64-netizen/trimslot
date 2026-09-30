@@ -1,0 +1,28 @@
+# Adds Caddy (automatic HTTPS via Let's Encrypt). Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build
+# Requires DOMAIN in .env (e.g. DOMAIN=book.example.com) and DNS A/AAAA pointing at this server, ports 80+443 open.
+services:
+  app:
+    expose: ["8080"]                     # Caddy reaches it over the compose network (the base file only publishes on 127.0.0.1)
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data                 # certificates - keep this volume!
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+volumes:
+  caddy-data:
+  caddy-config:

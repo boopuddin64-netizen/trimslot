@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": false, "outDir": "dist", "rootDir": ".", "sourceMap": false, "removeComments": true },
+  "include": ["src", "scripts", "api"],
+  "exclude": ["tests", "scripts/e2e.ts", "scripts/e2e-run.ts", "scripts/test.ts", "scripts/ui-flow.mjs", "scripts/vercel-local.ts"]
+}

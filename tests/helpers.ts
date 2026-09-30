@@ -1,0 +1,49 @@
+import { after } from 'node:test';
+import { Client } from 'pg';
+import { createDb, Db } from '../src/db';
+import { seed } from '../src/seed';
+import { clock } from '../src/time';
+
+process.env.NODE_ENV = 'test';
+delete process.env.PAYSTACK_SECRET_KEY; // tests run in MOCK mode unless they override
+
+const PORT = process.env.TEST_PG_PORT;
+if (!PORT) throw new Error('Tests must be started with `npm test` (it boots the Postgres they run against).');
+const ADMIN_URL = `postgres://postgres:postgres@127.0.0.1:${PORT}/postgres`;
+
+let counter = 0;
+const opened: { db: Db; name: string }[] = [];
+
+/** A brand-new, fully migrated database cloned from the template (real Postgres constraints, indexes and locks). */
+export async function newDatabase(opts: { poolMax?: number } = {}): Promise<{ db: Db; name: string }> {
+  const name = `t_${process.pid}_${Date.now().toString(36)}_${counter++}`;
+  const admin = new Client({ connectionString: ADMIN_URL });
+  await admin.connect();
+  await admin.query(`CREATE DATABASE ${name} TEMPLATE template_trimslot`);
+  await admin.end();
+  const db = createDb(`postgres://postgres:postgres@127.0.0.1:${PORT}/${name}`, { max: opts.poolMax ?? 8 });
+  opened.push({ db, name });
+  return { db, name };
+}
+
+export async function freshDb(opts: { poolMax?: number } = {}): Promise<{ db: Db; barberId: number; customerIds: number[]; serviceIds: number[]; name: string }> {
+  const { db, name } = await newDatabase(opts);
+  const { barberId } = await seed(db, 4);
+  const customerIds = (await db.many<{ id: number }>(`SELECT id FROM users WHERE role='customer' ORDER BY id`)).map((r) => r.id);
+  const serviceIds = (await db.many<{ id: number }>('SELECT id FROM services WHERE barber_id=$1 ORDER BY id', [barberId])).map((r) => r.id);
+  return { db, barberId, customerIds, serviceIds, name };
+}
+
+after(async () => {
+  for (const o of opened) await o.db.close().catch(() => {});
+  const admin = new Client({ connectionString: ADMIN_URL });
+  await admin.connect().catch(() => {});
+  for (const o of opened) await admin.query(`DROP DATABASE IF EXISTS ${o.name} WITH (FORCE)`).catch(() => {});
+  await admin.end().catch(() => {});
+});
+
+/** Wednesday 2026-09-30 (Lagos) */
+export const WED = '2026-09-30';
+export function setNow(iso: string) { clock.setExact(new Date(iso)); }
+export function resetNow() { clock.set(null); }
+export const userIdOfBarber = async (db: Db, barberId: number) => (await db.one<{ user_id: number }>('SELECT user_id FROM barbers WHERE id=$1', [barberId])).user_id;

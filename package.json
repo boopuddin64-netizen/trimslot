@@ -1,0 +1,50 @@
+{
+  "name": "trimslot",
+  "version": "1.0.0",
+  "description": "TrimSlot - Book. Arrive. Get Trimmed.",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "seed": "tsx scripts/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.ts",
+    "e2e": "tsx scripts/e2e-run.ts",
+    "flow": "tsx scripts/flow-run.ts",
+    "admin": "tsx scripts/admin.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "start:prod": "node dist/src/index.js",
+    "admin:prod": "node dist/scripts/admin.js",
+    "migrate": "tsx scripts/migrate.ts",
+    "vercel:local": "tsx scripts/vercel-local.ts",
+    "migrate:prod": "node dist/scripts/migrate.js"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.25",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "^17.10.0-beta.17",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@vercel/functions": "^3.9.9",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^4.22.3",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "zod": "^4.6.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
