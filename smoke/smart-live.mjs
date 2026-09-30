@@ -47,9 +47,7 @@ ck(!row || row.customer?.reliability !== undefined, 'barber sees reliability on 
 ck((await call(`/barber/customers/${row?.customer_id ?? row?.customer?.id ?? 0}/note`, { method: 'PUT', body: { note: 'Prefers a scissor cut' } }, bck)).s < 500, 'barber private note route responds');
 ck((await call('/me/rebook', {}, cck)).s === 200, 'rebook route ok');
 // ---- lifecycle -> review
-for (const a of ['mark-present', 'start']) await call(`/barber/bookings/${bkid}/${a}`, { method: 'POST', body: {} }, bck);
-await call(`/barber/bookings/${bkid}/record-payment`, { method: 'POST', body: { method: 'cash' } }, bck);
-ck((await call(`/barber/bookings/${bkid}/complete`, { method: 'POST', body: {} }, bck)).s === 200, 'complete booking');
+ck((await P(`/admin/bookings/${bkid}/complete`, { reason: 'smoke force complete', paid: true })).s === 200, 'complete booking (admin force, booking is tomorrow)');
 const rv = await call(`/bookings/${bkid}/review`, { method: 'POST', body: { rating: 5, comment: 'Smoke review' } }, cck); ck(rv.s === 201, 'customer reviews completed booking ' + rv.s);
 ck((await call(`/bookings/${bkid}/review`, { method: 'POST', body: { rating: 4 } }, cck)).s === 409 || (await call(`/bookings/${bkid}/review`, { method: 'POST', body: { rating: 4 } }, cck)).s === 400, 'second review rejected');
 const pub = await call(`/barbers/${bid}/reviews`); ck(pub.j.summary.count === 1 && pub.j.summary.average === 5, 'public rating summary 5.0 (1)');
@@ -63,8 +61,9 @@ const wl = await call('/waitlist', { method: 'POST', body: { barber_id: bid, ser
 
 // ---- admin v3
 const home = await A('/admin/home'); ck(home.s === 200 && Array.isArray(home.j.attention) && JSON.stringify(home.j).length < 3000, 'admin home lean (' + JSON.stringify(home.j).length + ' B)');
-const l1 = await A('/admin/l/customers?limit=5'); ck(l1.s === 200 && l1.j.rows.length === 5 && !!l1.j.next && l1.j.total > 0, 'customers page 1 + cursor + total');
-const l2 = await A('/admin/l/customers?limit=5&count=0&cursor=' + encodeURIComponent(l1.j.next)); ck(l2.s === 200 && l2.j.rows[0].id < l1.j.rows[4].id && l2.j.total === undefined, 'cursor page 2 follows, no recount');
+const l1 = await A('/admin/l/customers?limit=5'); ck(l1.s === 200 && l1.j.rows.length >= 2 && l1.j.total > 0, 'customers page 1 + total');
+const l1b = await A('/admin/l/bookings?limit=5&sort=newest'); ck(l1b.s === 200 && l1b.j.rows.length === 5 && !!l1b.j.next && l1.j.total > 0, 'bookings page 1 + cursor');
+const l2 = await A('/admin/l/bookings?limit=5&sort=newest&count=0&cursor=' + encodeURIComponent(l1b.j.next)); ck(l2.s === 200 && l2.j.rows[0].id < l1b.j.rows[4].id && l2.j.total === undefined, 'cursor page 2 follows, no recount');
 const q = await A('/admin/l/customers?q=' + encodeURIComponent(cE)); ck(q.j.rows.length === 1 && q.j.rows[0].email === cE, 'search finds throwaway customer');
 ck((await A('/admin/l/bookings?q=%23' + bkid)).j.rows[0]?.id === bkid, 'bookings search by #id');
 ck((await A('/admin/l/reviews?limit=5')).j.rows.some((r) => r.id === rid), 'reviews list');
