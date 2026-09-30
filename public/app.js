@@ -28,6 +28,7 @@ const ICONS = {
   check: '<path d="m5 12 5 5 9-10"/>', back: '<path d="m15 18-6-6 6-6"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>', bolt: '<path d="M13 2 3 14h9l-1 8 10-12h-9Z"/>',
   ticket: '<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1ZM14 5v14"/>', wallet: '<path d="M19 7V5a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v3M3 6v12a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-3"/><path d="M21 12h-4a2 2 0 0 0 0 4h4Z"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>', refresh: '<path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/>', play: '<path d="m7 4 13 8-13 8Z"/>', lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', right: '<path d="m9 6 6 6-6 6"/>',
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9Z"/>', heart: '<path d="M20.8 5.6a5.5 5.5 0 0 0-7.8 0L12 6.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 22l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8Z"/>', repeat: '<path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/>', send: '<path d="m22 2-7 20-4-9-9-4ZM22 2 11 13"/>',
   plus: '<path d="M12 5v14M5 12h14"/>', off: '<path d="M18 6 6 18M6 6l12 12"/>',
 };
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -96,7 +97,7 @@ function toggleTheme() {
   chrome();
   const sw = $('#themesw'); if (sw) sw.setAttribute('aria-checked', String(d));
 }
-async function signOut() { await api('/auth/logout', { method: 'POST' }); state.user = null; state.setup = null; state.open = new Set(); location.hash = '#/'; route(); }
+async function signOut() { try { await Notify.detach(); } catch { /* ignore */ } await api('/auth/logout', { method: 'POST' }); state.user = null; state.setup = null; state.open = new Set(); location.hash = '#/'; route(); }
 function chrome() {
   const u = state.user;
   $('#mockbar').classList.toggle('hidden', !(state.cfg && state.cfg.mock));
@@ -104,9 +105,10 @@ function chrome() {
   let mb = $('#maintbar'); if (!mb) { mb = document.createElement('div'); mb.id = 'maintbar'; mb.className = 'maintbar hidden'; $('#mockbar').after(mb); }
   mb.classList.toggle('hidden', !(state.cfg && state.cfg.maintenance)); if (state.cfg && state.cfg.maintenance) mb.textContent = state.cfg.maintenance;
   $('#topright').innerHTML = u
-    ? `<a href="#/notifications" aria-label="Notifications">${ic('bell')}${state.unread ? `<span class="dot">${state.unread}</span>` : ''}</a>`
+    ? `<a class="bell" href="#/notifications" aria-label="${state.unread ? `Notifications, ${state.unread} unread` : 'Notifications'}">${ic('bell')}${state.unread ? `<span class="dot">${state.unread > 99 ? '99+' : state.unread}</span>` : ''}</a>`
     : `<button id="theme" aria-label="Toggle dark mode">${ic(isDark() ? 'sun' : 'moon')}</button><a class="txt" href="#/login">Log in</a>`;
   const th = $('#theme'); if (th) th.onclick = toggleTheme;
+  if (window.Notify) Notify.paintUnread();
   const tabs = $('#tabs');
   const h = location.hash || '#/';
   const tab = (href, icon, label, on) => `<a href="${href}" class="${on ? 'on' : ''}"><span>${ic(icon)}</span>${label}</a>`;
@@ -114,7 +116,7 @@ function chrome() {
   tabs.classList.remove('hidden');
   const hp = (...x) => x.some((y) => h === y || h.startsWith(y + '/') || h.startsWith(y + '?'));
   tabs.innerHTML = u.role === 'barber'
-    ? tab('#/today', 'list', 'Today', hp('#/today', '#/b')) + tab('#/upcoming', 'cal', 'Upcoming', hp('#/upcoming')) + tab('#/customers', 'users', 'Customers', hp('#/customers')) + tab('#/plans', 'ticket', 'Plans', hp('#/plans')) + tab('#/profile', 'user', 'Profile', hp('#/profile', '#/settings', '#/notifications'))
+    ? tab('#/today', 'list', 'Today', hp('#/today', '#/b')) + tab('#/upcoming', 'cal', 'Upcoming', hp('#/upcoming')) + tab('#/customers', 'users', 'Customers', hp('#/customers')) + tab('#/plans', 'ticket', 'Plans', hp('#/plans')) + tab('#/profile', 'user', 'Profile', hp('#/profile', '#/settings', '#/notifications', '#/reviews'))
     : tab('#/', 'home', 'Home', h === '#/' || hp('#/book', '#/barber')) + tab('#/bookings', 'cal', 'Bookings', hp('#/bookings', '#/booking')) + tab('#/wallet', 'wallet', 'Plans', hp('#/wallet')) + tab('#/profile', 'user', 'Profile', hp('#/profile', '#/notifications'));
 }
 async function refreshUnread() {
@@ -143,6 +145,7 @@ async function route() {
     const [cfg, me] = await Promise.all([state.cfg ? state.cfg : api('/config'), api('/auth/me')]);
     state.cfg = cfg; state.user = me.user; state.unread = me.unread || 0;
     chrome();
+    if (state.user) { if (state.notifFor !== state.user.id) { state.notifFor = state.user.id; Notify.start(); Notify.resync(); } } else if (state.notifFor) { state.notifFor = null; Notify.stop(); }
     skeletonIfSlow();
     const parts = path.split('/').filter(Boolean);
     const role = state.user?.role;
@@ -162,6 +165,7 @@ async function route() {
       if (parts[0] === 'today') return barberToday();
       if (parts[0] === 'plans') return barberPlans();
       if (parts[0] === 'upcoming') return barberUpcoming();
+      if (parts[0] === 'reviews') return barberReviews();
       if (parts[0] === 'customers') return parts[1] ? customerProfile(Number(parts[1])) : customerList();
       if (parts[0] === 'settings') return settings();
       if (parts[0] === 'balance') return barberBalance();
@@ -225,16 +229,33 @@ function authPage(mode, roleQ) {
 }
 
 /* ---------- customer: home ---------- */
+const stars = (n, cls = '') => `<span class="stars ${cls}" aria-label="${n} out of 5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= Math.round(n) ? 'on' : ''}">${ic('star', 'sm')}</i>`).join('')}</span>`;
+const ratingChip = (r) => r && r.count ? `<span class="rate">${ic('star', 'sm')}<b>${r.average.toFixed(1)}</b><span class="muted"> (${r.count})</span></span>` : '';
 async function customerHome() {
-  const [bs, bk] = await Promise.all([api('/barbers'), api('/bookings')]);
+  const F = state.cfg.features || {};
+  const [bs, bk, rb, fv, wl] = await Promise.all([api('/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
+  const favIds = new Set((fv.barbers || []).map((b) => b.id));
+  const sg = rb.suggestion; const opt = sg && sg.options && sg.options[0];
+  const rebookCard = sg && opt ? `<div class="card rebook"><div class="row between"><div><div class="small muted">${ic('repeat', 'sm')} Book again</div><h3 style="margin:2px 0 0">${esc(sg.service.name)} · ${esc(sg.barber.shop_name)}</h3></div><b>${naira(sg.service.price_kobo)}</b></div>
+      <div class="small muted" style="margin:4px 0 10px">${sg.usual ? `Your usual: ${DAYFULL[sg.usual.weekday]}s around ${t12(sg.usual.time)}` : 'Same barber, same service'}</div>
+      <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
+  const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time opened up</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Pick a barber to see their services, plans and hours.</p>
+    ${Notify.promptCard()}${rebookCard}
     ${active.length ? `<h2>Your next booking</h2>${active.slice(0, 2).map(bookingCard).join('')}` : ''}
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
+    ${waitCard}
     <h2>Choose a barber</h2>
-    ${bs.barbers.map((b) => `<a class="card row" href="#/barber/${b.id}">
+    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b) => `<a class="card row" href="#/barber/${b.id}">
         ${avatar(b)}
-        <div class="grow"><h3 class="ellip">${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div><div class="small muted ellip">${esc((b.about || '').slice(0, 90))}</div></div><span class="muted">${ic('right')}</span></a>`).join('') || '<div class="card center muted">No barbers yet.<br><span class="small">Check back soon.</span></div>'}`;
+        <div class="grow"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div><div class="small muted ellip">${esc((b.about || '').slice(0, 90))}</div></div><span class="muted">${ic('right')}</span></a>`).join('') || '<div class="card center muted">No barbers yet.<br><span class="small">Check back soon.</span></div>'}`;
+  document.querySelectorAll('[data-rb]').forEach((el) => el.onclick = () => {
+    const [d, t] = el.dataset.rb.split('|');
+    state.wiz = { barberId: sg.barber.id, step: 3, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
+    location.hash = '#/book/' + sg.barber.id;
+  });
+  document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Removed from waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   startPoll(customerHome);
 }
 function bookingCard(b) {
@@ -285,7 +306,8 @@ async function bookWizard(barberId) {
         $('#slots').className = 'card';
         $('#slots').innerHTML = r.slots.length
           ? `<div class="small muted" style="margin-bottom:8px">${esc(w.service.name)} · ${w.service.duration_min} min · ${dateLabel(w.date)}</div><div class="chips">${r.slots.map((s) => `<button class="chip ${w.time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>`
-          : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Try another date.</p>`;
+          : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Try another date.</p>${!r.closed_reason && (state.cfg.features || {}).waitlist ? `<div class="btns center"><button class="btn sm" id="joinwait">${ic('bell', 'sm')} Tell me if a time opens up</button></div>` : ''}`;
+        const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You're on the waitlist. We'll alert you the moment a time opens up.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
@@ -305,13 +327,15 @@ async function bookWizard(barberId) {
         ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is briefly paused for maintenance.') : 'This shop has paused new bookings for now.'} You can't confirm a booking at the moment.</div></div>` : ''}
         ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your slot is only secured once payment completes.</b> Until then it stays open to other customers. If someone books it first, your booking won't be confirmed and any payment is refunded.</div></div>` : ''}
         <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before; after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
+        ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="e.g. low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
         <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
+      const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
       $('#back').onclick = () => { w.step = 2; draw(); };
       $('#confirm').onclick = async () => {
         $('#confirm').disabled = true;
         try {
-          const r = await api('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date, time: w.time, payment_option: w.pay } });
+          const r = await api('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date, time: w.time, payment_option: w.pay, ...(w.note && w.note.trim() ? { note: w.note.trim() } : {}) } });
           state.wiz = null;
           if (w.pay === 'ONLINE') {
             const p = await api(`/bookings/${r.booking.id}/pay`, { method: 'POST' });
@@ -361,10 +385,10 @@ async function profile(editing) {
     ${recent.length ? recent.map(bookingCard).join('') : '<p class="muted small">No bookings yet.</p>'}
     ${bk.bookings.length > 3 ? '<div class="btns end"><a class="btn sm sec" href="#/bookings">All bookings</a></div>' : ''}
     <h2>Preferences</h2>
-    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notifications</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a></div>
+    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
-  wireAccount(() => profile(true)); wireTheme(); wireSignOut();
+  wireAccount(() => profile(true)); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
 /* ---------- barber: profile hub ---------- */
@@ -377,15 +401,16 @@ async function barberProfile() {
     <div class="list"><a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
+      ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from completed visits, reply to customers</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
       ${p.verified ? `<a class="lrow" href="#/barber/${p.id}"><span class="ico">${ic('user', 'sm')}</span><span class="grow">View my public page<span class="sub">What customers see</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
     <h2>Account</h2>
     <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
     <div id="editbox" class="hidden"><div class="card">${accountForm(u)}</div></div>
     <h2>Preferences</h2>
-    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notifications</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a></div>
+    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
-  wireAccount(() => barberProfile()); wireTheme(); wireSignOut();
+  wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
 /* ---------- barber: plans manager (own tab) ---------- */
@@ -410,20 +435,25 @@ async function barberPage(id) {
   const hoursRows = order.map((d) => { const x = sched.find((y) => y.weekday === d); return `<tr class="${d === wd ? 'today' : ''}"><td>${DAYFULL[d]}</td><td>${x && x.is_working ? `${t12(x.start)} – ${t12(x.end)}` : '<span class="muted">Closed</span>'}</td></tr>`; }).join('');
   const brk = sched.find((y) => y.is_working && y.break_start);
   const queueTxt = q.serving ? `Chair busy now · ${q.waiting} waiting today` : q.waiting ? `${q.waiting} booked today` : 'No one booked yet today';
+  const rv = data.rating && data.rating.count ? await api('/barbers/' + id + '/reviews?limit=5').catch(() => null) : null;
+  const lo = data.loyalty;
   app.innerHTML = `<a href="#/" class="back">${ic('back', 'sm')} Barbers</a>
-    <div class="row" style="align-items:flex-start">${avatar(barber, 'lg')}<div class="grow"><h1>${esc(barber.shop_name)}</h1><div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
+    <div class="row" style="align-items:flex-start">${avatar(barber, 'lg')}<div class="grow"><h1>${esc(barber.shop_name)}</h1>${data.rating ? `<div style="margin:2px 0">${ratingChip(data.rating) || '<span class="small muted">No reviews yet</span>'}</div>` : ''}<div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
     <div class="row small muted" style="margin:12px 0 0">${ic('clock', 'sm')}<span>${esc(queueTxt)}</span></div>
-    ${isCustomer ? `<div class="btns" style="margin-top:16px"><a class="btn" id="bookbtn" href="#/book/${barber.id}">Book a session</a></div>` : ''}
+    ${isCustomer ? `<div class="btns" style="margin-top:16px"><a class="btn" id="bookbtn" href="#/book/${barber.id}">Book a session</a>${data.favourite !== undefined ? `<button class="btn sec iconbtn ${data.favourite ? 'faved' : ''}" id="favbtn" aria-pressed="${!!data.favourite}" aria-label="${data.favourite ? 'Remove from favourites' : 'Add to favourites'}">${ic('heart')}</button>` : ''}</div>` : ''}
+    ${lo ? `<div class="loyal small"><div class="row between"><span>${ic('ticket', 'sm')} Loyalty: every ${lo.every_n}th visit earns ${naira(lo.reward_kobo)}</span><b>${lo.into_cycle}/${lo.every_n}</b></div><div class="bar"><i style="width:${Math.round(lo.into_cycle / lo.every_n * 100)}%"></i></div></div>` : ''}
     ${barber.about ? `<h2>About</h2><p>${esc(barber.about)}</p>` : ''}
     ${notices.length ? `<div class="warn small notice" style="margin-top:16px">${ic('warn', 'sm')}<div>${notices.map((n) => `<div><b>${esc(n.title)}</b>${n.type === 'CLOSED' && n.reason ? ' — ' + esc(n.reason) : n.type === 'HOURS_UPDATED' ? ' — ' + esc(n.text) : ''}</div>`).join('')}</div></div>` : ''}
     ${(my.credits && my.credits.length) || (my.plans && my.plans.some((p) => p.sessions_left > 0)) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Plan <b>${esc(p.plan_name)}</b>: ${p.sessions_left} session${p.sessions_left === 1 ? '' : 's'} left.`).join(' ')} ${my.credits.length ? `${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} available.` : ''} Applied when you book.</div></div>` : ''}
     <h2>Services</h2>
     <div class="list">${services.map((s) => `<div><span class="grow"><b>${esc(s.name)}</b><span class="sub">${s.duration_min} min</span></span><b>${naira(s.price_kobo)}</b></div>`).join('') || '<div class="muted">No services yet.</div>'}</div>
     <div id="plans"><h2>Plans</h2>${plans.length ? `<p class="small muted" style="margin-top:0">Buy a pack and book without paying each time. Sessions end when the plan ends.</p>${plans.map((pl) => planCard(pl, services, isCustomer)).join('')}` : '<p class="muted small">This barber has no plans at the moment.</p>'}</div>
+    ${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
     <h2>Opening hours</h2>
     <div class="card"><table class="hours">${hoursRows}</table>${brk ? `<div class="small muted" style="margin-top:8px">Break ${t12(brk.break_start)} – ${t12(brk.break_end)}</div>` : ''}</div>
     ${!state.user ? `<div class="btns" style="margin-top:16px"><a class="btn" href="#/signup?role=customer">Sign up to book</a></div>` : ''}`;
   document.querySelectorAll('[data-buy]').forEach((el) => el.onclick = () => buyPlan(Number(el.dataset.buy), el));
+  const fb = $('#favbtn'); if (fb) fb.onclick = async () => { const on = fb.getAttribute('aria-pressed') !== 'true'; fb.disabled = true; try { await api(`/barbers/${id}/favourite`, { method: 'POST', body: { on } }); fb.classList.toggle('faved', on); fb.setAttribute('aria-pressed', String(on)); toast(on ? 'Added to favourites' : 'Removed from favourites'); } catch (e) { fail(e); } fb.disabled = false; };
   startPoll(() => location.hash.startsWith('#/barber/') ? barberPage(id) : Promise.resolve());
 }
 
@@ -478,7 +508,8 @@ async function bookingDetail(id, payResult) {
     const cls = q.state === 'READY' ? 'ready' : q.state === 'NEXT' ? 'next' : q.state === 'BEING_SERVED' ? 'serving' : '';
     const big = q.state === 'IN_LINE' ? `#${q.position}` : q.state === 'NEXT' ? 'Next' : q.state === 'READY' ? 'Ready' : ic('scissors');
     qHtml = `<div class="qbox ${cls}"><div class="muted small">LIVE QUEUE · updates every 10s</div><div class="n">${big}</div><div style="font-weight:700;margin-top:6px">${esc(q.message)}</div>
-      ${q.state === 'IN_LINE' || q.state === 'NEXT' ? `<div class="small muted">${q.ahead} customer${q.ahead === 1 ? '' : 's'} ahead of you</div>` : ''}</div>`;
+      ${q.state === 'IN_LINE' || q.state === 'NEXT' ? `<div class="small muted">${q.ahead} customer${q.ahead === 1 ? '' : 's'} ahead of you</div>` : ''}
+      ${q.eta && q.state !== 'BEING_SERVED' ? `<div class="eta">${ic('clock', 'sm')} Expected around <b>${lagosTime(q.eta.est_start)}</b>${q.eta.est_min > 0 ? ` · about ${q.eta.est_min} min` : ''}${q.eta.delay_min ? `<div class="small muted">Your barber is running about ${q.eta.delay_min} min behind</div>` : ''}</div>` : ''}</div>`;
   }
   app.innerHTML = `<a href="#/bookings" class="back">${ic('back', 'sm')} My bookings</a>${payMsg}
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:18px">${esc(b.service_name)}</h1>${statusBadge(b.status, b)}</div>
@@ -487,7 +518,10 @@ async function bookingDetail(id, payResult) {
       <div class="row between" style="margin-top:6px"><span>${ic('clock', 'sm')} ${b.duration_min} min</span><b>${naira(b.price_kobo)}</b></div>
       <div class="row between" style="margin-top:8px"><span class="small muted">Payment</span>${payBadge(b)}</div>
       ${b.arrival_time ? `<div class="small muted" style="margin-top:6px">Arrived at ${lagosTime(b.arrival_time)}</div>` : ''}</div>
+    ${b.note_to_barber ? `<div class="card small"><span class="muted">Your note to the barber:</span> ${esc(b.note_to_barber)}</div>` : ''}
     ${qHtml}
+    ${b.status === 'COMPLETED' && (state.cfg.features || {}).reviews ? (b.review ? `<div class="card review"><div class="row between"><b>Your review</b>${stars(b.review.rating)}</div>${b.review.comment ? `<p style="margin:8px 0 0">${esc(b.review.comment)}</p>` : ''}${b.review.reply ? `<div class="reply small"><b>Reply from your barber</b><div>${esc(b.review.reply)}</div></div>` : ''}</div>` : `<div class="card" id="rvcard"><h3 style="margin:0 0 4px">How was your visit?</h3><div class="starpick" id="starpick" role="radiogroup" aria-label="Rating">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" role="radio" aria-checked="false" aria-label="${i} star${i > 1 ? 's' : ''}">${ic('star')}</button>`).join('')}</div><textarea id="rvtext" rows="2" maxlength="500" placeholder="Add a short comment (optional)"></textarea><div class="btns"><button class="btn sm" id="rvsend" disabled>Send review</button></div></div>`) : ''}
+    ${b.status === 'COMPLETED' && (state.cfg.features || {}).rebook ? `<div class="btns"><a class="btn sec" href="#/book/${b.barber_id}">${ic('repeat', 'sm')} Book again</a></div>` : ''}
     ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your slot is only secured once payment completes — until then it stays open to others. Pay to lock it in (if it's taken first, you won't be charged, or you'll be refunded).</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira(b.price_kobo)} now</button><button class="btn sec" id="verify">I've paid, check status</button></div>` : ''}
     ${b.can_check_in ? `<button class="btn big green block" id="here">${ic('pin')} I'm Here</button>` : ''}
     ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button appears on the day of your appointment.</div>` : ''}
@@ -498,6 +532,8 @@ async function bookingDetail(id, payResult) {
     ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} This session wasn't refunded, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
     ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">Your payment is marked <b>credit pending</b>. It is not refunded automatically — the shop will follow up.</div>` : ''}`;
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
+  let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
+  on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thanks for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
   on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); toast(r.booking.status === 'CONFIRMED' ? 'Payment confirmed' : 'Payment not received yet', r.booking.status !== 'CONFIRMED'); route(); });
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You're checked in"); route(); });
@@ -537,18 +573,32 @@ async function barberBalance() {
 }
 
 /* ---------- notifications ---------- */
+const NOTIF_TONE = (t) => /^(YOUR_TURN|YOURE_NEXT|LEAVE_NOW|WAITLIST_OPEN)$/.test(t) ? 'hot' : /^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|BOOKING_CANCELLED)/.test(t) ? 'warn' : /^(PLAN_|CREDIT|LOYALTY|PAYMENT|REVIEW)/.test(t) ? 'money' : '';
+const agoTxt = (iso) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 1 ? 'Just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : lagosStamp(iso).replace(/, \d+:\d+:\d+/, ',').replace(/:\d\d (?=[AP]M)/, ' '); };
+const notifItem = (n) => `<a class="nitem ${n.is_read ? '' : 'unread'} ${NOTIF_TONE(n.type)}" href="${Notify.urlOf(n)}" data-nid="${n.id}"><span class="nico">${ic(Notify.iconFor(n.type))}</span><span class="nbody"><span class="ntop"><b>${esc(n.title)}</b><span class="small muted">${agoTxt(n.created_at)}</span></span><span class="small ntext">${esc(n.body)}</span></span>${n.is_read ? '' : '<i class="udot" aria-label="unread"></i>'}</a>`;
 async function notifications() {
-  const r = await api('/notifications');
-  app.innerHTML = `<div class="row between"><h1>Notifications</h1>${r.unread ? '<button class="btn sm sec" id="read">Mark all read</button>' : ''}</div>
-    <p class="small muted">In-app only for now — push/SMS notifications come later.</p>
-    ${r.notifications.map((n) => `<a class="card notif ${n.is_read ? '' : 'unread'} ${n.type === 'AVAILABILITY_CHANGED' || n.type === 'BOOKING_INCOMPLETE' || n.type === 'SHOP_PAUSED' || n.type === 'BARBER_REJECTED' || n.type === 'BARBER_NEEDS_INFO' || n.type === 'BARBER_SUSPENDED' || n.type === 'LEDGER_REMINDER' || n.type === 'ACCOUNT_WARNING' || n.type === 'ACCOUNT_SUSPENDED' || n.type === 'ACCOUNT_BANNED' || n.type === 'BARBER_PAUSE' ? 'warn-n' : ''} ${n.type === 'CREDIT_ISSUED' || n.type === 'PLAN_PURCHASED' || n.type === 'PLAN_SOLD' ? 'plan-n' : ''}" style="display:block;color:inherit" href="${n.booking_id ? (state.user.role === 'barber' ? '#/b/' : '#/booking/') + n.booking_id : n.type.startsWith('LEDGER_') ? '#/balance' : n.type.startsWith('PLAN_') || n.type === 'CREDIT_ISSUED' ? (state.user.role === 'barber' ? '#/settings' : '#/wallet') : '#'}">
-      <b>${n.type === 'AVAILABILITY_CHANGED' ? ic('warn', 'sm') + ' ' : n.type === 'CREDIT_ISSUED' || n.type.startsWith('PLAN_') ? ic('ticket', 'sm') + ' ' : ''}${esc(n.title)}</b><div class="small" style="margin-top:2px">${esc(n.body)}</div><div class="small muted">${lagosStamp(n.created_at)}</div></a>`).join('') || '<p class="muted center">Nothing yet.</p>'}`;
-  const b = $('#read'); if (b) b.onclick = async () => { await api('/notifications/read', { method: 'POST' }); route(); };
-  startPoll(notifications);
+  const r = await api('/notifications?limit=30');
+  let items = r.notifications, more = r.next_before;
+  const draw = () => {
+    const unread = items.filter((n) => !n.is_read).length;
+    app.innerHTML = `<div class="row between"><h1>Notifications</h1>${unread ? '<button class="btn sm sec" id="read">Mark all read</button>' : ''}</div>
+      ${Notify.promptCard()}
+      ${items.length ? `<div class="nlist">${items.map(notifItem).join('')}</div>${more ? '<div class="btns end"><button class="btn sm sec" id="more">Older</button></div>' : ''}`
+        : `<div class="empty">${ic('bell')}<b>You're all caught up</b><span class="small muted">Booking updates, reminders and queue alerts will show up here.</span></div>`}`;
+    const rd = $('#read'); if (rd) rd.onclick = async () => { await api('/notifications/read', { method: 'POST' }); items = items.map((n) => ({ ...n, is_read: true })); state.unread = 0; Notify.paintUnread(); chrome(); draw(); };
+    const mo = $('#more'); if (mo) mo.onclick = async () => { mo.disabled = true; const x = await api('/notifications?limit=30&before=' + more); items = items.concat(x.notifications); more = x.next_before; draw(); };
+    document.querySelectorAll('[data-nid]').forEach((el) => el.addEventListener('click', () => {
+      const id = Number(el.dataset.nid); const n = items.find((x) => x.id === id);
+      if (n && !n.is_read) { n.is_read = true; state.unread = Math.max(0, state.unread - 1); api('/notifications/read', { method: 'POST', body: { id } }).catch(() => {}); Notify.paintUnread(); }
+    }));
+  };
+  draw();
+  startPoll(async () => { if (!location.hash.startsWith('#/notifications')) return; const x = await api('/notifications?limit=30'); if (x.notifications[0] && (!items[0] || x.notifications[0].id !== items[0].id)) { items = x.notifications; more = x.next_before; state.unread = x.unread; chrome(); draw(); } });
 }
 
 /* ---------- barber: Today ---------- */
-function custLine(b) { return `<b>${esc(b.customer.name)}</b> <span class="muted small">${esc(b.service_name)} · ${naira(b.price_kobo)}</span>`; }
+const relBadge = (r) => r ? `<span class="badge rel-${r.tone}" title="${r.completed} completed, ${r.no_shows} no-show${r.no_shows === 1 ? '' : 's'}">${esc(r.label)}</span>` : '';
+function custLine(b) { return `<b>${esc(b.customer.name)}</b> ${relBadge(b.customer.reliability)} <span class="muted small">${esc(b.service_name)} · ${naira(b.price_kobo)}</span>`; }
 async function act(id, action, body) {
   try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
 }
@@ -578,11 +628,20 @@ async function barberToday(keepScroll) {
       ${d.next ? `<div class="small">Next: <b>${esc(d.next.customer.name)}</b> ${d.next.status === 'ARRIVED' ? '(here)' : '(not arrived)'}</div>` : '<div class="small">Queue is empty.</div>'}</div>`;
   const nx = d.next;
   const nextCard = nx ? `<h2>NEXT</h2><div class="card">${personRow(nx, !ns)}</div>` : '';
-  app.innerHTML = `${pendingBanner()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
+  const F = state.cfg.features || {};
+  const [sm, tp] = await Promise.all([F.daily_summary ? api('/barber/summary').catch(() => null) : null, F.quick_actions ? api('/barber/queue/templates').catch(() => null) : null]);
+  const smHtml = sm && sm.enabled ? `<div class="summary"><div><b>${sm.today.completed}</b><span>done</span></div><div><b>${naira(sm.today.earned)}</b><span>earned</span></div><div><b>${sm.today.remaining}</b><span>to go</span></div><div><b>${sm.tomorrow_booked}</b><span>tomorrow</span></div></div>
+    <div class="small muted" style="margin:-2px 0 8px">${sm.yesterday.completed ? `Yesterday: ${sm.yesterday.completed} cuts · ${naira(sm.yesterday.earned)}` : 'No cuts yesterday'}${sm.rating && sm.rating.count ? ` · ${ratingChip(sm.rating)}` : ''}${sm.waitlisted ? ` · ${sm.waitlisted} on waitlist` : ''}</div>` : '';
+  const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you're running late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Shift everyone's expected time</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
+      <div class="small muted" style="margin:12px 0 6px">Or send a message to everyone still waiting</div><div class="btns">${tp.templates.map((t) => `<button class="btn sm sec" data-tpl="${t.key}">${esc(t.label)}</button>`).join('')}</div></div></details>` : '';
+  app.innerHTML = `${pendingBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
+    ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else in line.</p>'}
     ${d.done.length ? `<h2>Done today</h2>${d.done.map((b) => `<a class="card row between" style="color:inherit" href="#/b/${b.id}"><div>${custLine(b)}<div class="small muted">${esc(b.start_label)}</div></div>${statusBadge(b.status)}</a>`).join('')}` : ''}`;
   $('#refresh').onclick = () => barberToday();
+  document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you're running ${el.dataset.delay} more minutes behind?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); toast(`Running ${r.delay_min} min behind · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
+  document.querySelectorAll('[data-tpl]').forEach((el) => el.onclick = async () => { if (!confirm(`Send "${el.textContent}" to everyone waiting today?`)) return; el.disabled = true; try { const r = await api('/barber/queue/message', { method: 'POST', body: { template: el.dataset.tpl } }); toast(`Sent to ${r.sent} customer${r.sent === 1 ? '' : 's'}`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-a]').forEach((el) => el.onclick = () => {
     const a = el.dataset.a;
     if (a === 'no-show' && !confirm('Mark as no-show?')) return;
@@ -595,6 +654,7 @@ function personRow(b, canStartNow) {
   const arrived = b.status === 'ARRIVED';
   return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosTime(b.arrival_time)}` : ''}</div></a>
       <div style="text-align:right"><span class="badge ${arrived ? 'b-green' : 'b-gray'}">${arrived ? 'ARRIVED' : 'NOT ARRIVED'}</span><div style="margin-top:4px">${payBadge(b)}</div></div></div>
+    ${b.note_to_barber ? `<div class="small cnote">${ic('pencil', 'sm')} <b>Note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="small cnote priv">${ic('shield', 'sm')} ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted">Usual: ${esc(b.customer.usual.service_name)}</div>` : ''}
     ${b.barber_hold && !arrived ? '<div class="small" style="color:var(--accent-ink);margin-top:4px">Waiting for this customer</div>' : ''}${b.skipped ? '<div class="small muted">Skipped, moved back in line</div>' : ''}
     <div class="btns" style="margin-top:12px">
       ${arrived ? `<button class="btn green" data-a="start" data-id="${b.id}">Start</button>` : `<button class="btn blue" data-a="mark-present" data-id="${b.id}">Mark Present</button>`}
@@ -621,6 +681,7 @@ async function barberBooking(id) {
       ${b.payment_option === 'PLAN' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a customer <b>plan session</b> — nothing to collect.</div>` : b.payment_option === 'CREDIT' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a <b>session credit</b> — nothing to collect.</div>` : ''}
       ${b.payment_status === 'CREDITED' ? `<div class="small muted" style="margin-top:6px">Missed paid session: customer received one credit with you (no refund).</div>` : ''}
       <hr><div class="small">Scheduled: <b>${lagosTime(b.scheduled_time)}</b> · Arrived: <b>${lagosTime(b.arrival_time)}</b> · Started: <b>${lagosTime(b.service_start)}</b> · Completed: <b>${lagosTime(b.service_complete)}</b></div>
+      ${relBadge(b.customer.reliability)}${b.note_to_barber ? `<div class="cnote small" style="margin-top:8px">${ic('pencil', 'sm')} <b>Customer note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="cnote priv small" style="margin-top:8px">${ic('shield', 'sm')} <b>Your private note:</b> ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted" style="margin-top:6px">Usual: ${esc(b.customer.usual.service_name)} (${b.customer.usual.times}×)</div>` : ''}
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small" style="color:#92400e">${esc(t.details.note)}</div>` : ''}</div>`).join('')}</div></div>`;
@@ -642,7 +703,19 @@ async function customerProfile(id) {
   app.innerHTML = `<a href="#/customers" class="back">${ic('back', 'sm')} Customers</a><div class="card"><h1 style="margin:0">${esc(c.name)}</h1><div class="muted">${esc(c.phone || '')} ${esc(c.email || '')}</div><hr>
     <div class="row between center"><div class="grow"><div style="font-size:26px;font-weight:800">${c.total_visits}</div><div class="small muted">Visits</div></div><div class="grow"><div style="font-size:16px;font-weight:800;padding:5px 0">${c.last_visit ? dateLabel(c.last_visit) : '—'}</div><div class="small muted">Last visit</div></div><div class="grow"><div style="font-size:16px;font-weight:800;padding:5px 0">${naira(c.total_spent_kobo)}</div><div class="small muted">Spent</div></div></div>
     ${c.no_shows ? `<div class="small" style="color:var(--red);margin-top:8px">${c.no_shows} no-show${c.no_shows > 1 ? 's' : ''}</div>` : ''}</div>
+    ${r.insights && r.insights.reliability ? `<div style="margin-top:8px">${relBadge(r.insights.reliability)} <span class="small muted">${r.insights.reliability.completed} completed · ${r.insights.reliability.no_shows} no-show${r.insights.reliability.no_shows === 1 ? '' : 's'}</span></div>` : ''}
+    ${r.insights && r.insights.note !== undefined ? `<h2>Private notes</h2><div class="card"><div class="small muted" style="margin-bottom:6px">${ic('shield', 'sm')} Only you can see this. ${r.insights.usual ? `Usual: <b>${esc(r.insights.usual.service_name)}</b> (${r.insights.usual.times}×).` : ''}</div><textarea id="cnote" rows="3" maxlength="1000" placeholder="Style, preferences, allergies…">${esc(r.insights.note)}</textarea><div class="btns"><button class="btn sm" id="cnotesave">Save note</button></div></div>` : ''}
     <h2>Booking history</h2>${r.bookings.map((b) => `<a class="card row between" style="color:inherit" href="#/b/${b.id}"><div><b>${esc(b.service_name)}</b><div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${naira(b.price_kobo)}</div></div>${statusBadge(b.status)}</a>`).join('')}`;
+  const sv = $('#cnotesave'); if (sv) sv.onclick = async () => { sv.disabled = true; try { await api(`/barber/customers/${id}/note`, { method: 'PUT', body: { note: $('#cnote').value } }); toast('Note saved'); } catch (e) { fail(e); } sv.disabled = false; };
+}
+
+/* ---------- barber: reviews ---------- */
+async function barberReviews() {
+  const r = await api('/barber/reviews');
+  app.innerHTML = `<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Reviews</h1>${r.summary.count ? `<div class="card row between"><div><div style="font-size:30px;font-weight:800">${r.summary.average.toFixed(1)}</div>${stars(r.summary.average)}</div><div class="muted small">${r.summary.count} review${r.summary.count === 1 ? '' : 's'}</div></div>` : ''}
+    ${r.reviews.length ? r.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}
+      ${x.reply ? `<div class="reply small"><b>Your reply</b><div>${esc(x.reply)}</div></div>` : `<div class="replyform"><input data-rt="${x.id}" maxlength="500" placeholder="Reply publicly…"><button class="btn sm" data-reply="${x.id}">Reply</button></div>`}</div>`).join('') : `<div class="empty">${ic('star')}<b>No reviews yet</b><span class="small muted">Customers can rate you after a completed visit.</span></div>`}`;
+  document.querySelectorAll('[data-reply]').forEach((el) => el.onclick = async () => { const id = el.dataset.reply; el.disabled = true; try { await api(`/barber/reviews/${id}/reply`, { method: 'POST', body: { reply: $(`[data-rt="${id}"]`).value } }); toast('Reply posted'); barberReviews(); } catch (e) { fail(e); el.disabled = false; } });
 }
 
 /* ---------- barber: settings ---------- */

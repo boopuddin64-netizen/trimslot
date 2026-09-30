@@ -54,6 +54,7 @@ Vercel → Project → Settings → **Environment Variables** (apply to *Product
 | `CRON_SECRET` | `openssl rand -hex 24` | ≥16 chars; secures `/api/cron/sweep`. Vercel Cron sends it automatically as `Authorization: Bearer …` |
 | `NODEJS_HELPERS` | `0` | keeps the raw request body for Paystack HMAC (§8). Also set in `vercel.json` |
 | `CORS_ORIGINS` | *(empty)* | Default = same-origin only, which is what you want when the frontend and API share the `*.vercel.app` domain. Only set exact origins (`https://app.example.com`) if a *different* site calls the API. No wildcards |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys`; subject = your https URL or `mailto:` | enables Web Push. Private key = Sensitive. Optional: without them the app still works with in-app notifications |
 | `PG_POOL_MAX` | `3` (default) | keep 1–3 per instance |
 | `DATABASE_SSL_CA` | *(optional)* PEM | to verify Supabase's certificate |
 | `PLATFORM_FEE_KOBO`, `PLATFORM_FEE_PERCENT`, `PAYMENT_HOLD_MINUTES`, `LOG_LEVEL`, `BCRYPT_ROUNDS` | optional | see `.env.example` |
@@ -62,6 +63,8 @@ Vercel → Project → Settings → **Environment Variables** (apply to *Product
 `TRUST_PROXY` needs no setting on Vercel. Generate secrets locally and paste them into Vercel; don't reuse them elsewhere. Env var changes only take effect on the **next deployment** (Redeploy).
 
 CLI equivalent: `vercel env add DATABASE_URL production` (repeat per variable).
+
+> Migration `008_push_and_smart.sql` adds push subscriptions, the smart-feature tables, feature toggles and the admin indexes (trigram search needs the `pg_trgm` extension, which Supabase allows; if unavailable it is skipped and search still works, just slower). Apply it before deploying.
 
 ## 4. Deploy to Vercel
 **Option A — GitHub import (recommended):** push this repo to *your* GitHub → vercel.com → **Add New → Project → Import** the repo. Framework Preset: **Other**; leave Build/Output/Install commands at defaults (`vercel.json` supplies them; there is no build step — Vercel compiles `api/index.ts` itself). Add the env vars from §3 *before* the first deploy (or redeploy afterwards). Every push to the main branch redeploys.

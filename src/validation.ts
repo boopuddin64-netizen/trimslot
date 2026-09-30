@@ -43,6 +43,7 @@ export const createBookingSchema = z.object({
   payment_option: z.enum(['ONLINE', 'ON_ARRIVAL', 'PLAN', 'CREDIT']),
   plan_purchase_id: z.coerce.number().int().positive().optional(),
   credit_id: z.coerce.number().int().positive().optional(),
+  note: z.string().trim().max(200).optional(),
 }); // NOTE: zod strips unknown keys, so a client-sent "price" is ignored.
 
 export const meSchema = z.object({

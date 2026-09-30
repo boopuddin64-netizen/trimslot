@@ -22,8 +22,13 @@ import { TRANSITIONS } from './stateMachine';
 import { makeLimits, corsAndOriginGuard, assertLoginNotLocked, recordFailedLogin, LOGIN_LOCK_MESSAGE, cronAuth, adminAuth } from './security';
 import { registerAdmin } from './admin';
 import { registerAdminPower } from './admin2';
+import { registerAdmin3 } from './admin3';
 import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
+import { registerSmart, backgroundAfterResponse } from './smartRoutes';
+import { vapidPublicKey, pushAvailable, flushPush } from './push';
+import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
+import { getSettingsCached } from './plans';
 import { runSweep } from './sweep';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 
@@ -42,8 +47,8 @@ const publicUser = async (db: Db, u: any) => {
 };
 
 /** Per-request memo so lists of bookings don't repeat the same barber/queue lookups (N+1). */
-type Memo = { barbers: Map<number, Promise<any>>; queues: Map<string, Promise<BookingRow[]>> };
-const newMemo = (): Memo => ({ barbers: new Map(), queues: new Map() });
+type Memo = { barbers: Map<number, Promise<any>>; queues: Map<string, Promise<BookingRow[]>>; delays: Map<number, Promise<number>> };
+const newMemo = (): Memo => ({ barbers: new Map(), queues: new Map(), delays: new Map() });
 async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queue?: BookingRow[]; memo?: Memo } = {}) {
   const memo = opts.memo;
   const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
@@ -74,10 +79,24 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     let q = opts.queue;
     if (!q && memo) { const k = b.barber_id + '|' + b.date; const p = memo.queues.get(k) ?? orderedQueue(db, b.barber_id, b.date); memo.queues.set(k, p); q = await p; }
     out.queue = await queueInfo(db, b, q);
+    const st = await getSettingsCached(db);
+    if (st.feature_reminders && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) {
+      const qq = q ?? await orderedQueue(db, b.barber_id, b.date);
+      const dm = memo ? (memo.delays.get(b.barber_id) ?? memo.delays.set(b.barber_id, barberDelay(db, b.barber_id, b.date)).get(b.barber_id)!) : barberDelay(db, b.barber_id, b.date);
+      out.queue.eta = b.status === 'IN_SERVICE' ? null : etaFrom(qq, b, await dm);
+    }
+  }
+  if (b.note_to_barber) out.note_to_barber = b.note_to_barber;
+  if (!opts.forBarber && b.status === 'COMPLETED') {
+    const st = await getSettingsCached(db);
+    if (st.feature_reviews) { const rv = await db.maybeOne<any>('SELECT rating, comment, reply FROM reviews WHERE booking_id=$1', [b.id]); out.review = rv ?? null; out.can_review = !rv; }
   }
   if (opts.forBarber) {
     const c = await db.one('SELECT id, name, phone, email FROM users WHERE id=$1', [b.customer_id]);
     out.customer = { id: c.id, name: c.name, phone: c.phone, email: c.email };
+    const st = await getSettingsCached(db);
+    if (st.feature_reliability && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) out.customer.reliability = await reliabilityFor(db, b.customer_id);
+    if (st.feature_barber_notes && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) { const ins = await getCustomerInsights(db, b.barber_id, b.customer_id); out.customer.note = ins.note || null; out.customer.usual = ins.usual || null; }
   }
   return out;
 }
@@ -127,6 +146,7 @@ export function createApp(db: Db) {
     const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.isBuffer((req as any).rawBody) ? (req as any).rawBody : Buffer.from('');
     const out = await handleWebhook(db, raw, req.header('x-paystack-signature'));
     res.status(out.status).json(out.body);
+    flushPush(db, 50).catch(() => {});
   }));
 
   // Cron sweeper (Vercel Cron / cron-job.org): Authorization: Bearer <CRON_SECRET>. GET or POST. Idempotent.
@@ -177,6 +197,7 @@ export function createApp(db: Db) {
   });
   app.use('/api', limits.api);
   app.use('/api', authenticate);
+  app.use('/api', backgroundAfterResponse(db));
   const api = express.Router();
 
   /* ---------- admin: platform rules (Bearer ADMIN_KEY, or CRON_SECRET as fallback; never exposed to barbers/customers) ---------- */
@@ -193,12 +214,13 @@ export function createApp(db: Db) {
   api.put('/admin/settings', adminGuard, wrap(async (req, res) => res.json({ settings: await db.tx((t) => updateSettings(t, req.body)) })));
   registerAdmin(api, db, adminGuard, wrap);
   registerAdminPower(api, db, adminGuard, wrap);
+  registerAdmin3(api, db, adminGuard, wrap);
 
   /* ---------- meta ---------- */
   api.get('/config', wrap(async (_req, res) => res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: CANCEL_CUTOFF_MIN, plans: true, today: lagosDate(), now: clock.now().toISOString(),
-    ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival } }; })()),
+    ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));
 
   /* ---------- auth ---------- */
@@ -284,7 +306,13 @@ export function createApp(db: Db) {
     const ent = req.user?.role === 'customer' ? await entitlementsFor(db, req.user.id, b.id) : { plans: [], credits: [] };
     const qn = await db.one<{ waiting: number; serving: number }>(`SELECT COUNT(*) FILTER (WHERE status IN ('CONFIRMED','ARRIVED'))::int AS waiting, COUNT(*) FILTER (WHERE status='IN_SERVICE')::int AS serving FROM bookings WHERE barber_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE')`, [b.id, lagosDate()]);
     const st = await getSettings(db); const lb = await ledgerBlocked(db, b.id, st);
-    res.json({ barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
+    const extras: any = { rating: st.feature_reviews ? await ratingSummary(db, b.id) : null };
+    if (req.user?.role === 'customer') {
+      if (st.feature_favourites) extras.favourite = !!(await db.maybeOne('SELECT 1 FROM favourites WHERE customer_id=$1 AND barber_id=$2', [req.user.id, b.id]));
+      extras.loyalty = await loyaltyProgress(db, st, req.user.id, b.id);
+      if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
+    }
+    res.json({ ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
       booking: { paused: !!b.booking_paused, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } });
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
@@ -392,17 +420,6 @@ export function createApp(db: Db) {
     const r = await db.one<any>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [me.id, target, d.booking_id ?? null, d.category, d.message, isoNow()]);
     await audit(db, d.booking_id ?? null, { id: me.id, role: me.role }, 'REPORT_FILED', { report_id: r.id, category: d.category, target_user_id: target });
     res.status(201).json({ id: r.id, message: 'Thanks - your report reached the TrimSlot team.' });
-  }));
-
-  /* ---------- notifications ---------- */
-  api.get('/notifications', requireAuth, wrap(async (req, res) => {
-    const rows = await db.many('SELECT * FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 100', [req.user!.id]);
-    const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [req.user!.id])).c;
-    res.json({ unread, notifications: rows });
-  }));
-  api.post('/notifications/read', requireAuth, wrap(async (req, res) => {
-    await db.query('UPDATE notifications SET is_read=TRUE WHERE user_id=$1', [req.user!.id]);
-    res.json({ ok: true });
   }));
 
   /* ---------- barber area ---------- */
@@ -622,9 +639,11 @@ export function createApp(db: Db) {
     const completed = hist.filter((h) => h.status === 'COMPLETED');
     res.json({
       customer: { ...u, total_visits: completed.length, last_visit: completed[0]?.date ?? null, no_shows: hist.filter((h) => h.status === 'NO_SHOW').length, total_spent_kobo: completed.reduce((a, b) => a + b.price_kobo, 0) },
+      insights: await getCustomerInsights(db, bid(req), cid),
       bookings: await Promise.all(hist.map((b) => decorate(db, b, { forBarber: true, memo: newMemo() }))),
     });
   }));
+  registerSmart(api, barberR, db, wrap, (b, o) => decorate(db, b, o), limits);
   api.use('/barber', barberR);
 
   app.use('/api', api);

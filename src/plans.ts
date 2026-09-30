@@ -12,11 +12,22 @@ export interface Settings {
   credit_on_missed_session: boolean; credit_on_early_cancel_prepaid: boolean; plan_refund_policy: 'NONE' | 'MANUAL'; updated_at: string;
   maintenance_mode: boolean; maintenance_message: string; feature_plans: boolean; feature_credits: boolean; feature_pay_on_arrival: boolean;
   commission_enabled: boolean; commission_factor: number; min_barber_payout_percent: number; ledger_max_debt_kobo: number; ledger_max_age_days: number;
+  feature_push: boolean; feature_favourites: boolean; feature_rebook: boolean; feature_reminders: boolean; feature_waitlist: boolean; feature_reviews: boolean; feature_barber_notes: boolean; feature_quick_actions: boolean; feature_reliability: boolean; feature_daily_summary: boolean; feature_booking_note: boolean; feature_loyalty: boolean;
+  loyalty_every_n: number; loyalty_credit_kobo: number;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
   return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor) };
 }
+/** Feature-flag reads on hot paths (every decorated booking): a 3-second per-database cache; any settings update invalidates all of it. */
+let flagGen = 0;
+const flagCache = new WeakMap<object, { at: number; gen: number; v: Settings }>();
+export async function getSettingsCached(c: Conn & { pool?: unknown }): Promise<Settings> {
+  const key = (c as any).pool ?? c; const hit = flagCache.get(key);
+  if (hit && hit.gen === flagGen && Date.now() - hit.at < 3000) return hit.v;
+  const v = await getSettings(c); flagCache.set(key, { at: Date.now(), gen: flagGen, v }); return v;
+}
+export const clearSettingsCache = (_c?: Conn) => { flagGen++; };
 /** Admin-facing shape: prices in naira. */
 export const settingsView = (s: Settings) => ({
   min_plan_price_naira: s.min_plan_price_kobo / 100, max_plan_price_naira: s.max_plan_price_kobo / 100,
@@ -27,10 +38,13 @@ export const settingsView = (s: Settings) => ({
   maintenance_mode: s.maintenance_mode, maintenance_message: s.maintenance_message, feature_plans: s.feature_plans, feature_credits: s.feature_credits, feature_pay_on_arrival: s.feature_pay_on_arrival,
   commission_enabled: s.commission_enabled, commission_factor: s.commission_factor, min_barber_payout_percent: s.min_barber_payout_percent,
   ledger_max_debt_naira: s.ledger_max_debt_kobo / 100, ledger_max_age_days: s.ledger_max_age_days,
+  feature_push: s.feature_push, feature_favourites: s.feature_favourites, feature_rebook: s.feature_rebook, feature_reminders: s.feature_reminders, feature_waitlist: s.feature_waitlist, feature_reviews: s.feature_reviews, feature_barber_notes: s.feature_barber_notes, feature_quick_actions: s.feature_quick_actions, feature_reliability: s.feature_reliability, feature_daily_summary: s.feature_daily_summary, feature_booking_note: s.feature_booking_note, feature_loyalty: s.feature_loyalty,
+  loyalty_every_n: s.loyalty_every_n, loyalty_credit_naira: s.loyalty_credit_kobo / 100,
 });
 export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions', 'platform_fee_percent', 'platform_fee_naira',
   'credit_expiry_days', 'credit_on_missed_session', 'credit_on_early_cancel_prepaid', 'plan_refund_policy',
-  'maintenance_mode', 'maintenance_message', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days'] as const;
+  'maintenance_mode', 'maintenance_message', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days',
+  'feature_push', 'feature_favourites', 'feature_rebook', 'feature_reminders', 'feature_waitlist', 'feature_reviews', 'feature_barber_notes', 'feature_quick_actions', 'feature_reliability', 'feature_daily_summary', 'feature_booking_note', 'feature_loyalty', 'loyalty_every_n', 'loyalty_credit_naira'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
@@ -46,8 +60,12 @@ export const settingsPatchSchema = z.object({
   feature_plans: z.boolean(), feature_credits: z.boolean(), feature_pay_on_arrival: z.boolean(), commission_enabled: z.boolean(),
   commission_factor: z.coerce.number().min(0).max(1), min_barber_payout_percent: z.coerce.number().int().min(0).max(100),
   ledger_max_debt_naira: z.coerce.number().min(0).max(100_000_000), ledger_max_age_days: z.coerce.number().int().min(0).max(3650),
+  feature_push: z.boolean(), feature_favourites: z.boolean(), feature_rebook: z.boolean(), feature_reminders: z.boolean(), feature_waitlist: z.boolean(), feature_reviews: z.boolean(), feature_barber_notes: z.boolean(), feature_quick_actions: z.boolean(), feature_reliability: z.boolean(), feature_daily_summary: z.boolean(), feature_booking_note: z.boolean(), feature_loyalty: z.boolean(),
+  loyalty_every_n: z.coerce.number().int().min(2).max(100), loyalty_credit_naira: z.coerce.number().min(0).max(1_000_000),
 }).partial().strict();
 
+const FEATS = ['push', 'favourites', 'rebook', 'reminders', 'waitlist', 'reviews', 'barber_notes', 'quick_actions', 'reliability', 'daily_summary', 'booking_note', 'loyalty'] as const;
+export const FEATURE_NAMES = FEATS;
 export async function updateSettings(c: Conn, patch: unknown) {
   const parsed = settingsPatchSchema.safeParse(patch);
   if (!parsed.success) throw badRequest(parsed.error.issues.map((i) => `${i.path.join('.') || 'settings'}: ${i.message}`).join('; '));
@@ -61,6 +79,9 @@ export async function updateSettings(c: Conn, patch: unknown) {
       Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.credit_on_early_cancel_prepaid, next.plan_refund_policy, isoNow(),
       next.maintenance_mode, next.maintenance_message, next.feature_plans, next.feature_credits, next.feature_pay_on_arrival, next.commission_enabled, next.commission_factor,
       next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days]);
+  await c.query(`UPDATE platform_settings SET ${FEATS.map((f, i) => `feature_${f}=$${i + 1}`).join(', ')}, loyalty_every_n=$${FEATS.length + 1}, loyalty_credit_kobo=$${FEATS.length + 2} WHERE id=1`,
+    [...FEATS.map((f) => next['feature_' + f]), next.loyalty_every_n, Math.round(next.loyalty_credit_naira * 100)]);
+  clearSettingsCache(c);
   await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p });
   return settingsView(await getSettings(c));
 }

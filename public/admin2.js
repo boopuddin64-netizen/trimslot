@@ -252,6 +252,20 @@ async function analytics() {
 }
 
 /* ---------- controls: maintenance, feature switches, commission ---------- */
+const SMART = [
+  ['feature_push', 'Push notifications', 'Real phone/desktop alerts for bookings, reminders, waitlist and messages. Off = in-app bell only.'],
+  ['feature_reminders', 'Reminders and "leave now" nudges', '2 hours and 30 minutes before, plus a nudge based on the live queue.'],
+  ['feature_favourites', 'Favourites', 'Customers can save barbers; they appear first.'],
+  ['feature_rebook', 'Book again', 'One-tap rebook suggestions on the customer home.'],
+  ['feature_waitlist', 'Waitlist', 'Customers can ask to be told when a slot opens on a full day.'],
+  ['feature_reviews', 'Ratings and reviews', 'Customers rate completed visits; barbers can reply.'],
+  ['feature_booking_note', 'Note to barber', 'Customers can add a short note when booking.'],
+  ['feature_barber_notes', 'Barber private customer notes', 'Barbers keep private notes and see a customer\'s usual service.'],
+  ['feature_reliability', 'Customer reliability badge', 'Barbers see New / Reliable / Often misses based on past bookings.'],
+  ['feature_quick_actions', 'Barber quick actions', 'Running-late delay and one-tap queue messages.'],
+  ['feature_daily_summary', 'Barber daily summary', 'Today tiles: bookings, earnings, no-shows.'],
+  ['feature_loyalty', 'Loyalty credits (off by default)', 'Every Nth completed visit earns the customer a same-barber credit (values below).'],
+];
 async function controls() {
   const [{ settings: s }, earn] = await Promise.all([api('/settings'), api('/earnings?from=' + today0() + '&to=' + today0())]); drawNav('controls');
   const sw = (k, l, sub) => `<label class="chk tog"><input type="checkbox" name="${k}" ${s[k] ? 'checked' : ''}> <span><b>${esc(l)}</b><small class="muted" style="display:block">${esc(sub)}</small></span></label>`;
@@ -260,6 +274,10 @@ async function controls() {
       ${sw('maintenance_mode', 'Maintenance mode', 'Pauses ALL new bookings and plan purchases. Existing bookings and the barbers\' tools keep working. A banner is shown to customers.')}
       <label>Maintenance message (shown to customers)</label><input name="maintenance_message" maxlength="200" value="${esc(s.maintenance_message)}">
       <h2>Features</h2>${sw('feature_plans', 'Plans', 'Customers can buy and use session plans.')}${sw('feature_credits', 'Credits', 'Customers can spend session credits.')}${sw('feature_pay_on_arrival', 'Pay on arrival', 'Customers can book and pay cash or transfer at the shop.')}
+      <h2>Notifications and smart features</h2><p class="small muted" style="margin:0 0 4px">Each one can be switched off instantly; nothing else changes. Push also needs the VAPID keys on the server (set).</p>
+      ${SMART.map(([k, l, sub]) => sw(k, l, sub)).join('')}
+      <div class="formgrid"><div><label>Loyalty: every Nth completed visit earns a credit</label><input type="number" name="loyalty_every_n" step="1" min="2" max="100" value="${esc(s.loyalty_every_n)}"></div>
+      <div><label>Loyalty credit value (₦)</label><input type="number" name="loyalty_credit_naira" step="any" min="0" value="${esc(s.loyalty_credit_naira)}"></div></div>
       <h2>Off-app commission</h2>${sw('commission_enabled', 'Charge commission on off-app bookings', 'Accrues when a pay-on-arrival booking is completed; netted against the barber\'s next online payments.')}
       <div class="formgrid"><div><label>Commission factor (0–1)</label><input type="number" name="commission_factor" step="0.05" min="0" max="1" value="${esc(s.commission_factor)}"><small class="muted">0.5 = half of the in-app platform fee. A ₦3,000 booking: in-app fee ${naira(earn.rules.example_fee_kobo)}.</small></div>
       <div><label>Barber keeps at least (% of a netted payment)</label><input type="number" name="min_barber_payout_percent" step="1" min="0" max="100" value="${esc(s.min_barber_payout_percent)}"></div>
@@ -269,9 +287,9 @@ async function controls() {
       <div class="btns cta"><button class="btn" type="submit">Save controls</button></div></form></div>`;
   $('#cf').onsubmit = async (ev) => {
     ev.preventDefault(); const f = ev.target.elements; const body = {};
-    for (const k of ['maintenance_mode', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled']) body[k] = f[k].checked;
+    for (const k of ['maintenance_mode', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', ...SMART.map((x) => x[0])]) body[k] = f[k].checked;
     body.maintenance_message = f.maintenance_message.value.trim();
-    for (const k of ['commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days']) body[k] = Number(f[k].value);
+    for (const k of ['loyalty_every_n', 'loyalty_credit_naira', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days']) body[k] = Number(f[k].value);
     if (body.maintenance_mode && !s.maintenance_mode && !confirm('Turn maintenance mode ON? Customers will not be able to book until you turn it off.')) return;
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
     try { await api('/settings', { method: 'PUT', body }); toast('Controls saved'); await controls(); } catch (e) { toast(e.message, true); b.disabled = false; }

@@ -6,6 +6,7 @@ import { Actor, audit, fmtWhen, naira, notify } from './helpers';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { claimEntitlement, getSettings, issueCredit, restoreEntitlement } from './plans';
 import { accrueCommission, assertBookable } from './ledger';
+import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
@@ -22,6 +23,7 @@ export interface BookingRow {
   service_start: string | null; service_complete: string | null;
   cancelled_at: string | null; cancelled_by: string | null;
   barber_hold: boolean; skipped_at: string | null; last_queue_pos: number | null; created_at: string;
+  note_to_barber: string | null; rem2h_at: string | null; rem30_at: string | null; leave_at: string | null;
 }
 
 /** An "incomplete" booking = a Pay-now booking whose payment never completed (hold expired, or customer walked away). Customer-only. */
@@ -80,7 +82,7 @@ export async function expireHolds(db: Db, scope: HoldScope = {}): Promise<number
 }
 
 /* ---------------- create ---------------- */
-export interface CreateInput { barber_id: number; service_id: number; date: string; time: string; payment_option: 'ONLINE' | 'ON_ARRIVAL' | 'PLAN' | 'CREDIT'; plan_purchase_id?: number; credit_id?: number }
+export interface CreateInput { barber_id: number; service_id: number; date: string; time: string; payment_option: 'ONLINE' | 'ON_ARRIVAL' | 'PLAN' | 'CREDIT'; plan_purchase_id?: number; credit_id?: number; note?: string }
 
 export async function createBooking(db: Db, customerId: number, input: CreateInput): Promise<BookingRow> {
   validateBookableDate(input.date);
@@ -112,14 +114,15 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
       ? await claimEntitlement(t, { customerId, barberId: input.barber_id, serviceId: svc.id, priceKobo: svc.price_kobo, startAt: start, option: input.payment_option, id: input.payment_option === 'PLAN' ? input.plan_purchase_id : input.credit_id })
       : null;
     const now = isoNow();
+    const noteVal = input.note && (await getSettings(t)).feature_booking_note ? input.note.slice(0, 200) : null;
     let b: BookingRow;
     try {
       b = await t.one<BookingRow>(`INSERT INTO bookings (customer_id, barber_id, service_id, family_member_id, entitlement_type, scheduled_at, ends_at,
-            service_name, price_kobo, duration_min, status, payment_option, payment_status, paid_via, paid_at, hold_expires_at, plan_purchase_id, credit_id, created_at)
-          VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+            service_name, price_kobo, duration_min, status, payment_option, payment_status, paid_via, paid_at, hold_expires_at, plan_purchase_id, credit_id, created_at, note_to_barber)
+          VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
         [customerId, input.barber_id, svc.id, ent ? (ent.option === 'PLAN' ? 'SUBSCRIPTION' : 'CREDIT') : 'NONE', start.toISOString(), new Date(start.getTime() + svc.duration_min * 60000).toISOString(),
           svc.name, svc.price_kobo, svc.duration_min, online ? 'PENDING_PAYMENT' : 'CONFIRMED', input.payment_option, ent ? 'PAID' : online ? 'PENDING' : 'PAYMENT_DUE',
-          ent ? ent.option : null, ent ? now : null, holdUntil, ent?.plan_purchase_id ?? null, ent?.credit_id ?? null, now]);
+          ent ? ent.option : null, ent ? now : null, holdUntil, ent?.plan_purchase_id ?? null, ent?.credit_id ?? null, now, noteVal]);
     } catch (e: any) {
       // Backstop: the unique index / exclusion constraint fired (should be unreachable behind the barber lock, but the DB is the final judge).
       if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'That time was just taken. Please pick another slot.');
@@ -127,6 +130,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     }
     if (ent?.credit_id) await t.query('UPDATE session_credits SET used_booking_id=$1 WHERE id=$2', [b.id, ent.credit_id]);
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'BOOKED', { payment_option: input.payment_option, price_kobo: svc.price_kobo, status: b.status });
+    await closeWaitlistFor(t, customerId, input.barber_id, input.date);
     if (!online) await announceConfirmed(t, b);
     return b;
   });
@@ -352,6 +356,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         if (b.payment_status === 'PAYMENT_DUE') throw new AppError(409, 'PAYMENT_REQUIRED', 'Record the cash/transfer payment before completing this pay-on-arrival booking.');
         await setStatus(t, b, 'COMPLETED', { service_complete: now });
         await audit(t, b.id, actor, 'COMPLETED', { service_start: b.service_start, service_complete: now });
+        await afterComplete(t, b);
         await accrueCommission(t, b);      // off-app (pay on arrival) booking: commission debt goes on the barber's ledger
         break;
       }

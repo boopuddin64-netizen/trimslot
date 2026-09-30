@@ -40,28 +40,39 @@ function table(cols, rows, empty) {
 const cust = (r) => `<b>${esc(r.customer_name)}</b>`;
 
 /* ---------- sections ---------- */
-const SECTIONS = [
-  ['overview', 'Overview', '<path d="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/>'],
-  ['barbers', 'Barbers', '<path d="M4 9h16l-1-5H5ZM5 9v11h14V9M9 20v-6h6v6"/>'],
-  ['customers', 'Customers', '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .6 3.2 2.3 3.5 5.2"/>'],
-  ['bookings', 'Bookings', '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>'],
-  ['payments', 'Payments', '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/>'],
-  ['decisions', 'Refund decisions', '<path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/>'],
-  ['plans', 'Plans', '<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1ZM14 5v14"/>'],
-  ['credits', 'Credits', '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h4.5a1.5 1.5 0 0 1 0 3H9.5a1.5 1.5 0 0 0 0 3H15"/>'],
-  ['earnings', 'Earnings', '<path d="M3 17l6-6 4 4 8-9M15 6h6v6"/>'],
-  ['ledger', 'Off-app ledger', '<path d="M5 3h11l3 3v15H5zM9 9h6M9 13h6M9 17h3"/>'],
-  ['analytics', 'Analytics', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
-  ['reports', 'Reports', '<path d="M4 21V4M4 4h13l-2 4 2 4H4"/>'],
-  ['broadcast', 'Broadcast', '<path d="M3 11v3a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1ZM17 9a4 4 0 0 1 0 6"/>'],
-  ['controls', 'Controls', '<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>'],
-  ['rules', 'Platform rules', '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'],
-  ['audit', 'Audit log', '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'],
+const IC = {
+  home: '<path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/>',
+  barbers: '<path d="M4 9h16l-1-5H5ZM5 9v11h14V9M9 20v-6h6v6"/>',
+  customers: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .6 3.2 2.3 3.5 5.2"/>',
+  bookings: '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  payments: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/>',
+  decisions: '<path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/>',
+  plans: '<path d="M3 9a2 2 0 0 0 0 6v3a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-3a2 2 0 0 1 0-6V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1ZM14 5v14"/>',
+  credits: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 10h4.5a1.5 1.5 0 0 1 0 3H9.5a1.5 1.5 0 0 0 0 3H15"/>',
+  earnings: '<path d="M3 17l6-6 4 4 8-9M15 6h6v6"/>',
+  ledger: '<path d="M5 3h11l3 3v15H5zM9 9h6M9 13h6M9 17h3"/>',
+  analytics: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  reviews: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  waitlist: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  reports: '<path d="M4 21V4M4 4h13l-2 4 2 4H4"/>',
+  broadcast: '<path d="M3 11v3a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1ZM17 9a4 4 0 0 1 0 6"/>',
+  controls: '<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>',
+  rules: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  audit: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+};
+const GROUPS = [
+  [null, [['home', 'Home']]],
+  ['People', [['customers', 'Customers'], ['barbers', 'Barbers']]],
+  ['Bookings', [['bookings', 'Bookings'], ['decisions', 'Refund decisions']]],
+  ['Money', [['payments', 'Payments'], ['credits', 'Credits'], ['plans', 'Plans'], ['earnings', 'Earnings'], ['ledger', 'Off-app ledger']]],
+  ['Growth', [['analytics', 'Analytics'], ['reviews', 'Reviews'], ['waitlist', 'Waitlist'], ['broadcast', 'Broadcast'], ['reports', 'Reports']]],
+  ['Settings', [['controls', 'Controls'], ['rules', 'Platform rules'], ['audit', 'Audit log']]],
 ];
 let badges = { pending: 0, decisions: 0, refunds: 0, reports: 0, ledger: 0 };
 function drawNav(cur) {
   const cnt = { barbers: badges.pending, decisions: badges.decisions, payments: badges.refunds, reports: badges.reports };
-  $('#nav').innerHTML = SECTIONS.map(([k, l, d], i) => `${k === 'earnings' || k === 'rules' ? '<div class="sep"></div>' : ''}<a href="#/${k}" class="${k === cur ? 'on' : ''}">${ic(d)}${l}${cnt[k] ? `<span class="cnt">${cnt[k]}</span>` : ''}</a>`).join('');
+  if (cur === 'overview') cur = 'home';
+  $('#nav').innerHTML = GROUPS.map(([g, items]) => `<div class="ngrp">${g ? `<div class="nlab">${g}</div>` : ''}${items.map(([k, l]) => `<a href="#/${k}" class="${k === cur ? 'on' : ''}">${ic(IC[k])}<span>${l}</span>${cnt[k] ? `<span class="cnt">${cnt[k]}</span>` : ''}</a>`).join('')}</div>`).join('');
   $('#nav a.on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 const head = (t, sub, right) => `<div class="page-h"><div><h1>${esc(t)}</h1>${sub ? `<p class="muted small">${esc(sub)}</p>` : ''}</div>${right || ''}</div>`;
@@ -95,7 +106,7 @@ const rsBadge = (s) => bd(...(RS[s] || ['b-gray', s]));
 const TABS = [['ALL', 'All'], ['PENDING', 'Pending'], ['NEEDS_INFO', 'Needs info'], ['VERIFIED', 'Verified'], ['SUSPENDED', 'Suspended'], ['REJECTED', 'Rejected']];
 let btab = 'PENDING', btabSet = false;
 function modal(html) {
-  const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  const m = document.createElement('div'); m.className = 'modal' + (html.includes('class="sh-h"') ? ' drawer' : ''); m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
   document.body.appendChild(m); document.body.style.overflow = 'hidden';
   const close = () => { m.remove(); document.body.style.overflow = ''; document.removeEventListener('keydown', esch); };
   const esch = (e) => { if (e.key === 'Escape') close(); };
@@ -326,14 +337,15 @@ async function audit() {
 const ROUTES = { overview, barbers, bookings, payments, decisions, plans, credits, rules, audit };
 async function route() {
   if (!getKey()) return showLogin();
-  const k = (location.hash.replace(/^#\/?/, '') || 'overview');
-  const fn = ROUTES[k] || overview;
+  const raw = location.hash.replace(/^#\/?/, '') || 'home'; const qi = raw.indexOf('?');
+  const k = qi < 0 ? raw : raw.slice(0, qi); window.QS = new URLSearchParams(qi < 0 ? '' : raw.slice(qi + 1));
+  const fn = ROUTES[k] || ROUTES.home || overview;
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   drawTop();
   app.innerHTML = '<div class="sk sk-h"></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
   try { await fn(); } catch (e) { if (getKey()) app.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   window.scrollTo(0, 0);
-  if (k !== 'overview' && !badges.__loaded) { badges.__loaded = true; api('/overview').then((o) => { badges.pending = o.barbers_pending; badges.decisions = o.awaiting_decision; badges.refunds = o.refunds_open; drawNav(k); }).catch(() => {}); }
+  if (k !== 'home' && !badges.__loaded) { badges.__loaded = true; api('/home').then((o) => { const m = Object.fromEntries(o.attention.map((a) => [a.key, a.n])); badges.pending = m.barbers || 0; badges.decisions = m.decisions || 0; badges.refunds = m.refunds || 0; badges.reports = m.reports || 0; drawNav(k); }).catch(() => {}); }
 }
 function drawTop() {
   $('#topright').innerHTML = `<button id="theme" aria-label="Toggle dark mode"><svg class="i" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button><button id="so" class="btn sm sec">Sign out</button>`;
@@ -353,7 +365,7 @@ $('#lf').onsubmit = async (ev) => {
     const r = await fetch('/api/admin/login', { method: 'POST', headers: { Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(r.status === 401 ? 'That key is not right.' : j.error?.message || 'Could not sign in.');
-    sessionStorage.setItem(KEY, k); $('#key').value = ''; location.hash = '#/overview'; route();
+    sessionStorage.setItem(KEY, k); $('#key').value = ''; location.hash = '#/home'; route();
   } catch (e) { showLogin(e.message); } finally { b.disabled = false; }
 };
 window.addEventListener('hashchange', route);

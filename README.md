@@ -92,8 +92,19 @@ What the tests do **not** prove: behaviour against Supabase's Supavisor pooler, 
 - **Refunds are undecided.** A paid online booking cancelled by the customer inside the window (or marked NOT_SERVED) is **not refunded automatically**; `payment_status` becomes `CREDIT_PENDING` and the audit log carries a `TODO(owner)` note. A payment that arrives after a hold expired is also flagged `CREDIT_PENDING`. Prepaid no-shows stay `PAID`. Decide policy, then build the refund/credit flow.
 - Customers can cancel until exactly 30 min before the appointment (`CANCEL_CUTOFF_MIN` in `src/config.ts`); after that only the barber can No-show/Skip. No-show is only allowed after the scheduled time has passed.
 
-## Notifications
-In-app only (`notifications` table + 🔔 list, polled). **Real push / SMS / WhatsApp is not implemented** — a later step is to fan out from `notify()` in `src/helpers.ts`.
+## Notifications (real Web Push + in-app)
+Every notification row (`notify()` in `src/helpers.ts`) is also an outbox entry: `flushPush()` (`src/push.ts`) claims unpushed rows (`FOR UPDATE SKIP LOCKED`) and sends a Web Push to each of the user's subscriptions (`push_subscriptions`). Dead endpoints (HTTP 404/410) are deleted at once; other failures are counted and the subscription is dropped after 8. Push runs after responses (`waitUntil` on Vercel), from the sweep, and after payment webhooks.
+- **In the app:** bell with unread badge, live banner (8 s poll), optional sound and vibration (Profile, default on), tab title `(n)`, notification centre (`#/notifications`) with unread state and tap-through to the booking.
+- **Keys:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (env vars; the private key is never exposed). The public key is served by `/api/config` (`vapid_public_key`). Generate with `npx web-push generate-vapid-keys`. Without them push is simply unavailable and the in-app bell keeps working. Changing the keys invalidates existing subscriptions (they re-subscribe on next open).
+- **iOS:** Web Push works only for the installed app (iOS/iPadOS 16.4+): Share, Add to Home Screen, then open it from the Home Screen and tap *Enable notifications*. The app shows this hint on iOS Safari.
+- **Not exact-time:** Vercel Cron is daily on the free plan, so reminders (2 h, 30 min, "leave now") and waitlist alerts are triggered lazily by app activity and the sweep (`/api/cron/sweep`, also callable every minute from cron-job.org, see DEPLOY.md §7).
+- **Toggles (admin, Controls):** `feature_push`, `reminders`, `favourites`, `rebook`, `waitlist`, `reviews`, `booking_note`, `barber_notes`, `reliability`, `quick_actions`, `daily_summary` (all on by default) and `loyalty` (off by default; every Nth completed visit earns a credit). Turning one off hides it and rejects its API instantly.
+
+## Smart features (migration 008)
+Customers: favourites, "Book again" (usual barber/service/time), waitlist for full days, live queue ETA and "leave now" nudge, note to barber, ratings and reviews. Barbers: private customer notes with the customer's usual service, reliability badge (New / Reliable / Mostly reliable / Often misses), running-late delay and one-tap queue messages (rate limited), daily summary, review replies. All in-app; no paid SMS or email.
+
+## Admin v3 (redesign)
+Home with "needs attention" cards; grouped left navigation (People, Bookings, Money, Growth, Settings); every list is server-side keyset (cursor) paginated with search, filters, sorting, saved views (browser), skeleton and empty states; row click opens a right-hand drawer; bulk actions with a confirm dialog and a required reason (audited once per batch, max 200 ids); Ctrl/Cmd+K command palette; dark mode. API: `GET /api/admin/l/:list`, `/home`, `/palette`, `/counts/:what`, `/bulk/*` (`src/admin3.ts`). Local benchmark script: `scripts/perf-seed.mjs` + `scripts/perf-time.mjs` (local DB only).
 
 ## Not in MVP / next steps
 - Family accounts (`family_member_id` is reserved) · Paid turns / entitlements (`entitlement_type` is reserved) · Subscriptions
