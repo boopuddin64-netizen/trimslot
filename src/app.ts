@@ -23,6 +23,7 @@ import { makeLimits, corsAndOriginGuard, assertLoginNotLocked, recordFailedLogin
 import { registerAdmin } from './admin';
 import { registerAdminPower } from './admin2';
 import { registerAdmin3 } from './admin3';
+import { registerAdminDelete } from './adminDelete';
 import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
 import { registerSmart, backgroundAfterResponse } from './smartRoutes';
@@ -30,6 +31,7 @@ import { vapidPublicKey, pushAvailable, flushPush } from './push';
 import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
 import { getSettingsCached } from './plans';
 import { runSweep } from './sweep';
+import { listBanks, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
@@ -215,6 +217,7 @@ export function createApp(db: Db) {
   registerAdmin(api, db, adminGuard, wrap);
   registerAdminPower(api, db, adminGuard, wrap);
   registerAdmin3(api, db, adminGuard, wrap);
+  registerAdminDelete(api, db, adminGuard, wrap);
 
   /* ---------- meta ---------- */
   api.get('/config', wrap(async (_req, res) => res.json({
@@ -261,7 +264,7 @@ export function createApp(db: Db) {
       await recordFailedLogin(db, id);
       throw new AppError(401, 'BAD_CREDENTIALS', 'Incorrect email/phone or password.');
     }
-    if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. Contact support if you think this is a mistake.`);
+    if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', u.account_status === 'DELETED' ? 'This account has been removed. Contact TrimSlot support if you think this is a mistake.' : `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. Contact support if you think this is a mistake.`);
     setAuthCookie(res, signToken(u));
     res.json({ user: await publicUser(db, u) });
   }));
@@ -271,7 +274,8 @@ export function createApp(db: Db) {
     if (!req.user) return void res.json({ user: null });
     const u = req.user;
     const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [u.id])).c;
-    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, ...(u.role === 'barber' ? await barberReview(db, u.id) : {}) }, unread });
+    const payoutOk = u.role === 'barber' ? (!config.requirePayout || !!(await db.maybeOne<any>('SELECT 1 AS x FROM barbers WHERE user_id=$1 AND paystack_subaccount IS NOT NULL', [u.id]))) : undefined;
+    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
   }));
 
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
@@ -313,7 +317,7 @@ export function createApp(db: Db) {
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     res.json({ ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } });
+      booking: { paused: !!b.booking_paused, online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } });
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -390,7 +394,7 @@ export function createApp(db: Db) {
       result = r.result; bookingId = r.booking_id; planId = r.plan_purchase_id;
       await recordPaymentEvent(db, { source: 'CALLBACK', eventType: 'callback', reference, signatureValid: null, payload: JSON.stringify(req.query), result: r.result });
     }
-    if (planId) return void res.redirect(`/#/wallet?plan=${encodeURIComponent(result)}`);
+    if (planId) return void res.redirect(`/#/wallet?plan=${encodeURIComponent(result)}&pp=${planId}`);
     res.redirect(`/#/booking/${bookingId ?? ''}?pay=${encodeURIComponent(result)}`);
   }));
   // MOCK mode only (never available when NODE_ENV=production)
@@ -453,13 +457,21 @@ export function createApp(db: Db) {
     const services = await db.many('SELECT id, name, price_kobo, duration_min, active FROM services WHERE barber_id=$1 AND active ORDER BY price_kobo, id', [bid(req)]);
     const schedule = (await db.many('SELECT * FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [bid(req)])).map(fmtScheduleRow);
     const days_off = await db.many('SELECT id, date, reason FROM days_off WHERE barber_id=$1 AND date >= $2 ORDER BY date', [bid(req), lagosDate()]);
-    res.json({ profile: { ...barberCard(b), paystack_subaccount: b.paystack_subaccount, verified: !!b.verified, review_status: b.review_status, review_reason: b.review_status === 'VERIFIED' || b.review_status === 'PENDING' ? null : b.review_reason }, services, schedule, days_off });
+    res.json({ profile: { ...barberCard(b), payout: await payoutStatus(db, bid(req)), verified: !!b.verified, review_status: b.review_status, review_reason: b.review_status === 'VERIFIED' || b.review_status === 'PENDING' ? null : b.review_reason }, services, schedule, days_off });
   }));
+  /* ---- payouts: bank list -> resolve account name -> create Paystack subaccount ---- */
+  barberR.get('/payout', wrap(async (req, res) => res.json(await payoutStatus(db, bid(req)))));
+  barberR.get('/payout/banks', wrap(async (_req, res) => res.json({ banks: await listBanks() })));
+  barberR.post('/payout/resolve', limits.payment, wrap(async (req, res) => {
+    const d = parse(acctSchema, req.body);
+    res.json({ account_name: await resolveAccount(d.bank_code, d.account_number) });
+  }));
+  barberR.post('/payout', limits.payment, wrap(async (req, res) => res.json(await savePayout(db, req.user!.id, bid(req), req.body))));
   barberR.put('/profile', wrap(async (req, res) => {
     const d = parse(V.profileSchema, req.body);
     await db.tx(async (t) => {
       if (d.name !== undefined) await t.query('UPDATE users SET name=$1 WHERE id=$2', [d.name, req.user!.id]);
-      const map: Record<string, unknown> = { shop_name: d.shop_name, photo_url: d.photo_url, location: d.location, about: d.about, paystack_subaccount: d.paystack_subaccount };
+      const map: Record<string, unknown> = { shop_name: d.shop_name, photo_url: d.photo_url, location: d.location, about: d.about };
       for (const [k, v] of Object.entries(map)) if (v !== undefined) await t.query(`UPDATE barbers SET ${k}=$1 WHERE id=$2`, [v === '' ? null : v, bid(req)]); // k is from the fixed map above
     });
     res.json({ ok: true });

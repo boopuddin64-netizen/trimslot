@@ -84,14 +84,20 @@ export async function expireHolds(db: Db, scope: HoldScope = {}): Promise<number
 /* ---------------- create ---------------- */
 export interface CreateInput { barber_id: number; service_id: number; date: string; time: string; payment_option: 'ONLINE' | 'ON_ARRIVAL' | 'PLAN' | 'CREDIT'; plan_purchase_id?: number; credit_id?: number; note?: string }
 
+/** Online payments need a barber payout (Paystack subaccount), otherwise the money has nowhere to go. */
+export function assertPayoutReady(b: { paystack_subaccount?: string | null }) {
+  if (config.requirePayout && !b.paystack_subaccount) throw new AppError(409, 'PAYOUT_NOT_SETUP', "This barber hasn't set up online payments yet. Choose Pay on arrival, or pick another barber.");
+}
+
 export async function createBooking(db: Db, customerId: number, input: CreateInput): Promise<BookingRow> {
   validateBookableDate(input.date);
   if (!/^\d{2}:\d{2}$/.test(input.time)) throw badRequest('time must be HH:MM');
   const startMin = hhmmToMin(input.time);
   return db.tx(async (t) => {
     // 1) Serialise every booking attempt for this barber: whoever gets this row lock first books first; the other then sees the new row.
-    const barber = await t.maybeOne('SELECT id FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
+    const barber = await t.maybeOne('SELECT id, paystack_subaccount FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('Barber not found');
+    if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
     await assertBookable(t, input.barber_id, input.payment_option);
     { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot make bookings${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)

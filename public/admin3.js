@@ -186,10 +186,10 @@ const LISTS = {
     cols: [
       ['Report', (x) => `<b>${esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>`], ['From', (x) => esc(x.reporter_name)], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a>` : '—'],
       ['Booking', (x) => x.booking_id ? `<a href="#" data-b="${x.booking_id}">#${x.booking_id}</a>` : '—'], ['Filed', (x) => stamp(x.created_at)],
-      ['', (x) => x.status === 'OPEN' ? act('Resolve', '', 'data-act="res"') + act('Dismiss', 'sec', 'data-act="dis"') : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), 'act'],
+      ['', (x) => (x.status === 'OPEN' ? act('Resolve', '', 'data-act="res"') + act('Dismiss', 'sec', 'data-act="dis"') : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status)) + act('Delete', 'red', 'data-act="del"'), 'act'],
     ],
     handlers: {
-      res: (x, rl) => reportForm(x, 'RESOLVED', rl), dis: (x, rl) => reportForm(x, 'DISMISSED', rl),
+      del: (x, rl) => ADM4.deleteDialog({ type: 'report', id: x.id, name: '#' + x.id, after: rl }), res: (x, rl) => reportForm(x, 'RESOLVED', rl), dis: (x, rl) => reportForm(x, 'DISMISSED', rl),
     },
     bulk: [
       { label: 'Resolve', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'OPEN'), noun: 'report', label: (r) => r.category, title: 'Resolve reports', help: 'One note is sent to every reporter.', go: 'Resolve', path: '/bulk/reports/resolve', done: 'Resolved', after: done, fields: [{ name: 'reason', label: 'Resolution note', type: 'textarea', required: true }], body: (ids, v) => ({ ids, status: 'RESOLVED', note: v.reason }) }) },
@@ -212,9 +212,10 @@ const LISTS = {
     cols: [
       ['Review', (r) => `${stars(r.rating)}${r.hidden ? ' ' + bd('b-red', 'HIDDEN') : ''}<span class="sub">${esc(r.comment || 'No comment')}</span>${r.reply ? `<span class="sub"><i>Shop replied:</i> ${esc(r.reply)}</span>` : ''}`],
       ['Customer', (r) => esc(r.customer_name)], ['Shop', (r) => esc(r.shop_name)], ['Date', (r) => dshort(r.created_at)],
-      ['', (r) => r.hidden ? act('Restore', 'sec', 'data-act="show"') : act('Hide', 'sec', 'data-act="hide"'), 'act'],
+      ['', (r) => (r.hidden ? act('Restore', 'sec', 'data-act="show"') : act('Hide', 'sec', 'data-act="hide"')) + act('Delete', 'red', 'data-act="del"'), 'act'],
     ],
     handlers: {
+      del: (r, rl) => ADM4.deleteDialog({ type: 'review', id: r.id, name: r.customer_name + ' → ' + r.shop_name, after: rl }),
       hide: (r, rl) => formModal({ title: 'Hide review', help: 'It stops showing on the shop page and in its rating. Reversible.', go: 'Hide review', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/reviews/${r.id}/hide`, { hidden: true, reason: v.reason }); return 'Review hidden'; }, after: rl }),
       show: (r, rl) => formModal({ title: 'Restore review', go: 'Restore', fields: [REASON()], submit: async (v) => { await post(`/reviews/${r.id}/hide`, { hidden: false, reason: v.reason }); return 'Review restored'; }, after: rl }),
     },
@@ -253,8 +254,9 @@ const PLANS = {
   params: ['q', 'active'], defaults: () => ({ q: '', active: '' }), empty: 'No plans yet.', pills: { param: 'active', items: [['', 'All'], ['1', 'On sale'], ['0', 'Hidden']] },
   headRight: '<div class="pills" style="margin:0"><button data-tab="purchases">Purchases</button><button class="on" data-tab="plans">Plans on offer</button></div>',
   cols: [['Plan', (p) => `${esc(p.name)}<span class="sub">${esc(p.shop_name)}</span>`], ['Price', (p) => naira(p.price_kobo), 'num'], ['Sessions', (p) => p.sessions, 'num'], ['Valid', (p) => p.validity_days + ' d', 'num'], ['Buyers', (p) => p.buyers, 'num'], ['Status', (p) => p.active ? bd('b-green', 'ON SALE') : bd('b-gray', 'HIDDEN')],
-    ['', (p) => act(p.active ? 'Hide' : 'Restore', 'sec', 'data-act="vis"'), 'act']],
+    ['', (p) => act(p.active ? 'Hide' : 'Restore', 'sec', 'data-act="vis"') + act('Delete', 'red', 'data-act="del"'), 'act']],
   handlers: {
+    del: (p, rl) => ADM4.deleteDialog({ type: 'plan', id: p.id, name: p.name, after: rl }),
     vis: (p, rl) => { const on = !p.active; return formModal({ title: (on ? 'Restore plan ' : 'Hide plan ') + p.name, help: on ? 'The plan goes back on sale.' : 'Customers can no longer buy it. Existing purchases keep working. The barber is told.', go: on ? 'Restore' : 'Hide plan', fields: [REASON()], submit: async (v) => { await post(`/plans/${p.id}/visibility`, { active: on, reason: v.reason }); return on ? 'Plan restored' : 'Plan hidden'; }, after: rl }); },
   },
 };
@@ -276,17 +278,19 @@ async function paymentSheet(ref, reload) {
   if (p.status === 'SUCCESS') btns.push(act(p.disputed ? 'Clear flag' : 'Flag disputed', 'sec', 'data-k="flag"'));
   if (p.refund_status === 'NEEDS_REFUND') btns.push(act('Retry refund', '', 'data-k="retry"'), act('Mark refunded', 'sec', 'data-k="mark"'));
   else if (p.refund_status === 'REFUND_REQUESTED') btns.push(act('Mark refunded', 'sec', 'data-k="mark"'));
+  if (p.status !== 'SUCCESS' && !String(p.reference).startsWith('MOCK')) btns.push(act('Re-verify with Paystack', '', 'data-k="reverify"'));
   if (p.booking_id) btns.push(act('Open booking', 'sec', 'data-k="bk"'));
   const m = modal(`<div class="sh-h"><div><h2 style="margin:0">Payment</h2><div class="muted small mono">${esc(p.reference)}</div></div><button class="btn sm sec" data-close>Close</button></div>
     <div class="row-badges">${payBadge(p.status)} ${p.refund_status ? refundBadge(p.refund_status) : ''} ${p.disputed ? bd('b-red', 'DISPUTED') : ''}</div>
     <h3>Details</h3>${kvr('For', esc(p.item || '—'))}${kvr('Customer', esc(p.customer_name || '—') + (p.customer_email ? `<small class="muted" style="display:block">${esc(p.customer_email)}</small>` : ''))}${kvr('Shop', esc(p.shop_name || '—'))}
-    ${kvr('Amount', naira(p.amount_kobo))}${kvr('Platform fee', naira(p.fee_kobo))}${p.debt_netted_kobo ? kvr('Commission netted', naira(p.debt_netted_kobo)) : ''}${kvr('Created', stamp(p.created_at))}${p.verified_at ? kvr('Verified', stamp(p.verified_at)) : ''}
+    ${kvr('Amount', naira(p.amount_kobo))}${p.gateway_fee_kobo ? kvr('Paystack fee (customer paid)', naira(p.gateway_fee_kobo)) : ''}${kvr('Platform fee', naira(p.fee_kobo))}${p.debt_netted_kobo ? kvr('Commission netted', naira(p.debt_netted_kobo)) : ''}${kvr('Created', stamp(p.created_at))}${p.verified_at ? kvr('Verified', stamp(p.verified_at)) : ''}
     ${p.refund_reason ? `<div class="note"><b>Refund reason</b>${esc(p.refund_reason)}</div>` : ''}${p.refund_error ? `<div class="note"><b>Gateway said</b>${esc(p.refund_error)}</div>` : ''}${p.dispute_note ? `<div class="note"><b>Dispute note</b>${esc(p.dispute_note)}</div>` : ''}
     <div class="btns end sticky">${btns.join('') || '<span class="muted small">No actions available.</span>'}</div>`);
   const enc = encodeURIComponent(p.reference); const done = async () => { if (reload) await reload(); };
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = async () => {
     const k = x.dataset.k;
     if (k === 'bk') { m.close(); return bookingSheet(p.booking_id, reload); }
+    if (k === 'reverify') { x.disabled = true; try { const o = await api(`/payments/${enc}/reverify`, { method: 'POST', body: {} }); const R = { processed: 'Payment confirmed', already_processed: 'Already confirmed', refund_due: 'Slot was gone: refund requested from Paystack', slot_taken: 'Slot was taken: refund requested', not_paid: 'Paystack says this was not paid', amount_mismatch: 'Paystack amount does not match' }; toast(R[o.result] || o.result, o.result === 'not_paid' || o.result === 'amount_mismatch'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
     if (k === 'flag') { m.close(); if (p.disputed) { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return done(); }
       return formModal({ title: 'Flag payment as disputed', help: 'A private marker for follow-up. It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: done }); }
     if (k === 'retry') { x.disabled = true; try { const o = await api(`/payments/${enc}/retry-refund`, { method: 'POST', body: {} }); toast(o.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (o.refund_error || 'try again later'), o.result !== 'requested'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }

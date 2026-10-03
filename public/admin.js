@@ -15,7 +15,7 @@ function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.classNa
 const ic = (d) => `<svg class="i sm" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 
 async function api(path, opts = {}) {
-  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + getKey(), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + getKey(), ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   let j = {}; try { j = await r.json(); } catch { /* empty */ }
   if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Session ended. Sign in again.'); }
   if (!r.ok) { const e = new Error(j.error?.message || 'Request failed'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
@@ -128,10 +128,11 @@ async function barberDetail(id, reload) {
   btns.push(act('Fee', 'sec', 'data-k="fee"')); btns.push(act('Ledger', 'sec', 'data-k="ledger"'));
   if (['PENDING', 'NEEDS_INFO', 'REJECTED'].includes(st)) btns.push(act('Approve', '', 'data-k="approve"'));
   if (['PENDING', 'NEEDS_INFO'].includes(st)) { btns.push(act('Request info', 'sec', 'data-k="info"')); btns.push(act('Reject', 'red', 'data-k="reject"')); }
+  btns.push(act('Delete…', 'red', 'data-k="delete"'));
   if (st === 'VERIFIED') btns.push(act('Suspend', 'red', 'data-k="suspend"'));
   if (st === 'SUSPENDED') btns.push(act('Reinstate', '', 'data-k="reinstate"'));
   const m = modal(`<div class="sh-h"><div><h2 style="margin:0">${esc(b.shop_name)}</h2><div class="muted small">${esc(b.location || 'No location')}</div></div><button class="btn sm sec" data-close aria-label="Close">Close</button></div>
-    <div class="row-badges">${rsBadge(st)} ${b.paystack_subaccount ? bd('b-green', 'PAYSTACK SET') : bd('b-gray', 'PAYSTACK NOT SET')} ${b.booking_paused ? bd('b-amber', 'BOOKINGS PAUSED') : ''} ${b.fee_percent_override != null || b.fee_flat_kobo_override != null ? bd('b-blue', 'CUSTOM FEE') : ''} ${b.owed_kobo ? bd('b-red', 'OWES ' + naira(b.owed_kobo)) : ''}</div>
+    <div class="row-badges">${rsBadge(st)} ${b.paystack_subaccount ? bd('b-green', 'PAYOUTS ACTIVE' + (b.payout_account_last4 ? ' · ' + esc(b.payout_bank_name || 'Bank') + ' ••' + esc(b.payout_account_last4) : '')) : bd('b-gray', 'NO PAYOUT ACCOUNT')} ${b.booking_paused ? bd('b-amber', 'BOOKINGS PAUSED') : ''} ${b.fee_percent_override != null || b.fee_flat_kobo_override != null ? bd('b-blue', 'CUSTOM FEE') : ''} ${b.owed_kobo ? bd('b-red', 'OWES ' + naira(b.owed_kobo)) : ''}</div>
     ${b.booking_paused && b.pause_reason ? `<div class="note"><b>Bookings paused</b>${esc(b.pause_reason)}</div>` : ''}
     ${b.review_reason ? `<div class="note"><b>${st === 'NEEDS_INFO' ? 'Message sent' : 'Reason shown to barber'}</b>${esc(b.review_reason)}</div>` : ''}
     ${b.resubmit_note || b.resubmitted_at ? `<div class="note"><b>Resubmitted ${stamp(b.resubmitted_at)}</b>${esc(b.resubmit_note || 'No note added.')}</div>` : ''}
@@ -147,6 +148,7 @@ async function barberDetail(id, reload) {
     if (k === 'pause') { m.close(); ADM2.barberPause({ ...b, id }, reload); return; }
     if (k === 'fee') { m.close(); ADM2.barberFee({ ...b, id }, reload); return; }
     if (k === 'ledger') { m.close(); ADM2.ledgerSheet(id, reload); return; }
+    if (k === 'delete') { m.close(); ADM4.deleteDialog({ type: 'barber', id, name: b.shop_name, after: reload }); return; }
     if (k === 'approve') { x.disabled = true; try { await call('approve'); await done('Barber approved'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
     if (k === 'reinstate') { x.disabled = true; try { await call('reinstate'); await done('Barber reinstated'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
     const cfg = {
@@ -184,7 +186,7 @@ async function barbers() {
     ['Shop', (b) => `${esc(b.shop_name)}<span class="sub">${esc(b.location || 'No location')}</span>`],
     ['Owner', (b) => `${esc(b.name)}<span class="sub">${esc(b.email || b.phone || '')}</span>`],
     ['Status', (b) => rsBadge(b.review_status) + (b.resubmitted_at && b.review_status === 'PENDING' ? ' ' + bd('b-blue', 'RESUBMITTED') : '')],
-    ['Paystack', (b) => b.paystack_subaccount ? bd('b-green', 'SUBACCOUNT SET') : bd('b-gray', 'NOT SET')],
+    ['Payouts', (b) => (b.payout_set || b.paystack_subaccount) ? bd('b-green', 'ACTIVE') : bd('b-gray', 'NOT SET')],
     ['Services', (b) => b.services, 'num'], ['Bookings', (b) => b.bookings, 'num'],
     ['Joined', (b) => dshort(b.created_at)],
     ['', (b) => act('Details', 'sec', `data-do="detail" data-id="${b.id}"`) + (['PENDING', 'NEEDS_INFO', 'REJECTED'].includes(b.review_status) ? act('Approve', '', `data-do="approve" data-id="${b.id}"`) : b.review_status === 'VERIFIED' ? act('Suspend', 'red', `data-do="detail" data-id="${b.id}"`) : act('Reinstate', '', `data-do="reinstate" data-id="${b.id}"`)), 'act'],

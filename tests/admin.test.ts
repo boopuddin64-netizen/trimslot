@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { setupPin } from '../src/adminPin';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking, customerCancel, getBooking } from '../src/bookingService';
@@ -11,11 +12,11 @@ const NOW = `${WED}T08:00:00+01:00`;
 
 async function boot() {
   const s = await freshDb(); setNow(NOW);
-  process.env.CRON_SECRET = KEY;
+  process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: (await r.json().catch(() => ({}))) as any }; };
-  const A = { Authorization: 'Bearer ' + KEY };
+  const A = { Authorization: 'Bearer ' + KEY, 'X-Admin-Pin': '4821' };
   return { ...s, server, j, A, base } as any;
 }
 const paid = async (s: any, cust: number, time: string) => {

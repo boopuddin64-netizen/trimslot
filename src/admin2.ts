@@ -3,6 +3,7 @@
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
+import { requirePin } from './adminPin';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
@@ -62,6 +63,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   const restrict = (to: 'SUSPENDED' | 'BANNED'): H => async (req, res) => {
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
+    if (to === 'BANNED') await requirePin(db, req);    // a ban is permanent until an admin reverses it by hand
     res.json(await db.tx(async (t) => {
       const u = await t.maybeOne<any>('SELECT id, role, name, account_status FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('User not found');
       if (u.role !== 'customer') throw conflict('USE_BARBER_REVIEW', 'Barbers are suspended from the Barbers section (review workflow).');
@@ -233,6 +235,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   post('/credits/:id/revoke', async (req, res) => {
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
+    await requirePin(db, req);
     res.json(await db.tx(async (t) => {
       const c = await t.maybeOne<any>('SELECT * FROM session_credits WHERE id=$1 FOR UPDATE', [id]); if (!c) throw notFound('Credit not found');
       if (c.status === 'REVOKED') return { changed: false };
@@ -276,6 +279,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   post('/plan-purchases/:id/cancel', async (req, res) => {
     const id = idOf(req.params.id); const d = parseB(z.object({ reason: reasonZ.shape.reason, refund: z.boolean().optional() }), req.body);
+    if (d.refund) await requirePin(db, req);
     let ref: string | null = null;
     const out = await db.tx(async (t) => {
       const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('Plan purchase not found');
@@ -436,6 +440,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   const ledgerAction = (kind: 'settle' | 'waive' | 'adjust'): H => async (req, res) => {
     const id = idOf(req.params.barberId);
     const d = parseB(z.object({ amount_naira: z.coerce.number().positive().max(10_000_000).optional(), all: z.boolean().optional(), reason: reasonZ.shape.reason }), req.body);
+    if (kind !== 'settle') await requirePin(db, req);    // waive / adjust permanently change what a barber owes
     res.json(await db.tx(async (t) => {
       const b = await t.maybeOne<any>('SELECT id, shop_name, user_id FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('Barber not found');
       const owed = await outstandingKobo(t, id);

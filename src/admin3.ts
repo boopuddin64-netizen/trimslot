@@ -3,6 +3,7 @@
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
+import { requirePin } from './adminPin';
 import { AppError, badRequest, notFound } from './errors';
 import { audit, notify } from './helpers';
 import { getSettings } from './plans';
@@ -58,17 +59,18 @@ const CFG: Record<string, Cfg> = {
     from: 'users u', id: 'u.id',
     sorts: { newest: { expr: 'u.id', type: 'int' }, name: { expr: 'lower(u.name)', type: 'text' } }, defSort: 'newest',
     where: (q, add) => {
-      add(`u.role='customer'`);
+      add(`u.role='customer' AND u.deleted_at IS NULL`);
       const s = String(q.q || '').trim().slice(0, 60);
       if (s) { const n = /^#?\d+$/.test(s) ? Number(s.replace('#', '')) : null; add(`(lower(u.name) LIKE lower(?) OR lower(u.email) LIKE lower(?) OR u.phone LIKE ?${n ? ' OR u.id=' + n : ''})`, like(s), like(s), like(s)); }
       const st = String(q.status || '').toUpperCase(); if (['ACTIVE', 'SUSPENDED', 'BANNED'].includes(st)) add('u.account_status=?', st);
     },
   },
   barbers: {
-    select: `b.id, b.shop_name, b.location, b.review_status, b.booking_paused, b.verified, b.created_at, b.resubmitted_at, u.name, u.email, u.phone, u.id AS user_id`,
+    select: `b.id, b.shop_name, b.location, b.paystack_subaccount IS NOT NULL AS payout_set, b.review_status, b.booking_paused, b.verified, b.created_at, b.resubmitted_at, u.name, u.email, u.phone, u.id AS user_id`,
     from: 'barbers b JOIN users u ON u.id=b.user_id', id: 'b.id',
     sorts: { newest: { expr: 'b.id', type: 'int' }, name: { expr: 'lower(b.shop_name)', type: 'text' } }, defSort: 'newest',
     where: (q, add) => {
+      add('u.deleted_at IS NULL');
       const s = String(q.q || '').trim().slice(0, 60); if (s) add(`(lower(b.shop_name) LIKE lower(?) OR lower(u.name) LIKE lower(?) OR lower(u.email) LIKE lower(?))`, like(s), like(s), like(s));
       const st = String(q.status || '').toUpperCase(); if (['PENDING', 'NEEDS_INFO', 'VERIFIED', 'REJECTED', 'SUSPENDED'].includes(st)) add('b.review_status=?', st);
     },
@@ -112,7 +114,7 @@ const CFG: Record<string, Cfg> = {
   plans: {
     select: `p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, b.shop_name, (SELECT COUNT(*)::int FROM plan_purchases pp WHERE pp.plan_id=p.id AND pp.status='ACTIVE') AS buyers`,
     from: 'plans p JOIN barbers b ON b.id=p.barber_id', id: 'p.id', sorts: { newest: { expr: 'p.id', type: 'int' } }, defSort: 'newest',
-    where: (q, add) => { if (q.active === '1') add('p.active'); if (q.active === '0') add('NOT p.active'); const s = String(q.q || '').trim().slice(0, 60); if (s) add('(lower(p.name) LIKE lower(?) OR lower(b.shop_name) LIKE lower(?))', like(s), like(s)); },
+    where: (q, add) => { add('p.deleted_at IS NULL'); if (q.active === '1') add('p.active'); if (q.active === '0') add('NOT p.active'); const s = String(q.q || '').trim().slice(0, 60); if (s) add('(lower(p.name) LIKE lower(?) OR lower(b.shop_name) LIKE lower(?))', like(s), like(s)); },
   },
   credits: {
     select: `sc.id, sc.customer_id, sc.reason, sc.status, sc.value_kobo, sc.expires_at, sc.created_at, b.shop_name, u.name AS customer_name, (sc.status='AVAILABLE' AND sc.expires_at > now()) AS live`,
@@ -122,12 +124,12 @@ const CFG: Record<string, Cfg> = {
   reports: {
     select: `r.id, r.category, r.status, r.message, r.created_at, r.booking_id, r.reporter_id, r.target_user_id, ru.name AS reporter_name, tu.name AS target_name`,
     from: 'reports r JOIN users ru ON ru.id=r.reporter_id LEFT JOIN users tu ON tu.id=r.target_user_id', id: 'r.id', sorts: { newest: { expr: 'r.id', type: 'int' } }, defSort: 'newest',
-    where: (q, add) => { const st = String(q.status || '').toUpperCase(); if (['OPEN', 'RESOLVED', 'DISMISSED'].includes(st)) add('r.status=?', st); const c = String(q.category || '').toUpperCase(); if (['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER'].includes(c)) add('r.category=?', c); },
+    where: (q, add) => { add('r.deleted_at IS NULL'); const st = String(q.status || '').toUpperCase(); if (['OPEN', 'RESOLVED', 'DISMISSED'].includes(st)) add('r.status=?', st); const c = String(q.category || '').toUpperCase(); if (['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER'].includes(c)) add('r.category=?', c); },
   },
   reviews: {
     select: `r.id, r.rating, r.comment, r.reply, r.hidden, r.created_at, r.booking_id, b.shop_name, u.name AS customer_name`,
     from: 'reviews r JOIN barbers b ON b.id=r.barber_id JOIN users u ON u.id=r.customer_id', id: 'r.id', sorts: { newest: { expr: 'r.id', type: 'int' }, rating: { expr: 'r.rating', type: 'int' } }, defSort: 'newest',
-    where: (q, add) => { if (q.hidden === '1') add('r.hidden'); if (q.hidden === '0') add('NOT r.hidden'); const rt = intQ(q.rating); if (rt && rt <= 5) add('r.rating=?', rt); const bid = intQ(q.barber_id); if (bid) add('r.barber_id=?', bid); },
+    where: (q, add) => { add('r.deleted_at IS NULL'); if (q.hidden === '1') add('r.hidden'); if (q.hidden === '0') add('NOT r.hidden'); const rt = intQ(q.rating); if (rt && rt <= 5) add('r.rating=?', rt); const bid = intQ(q.barber_id); if (bid) add('r.barber_id=?', bid); },
   },
   waitlist: {
     select: `w.id, w.date, w.status, w.created_at, w.notified_at, b.shop_name, s.name AS service_name, u.name AS customer_name`,
@@ -159,9 +161,9 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
   /* tab counts for a list (cheap, index-backed) */
   get('/counts/:what', async (req, res) => {
     const w = req.params.what;
-    if (w === 'barbers') { const r = await db.many<any>('SELECT review_status s, COUNT(*)::int n FROM barbers GROUP BY review_status'); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
-    if (w === 'reports') { const r = await db.many<any>('SELECT status s, COUNT(*)::int n FROM reports GROUP BY status'); const o: any = {}; for (const x of r) o[x.s] = x.n; return void res.json(o); }
-    if (w === 'customers') { const r = await db.many<any>(`SELECT account_status s, COUNT(*)::int n FROM users WHERE role='customer' GROUP BY account_status`); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
+    if (w === 'barbers') { const r = await db.many<any>('SELECT b.review_status s, COUNT(*)::int n FROM barbers b JOIN users u ON u.id=b.user_id WHERE u.deleted_at IS NULL GROUP BY b.review_status'); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
+    if (w === 'reports') { const r = await db.many<any>('SELECT status s, COUNT(*)::int n FROM reports WHERE deleted_at IS NULL GROUP BY status'); const o: any = {}; for (const x of r) o[x.s] = x.n; return void res.json(o); }
+    if (w === 'customers') { const r = await db.many<any>(`SELECT account_status s, COUNT(*)::int n FROM users WHERE role='customer' AND deleted_at IS NULL GROUP BY account_status`); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
     throw notFound('Unknown counts');
   });
 
@@ -171,14 +173,14 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     if (homeCache && Date.now() - homeCache.at < 10000) return void res.json(homeCache.v);
     const today = lagosDate();
     const r = await db.one<any>(`SELECT
-        (SELECT COUNT(*) FROM barbers WHERE review_status IN ('PENDING','NEEDS_INFO'))::int AS barbers_pending,
+        (SELECT COUNT(*) FROM barbers b JOIN users u ON u.id=b.user_id WHERE u.deleted_at IS NULL AND b.review_status IN ('PENDING','NEEDS_INFO'))::int AS barbers_pending,
         (SELECT COUNT(*) FROM barbers WHERE verified)::int AS barbers_live,
-        (SELECT COUNT(*) FROM users WHERE role='customer')::int AS customers,
+        (SELECT COUNT(*) FROM users WHERE role='customer' AND deleted_at IS NULL)::int AS customers,
         (SELECT COUNT(*) FROM bookings WHERE date=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE','COMPLETED'))::int AS bookings_today,
         (SELECT COALESCE(SUM(amount_kobo),0) FROM payments WHERE status='SUCCESS' AND verified_at >= now() - interval '30 days')::bigint AS revenue_30d_kobo,
         (SELECT COUNT(*) FROM payments WHERE refund_status IN ('NEEDS_REFUND','REFUND_REQUESTED'))::int AS refunds_open,
         (SELECT COUNT(*) FROM bookings WHERE payment_status='CREDIT_PENDING')::int AS awaiting_decision,
-        (SELECT COUNT(*) FROM reports WHERE status='OPEN')::int AS reports_open,
+        (SELECT COUNT(*) FROM reports WHERE status='OPEN' AND deleted_at IS NULL)::int AS reports_open,
         (SELECT COUNT(DISTINCT barber_id) FROM commission_ledger WHERE status='ACCRUED' AND created_at < now() - interval '14 days')::int AS ledger_overdue,
         (SELECT COALESCE(SUM(remaining_kobo),0) FROM commission_ledger WHERE status='ACCRUED')::bigint AS ledger_owed_kobo,
         (SELECT maintenance_mode FROM platform_settings WHERE id=1) AS maintenance_mode`, [today]);
@@ -199,8 +201,8 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     if (q.length < 2) return void res.json({ q, users: [], barbers: [], bookings: [], payments: [] });
     const l = like(q); const n = /^#?\d+$/.test(q) ? Number(q.replace('#', '')) : null;
     const [users, barbers, bookings, payments] = await Promise.all([
-      db.many(`SELECT id, role, name, email, phone FROM users WHERE lower(name) LIKE lower($1) OR lower(email) LIKE lower($1) OR phone LIKE $1 ${n ? 'OR id=' + n : ''} ORDER BY id DESC LIMIT 5`, [l]),
-      db.many(`SELECT b.id, b.shop_name, b.review_status, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE lower(b.shop_name) LIKE lower($1) ${n ? 'OR b.id=' + n : ''} ORDER BY b.id DESC LIMIT 5`, [l]),
+      db.many(`SELECT id, role, name, email, phone FROM users WHERE deleted_at IS NULL AND (lower(name) LIKE lower($1) OR lower(email) LIKE lower($1) OR phone LIKE $1 ${n ? 'OR id=' + n : ''}) ORDER BY id DESC LIMIT 5`, [l]),
+      db.many(`SELECT b.id, b.shop_name, b.review_status, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE u.deleted_at IS NULL AND (lower(b.shop_name) LIKE lower($1) ${n ? 'OR b.id=' + n : ''}) ORDER BY b.id DESC LIMIT 5`, [l]),
       n ? db.many(`SELECT k.id, k.service_name, k.status, k.date, u.name AS customer_name FROM bookings k JOIN users u ON u.id=k.customer_id WHERE k.id=$1`, [n]) : Promise.resolve([]),
       db.many(`SELECT reference, amount_kobo, status, booking_id FROM payments WHERE lower(reference) LIKE lower($1) ORDER BY id DESC LIMIT 5`, [q.replace(/[\\%_]/g, '') + '%']),
     ]);
@@ -286,6 +288,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
   });
   post('/bulk/credits/revoke', async (req, res) => {
     const d = parse(z.object({ ids, reason }), req.body);
+    await requirePin(db, req);
     res.json(await db.tx(async (t) => {
       const rows = await t.many<any>(`UPDATE session_credits SET status='REVOKED' WHERE id = ANY($1::int[]) AND status='AVAILABLE' RETURNING id, customer_id`, [d.ids]);
       for (const r of rows) await notify(t, r.customer_id, 'CREDIT_REVOKED', 'Credit removed', `A session credit was removed by TrimSlot: ${d.reason}`);

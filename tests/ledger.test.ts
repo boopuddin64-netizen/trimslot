@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { setupPin } from '../src/adminPin';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking } from '../src/bookingService';
@@ -13,14 +14,14 @@ const NOW = `${WED}T08:00:00+01:00`;
 const S = { platform_fee_kobo: 0, platform_fee_percent: 10, commission_factor: 0.5 };
 
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY;
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
   const uid = (await s.db.one('SELECT user_id FROM barbers WHERE id=$1', [s.barberId])).user_id;
   await s.db.query(`UPDATE barbers SET paystack_subaccount='ACCT_test' WHERE id=$1`, [s.barberId]);
   await s.db.tx((t) => updateSettings(t, { platform_fee_percent: 10, platform_fee_naira: 0 }));
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: (await r.json().catch(() => ({}))) as any, res: r }; };
-  return { ...s, uid, server, j, A: { Authorization: 'Bearer ' + KEY } } as any;
+  return { ...s, uid, server, j, A: { Authorization: 'Bearer ' + KEY, 'X-Admin-Pin': '4821' } } as any;
 }
 /** An off-app booking taken all the way to COMPLETED (cash). Price of service 0 is N3,000 -> in-app fee N300 -> commission N150. */
 async function offApp(s: any, cust: number, time: string, svc = 0) {
@@ -192,7 +193,7 @@ test('debt limits disable pay-on-arrival until settled; maintenance, barber paus
     await book(s.customerIds[2 % s.customerIds.length], '11:00');                                                     // settled: pay on arrival is back
     // age limit
     await s.db.tx((t: any) => updateSettings(t, { ledger_max_debt_naira: 0, ledger_max_age_days: 5 }));
-    await s.db.query(`INSERT INTO commission_ledger (barber_id, kind, amount_kobo, remaining_kobo, note, created_at) VALUES ($1,'ADJUSTMENT',100,100,'old',now() - interval '6 days')`, [s.barberId]);
+    await s.db.query(`INSERT INTO commission_ledger (barber_id, kind, amount_kobo, remaining_kobo, note, created_at) VALUES ($1,'ADJUSTMENT',100,100,'old',$2::timestamptz - interval '6 days')`, [s.barberId, NOW]);
     assert.equal((await ledgerBlocked(s.db, s.barberId)).blocked, true);
     await assert.rejects(book(s.customerIds[3 % s.customerIds.length], '12:00'), (e: any) => e.code === 'PAY_ON_ARRIVAL_OFF');
     await s.db.query(`DELETE FROM ledger_applications`); await s.db.query(`DELETE FROM commission_ledger`); await s.db.tx((t: any) => updateSettings(t, { ledger_max_age_days: 0 }));

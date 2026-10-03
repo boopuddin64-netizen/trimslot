@@ -70,6 +70,7 @@ async function userSheet(id, reload) {
   if (isC && u.account_status === 'ACTIVE') { btns.push(act('Suspend', 'red', 'data-k="suspend"')); btns.push(act('Ban', 'red', 'data-k="ban"')); }
   if (isC && u.account_status === 'SUSPENDED') { btns.push(act('Ban', 'red', 'data-k="ban"')); }
   if (isC && u.account_status !== 'ACTIVE') btns.push(act('Reinstate', '', 'data-k="reinstate"'));
+  if (isC) btns.push(act('Delete…', 'red', 'data-k="delete"'));
   const m = modal(`<div class="sh-h"><div><h2 style="margin:0">${esc(u.name)}</h2><div class="muted small">${esc(u.role)} · user #${u.id}</div></div><button class="btn sm sec" data-close>Close</button></div>
     <div class="row-badges">${acctBadge(u.account_status)} ${u.warn_count ? bd('b-gray', u.warn_count + ' warning' + (u.warn_count > 1 ? 's' : '')) : ''}</div>
     ${u.status_reason ? `<div class="note"><b>Reason shown to the user</b>${esc(u.status_reason)}</div>` : ''}
@@ -82,6 +83,7 @@ async function userSheet(id, reload) {
   const again = () => reload && reload();
   m.el.querySelectorAll('[data-k]').forEach((b) => b.onclick = () => {
     const k = b.dataset.k; m.close();
+    if (k === 'delete') { ADM4.deleteDialog({ type: 'customer', id, name: u.name, after: async () => { again(); } }); return; }
     const cfg = {
       warn: { title: 'Warn ' + u.name, help: 'They get a notification with your message.', go: 'Send warning', fields: [REASON('Warning message (the customer sees this)', 'e.g. Please arrive on time or cancel early.')], submit: async (v) => { const x = await post(`/users/${id}/warn`, v); return 'Warning sent (' + x.warn_count + ' total)'; } },
       suspend: { title: 'Suspend ' + u.name, help: 'They cannot log in or book until reinstated. Existing bookings are not touched.', go: 'Suspend', cls: 'red', fields: [REASON('Reason (the customer sees this)')], submit: async (v) => { await post(`/users/${id}/suspend`, v); return 'Customer suspended'; } },
@@ -102,6 +104,7 @@ async function bookingSheet(id, reload) {
   if (st === 'CONFIRMED') btns.push(act('Reschedule', 'sec', 'data-k="reschedule"'));
   if (['CONFIRMED', 'ARRIVED'].includes(st)) btns.push(act('No-show', 'sec', 'data-k="noshow"'));
   if (live) btns.push(act('Force complete', '', 'data-k="complete"'));
+  if (!['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(st)) btns.push(act('Delete…', 'red', 'data-k="delete"'));
   const pays = r.payments.length ? r.payments.map((p) => `<div class="kv"><span class="mono">${esc(p.reference)}${p.disputed ? ' ⚑ disputed' : ''}<small class="muted" style="display:block">fee ${naira(p.fee_kobo)}${p.debt_netted_kobo ? ' · commission netted ' + naira(p.debt_netted_kobo) : ''}</small></span><b>${naira(p.amount_kobo)} ${payBadge(p.status)} ${refundBadge(p.refund_status)}</b></div>`).join('') : '<div class="muted small">No online payment.</div>';
   const hist = r.history.map((h) => `<div class="kv"><span>${esc(human(h.action))} <small class="muted">${esc(h.actor_role)}</small>${h.details?.reason ? `<small class="muted" style="display:block">${esc(h.details.reason)}</small>` : ''}</span><b class="small">${stamp(h.created_at)}</b></div>`).join('');
   const m = modal(`<div class="sh-h"><div><h2 style="margin:0">Booking #${b.id}</h2><div class="muted small">${esc(b.service_name)} · ${esc(b.shop_name)}</div></div><button class="btn sm sec" data-close>Close</button></div>
@@ -112,6 +115,7 @@ async function bookingSheet(id, reload) {
   const after = async () => { if (reload) await reload(); };
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = () => {
     const k = x.dataset.k; m.close();
+    if (k === 'delete') { ADM4.deleteDialog({ type: 'booking', id, name: '#' + id, after }); return; }
     const cfg = {
       cancel: { title: `Cancel booking #${id}`, help: 'Both the customer and the barber are notified with your reason.', go: 'Cancel booking', cls: 'red',
         fields: [REASON('Reason (both sides see this)'), ...(b.payment_status === 'PAID' && b.payment_option === 'ONLINE' ? [{ name: 'refund', label: 'Paid online: what happens to the money?', type: 'select', options: [['refund', 'Refund to the customer'], ['credit', 'Give a session credit'], ['none', 'Neither (handle manually)']], value: 'refund' }] : [])],

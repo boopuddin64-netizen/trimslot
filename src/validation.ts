@@ -58,7 +58,6 @@ export const profileSchema = z.object({
   photo_url: z.string().trim().max(500).refine((s) => s === '' || /^https?:\/\//i.test(s) || /^\/api\/barbers\/\d+\/photo(\?v=[a-z0-9]+)?$/.test(s), 'Photo must be an http(s) URL').optional(),
   location: z.string().trim().max(160).optional(),
   about: z.string().trim().max(600).optional(),
-  paystack_subaccount: z.string().trim().max(60).regex(/^(ACCT_[A-Za-z0-9]+)?$/, 'Subaccount code looks like ACCT_xxxxxxxx').optional(),
 });
 
 export const scheduleSchema = z.object({

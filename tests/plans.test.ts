@@ -256,7 +256,7 @@ test('HTTP: admin settings API needs the admin key; customers cannot create plan
     assert.equal((await j(`/api/barber/plans`, { headers: { Cookie: barber } }).then((r) => r.json()) as any).purchases.length, 0);
     await j(`/api/payments/mock/${bj.reference}/complete`, { method: 'POST', body: {} });
     const cb = await fetch(`${base}/api/payments/callback?reference=${bj.reference}`, { redirect: 'manual' });
-    assert.equal(cb.status, 302); assert.match(cb.headers.get('location')!, /^\/#\/wallet\?plan=processed$/);
+    assert.equal(cb.status, 302); assert.match(cb.headers.get('location')!, /^\/#\/wallet\?plan=processed&pp=\d+$/);
     const wallet = await (await j('/api/me/wallet', { headers: { Cookie: cust } })).json() as any;
     assert.equal(wallet.plans[0].sessions_left, 3);
     const bk = await j('/api/bookings', { method: 'POST', headers: { Cookie: cust }, body: { barber_id: c.barberId, service_id: c.serviceIds[0], date: WED, time: '10:00', payment_option: 'PLAN' } });

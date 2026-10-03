@@ -158,7 +158,7 @@ async function route() {
     if (parts[0] === 'barber') return barberPage(Number(parts[1]));
     if (role === 'customer') {
       if (parts[0] === 'book') return bookWizard(Number(parts[1]));
-      if (parts[0] === 'wallet') return wallet(q.get('plan'));
+      if (parts[0] === 'wallet') return wallet(q.get('plan'), Number(q.get('pp')) || 0);
       if (parts[0] === 'bookings') return myBookings();
       if (parts[0] === 'booking') return bookingDetail(Number(parts[1]), q.get('pay'));
     } else {
@@ -168,6 +168,7 @@ async function route() {
       if (parts[0] === 'reviews') return barberReviews();
       if (parts[0] === 'customers') return parts[1] ? customerProfile(Number(parts[1])) : customerList();
       if (parts[0] === 'settings') return settings();
+      if (parts[0] === 'payouts') return barberPayouts();
       if (parts[0] === 'balance') return barberBalance();
       if (parts[0] === 'b') return barberBooking(Number(parts[1]));
     }
@@ -197,7 +198,7 @@ function authPage(mode, roleQ) {
     app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book or manage your shop.'}</p>
       ${signup ? `<div class="seg" id="roleseg"><button data-r="customer" class="${role === 'customer' ? 'on' : ''}">I'm a customer</button><button data-r="barber" class="${role === 'barber' ? 'on' : ''}">I'm a barber</button></div>` : ''}
       ${err ? `<div class="err">${esc(err)}</div>` : ''}
-      <form id="f" novalidate>
+      <form id="f"${signup ? ' data-oneof="email,phone"' : ''}>
         ${signup ? `<label>Full name</label><input name="name" autocomplete="name" required>` : ''}
         ${signup && role === 'barber' ? `<label>Shop name</label><input name="shop_name" required><label>Shop location</label><input name="location" placeholder="Street, area, city">` : ''}
         ${signup ? `<label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com"><label>Phone</label><input name="phone" type="tel" autocomplete="tel" placeholder="0803 123 4567"><p class="small muted">Provide at least one of email or phone.</p>`
@@ -213,7 +214,7 @@ function authPage(mode, roleQ) {
         <a href="#" data-fill="tunde@trimslot.demo|Customer123!">Customer 2: tunde@trimslot.demo</a><br>
         <a href="#" data-fill="mike@trimslot.demo|Barber123!">Barber: mike@trimslot.demo</a></div>` : ''}`;
     document.querySelectorAll('#roleseg button').forEach((b) => b.onclick = () => { role = b.dataset.r; draw(); });
-    document.querySelectorAll('[data-fill]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const [i, p] = a.dataset.fill.split('|'); $('[name=identifier]').value = i; $('[name=password]').value = p; });
+    document.querySelectorAll('[data-fill]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const [i, p] = a.dataset.fill.split('|'); $('[name=identifier]').value = i; $('[name=password]').value = p; $('#f').dispatchEvent(new Event('input')); });
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = Object.fromEntries(new FormData(ev.target));
@@ -312,8 +313,9 @@ async function bookWizard(barberId) {
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
       const cr = creditFor(), pl = planFor();
-      const opts = ['ONLINE'].concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pl ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
-      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : 'ONLINE';   // credit / plan session are auto-applied by default
+      const onlineOk = bk.online_payments !== false;
+      const opts = (onlineOk ? ['ONLINE'] : []).concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pl ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
+      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : onlineOk ? 'ONLINE' : null;   // credit / plan session are auto-applied by default
       if (!opts.includes(w.pay)) w.pay = opts[0];
       const free = w.pay === 'PLAN' || w.pay === 'CREDIT';
       app.innerHTML = head + `<h2>Summary &amp; payment</h2>
@@ -322,13 +324,14 @@ async function bookWizard(barberId) {
         <h3 style="margin-top:16px">How would you like to pay?</h3>
         ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · valid until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
         ${pl ? `<button class="svc ${w.pay === 'PLAN' ? 'on' : ''}" data-p="PLAN"><div><b>Use plan session</b><div class="muted small">${esc(pl.plan_name)} · ${pl.sessions_left} left · ends ${dateLabel(pl.expires_at.slice(0, 10))}</div></div></button>` : ''}
-        <button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}</div></div></button>
-        ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>Pay on arrival isn't available for this booking right now. Please pay online.</div></div>`}
+        ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}. Paystack may add a small processing fee at checkout.</div></div></button>`
+          : `<div class="svc off" aria-disabled="true" id="online-off"><div><b>Pay now</b><div class="muted small">Not available: this barber hasn't set up online payments yet.</div></div></div>`}
+        ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>${onlineOk ? "Pay on arrival isn't available for this booking right now. Please pay online." : "Neither online payment nor pay on arrival is available for this barber right now. Please pick another barber or try again later."}</div></div>`}
         ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is briefly paused for maintenance.') : 'This shop has paused new bookings for now.'} You can't confirm a booking at the moment.</div></div>` : ''}
         ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your slot is only secured once payment completes.</b> Until then it stays open to other customers. If someone books it first, your booking won't be confirmed and any payment is refunded.</div></div>` : ''}
         <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before; after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
         ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="e.g. low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
-        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
+        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
       const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
       $('#back').onclick = () => { w.step = 2; draw(); };
@@ -396,9 +399,10 @@ async function barberProfile() {
   const [r, po] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null)]);
   const p = r.profile, u = state.user;
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
-  app.innerHTML = `${pendingBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
     <h2>My shop</h2>
-    <div class="list"><a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
+    <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts active · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to take online payments'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
+      <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
       ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from completed visits, reply to customers</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
@@ -411,6 +415,56 @@ async function barberProfile() {
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
+}
+
+/* ---------- barber: payouts (bank list -> account number -> resolve name -> save -> "Payouts active") ---------- */
+async function barberPayouts() {
+  const [st, bl] = await Promise.all([api('/barber/payout'), api('/barber/payout/banks').catch(() => ({ banks: [] }))]);
+  const active = st.status === 'ACTIVE';
+  const bank = (code) => (bl.banks.find((b) => b.code === code) || {}).name || '';
+  app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Payouts</h1>
+    <p class="muted">Money from online bookings goes straight to your bank account through Paystack. Pay-on-arrival bookings are paid to you directly.</p><div id="msg"></div>
+    ${active ? `<div class="card payok"><div class="row between"><b>${ic('check', 'sm')} Payouts active</b><span class="badge b-green">ACTIVE</span></div>
+        <div class="small" style="margin-top:6px">${esc(st.bank_name || 'Bank')} · account ••••${esc(st.account_last4 || '')}</div><div class="small muted">${esc(st.account_name || '')}</div>
+        <div class="btns" style="margin-top:10px"><button class="btn sm sec" id="chg">Change account</button></div></div>`
+      : `<div class="warn notice">${ic('warn')}<div><b>Payouts not set up.</b> Until you add your bank account, customers can't pay you online — they will only see “Pay on arrival”.</div></div>`}
+    <form id="pof" class="card ${active ? 'hidden' : ''}" novalidate>
+      <label for="pobank">Bank</label>
+      <select id="pobank" name="bank_code" required><option value="">Choose your bank…</option>${bl.banks.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join('')}</select>
+      <label for="poacct">Account number</label>
+      <input id="poacct" name="account_number" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10-digit NUBAN" required>
+      <div id="poname" class="small" aria-live="polite" style="min-height:20px;margin-top:6px"></div>
+      <div id="pomanual" class="hidden"><label for="pomn">Account name</label><input id="pomn" name="account_name" maxlength="80" placeholder="Name on the account"><div class="small muted">Test mode: the bank lookup is unavailable, so type the account name.</div></div>
+      <div class="btns cta"><button class="btn" id="posave" disabled>Save payout account</button></div>
+      <p class="small muted">We never store your full account number — only the last 4 digits and a Paystack subaccount code.</p>
+    </form>`;
+  const chg = $('#chg'); if (chg) chg.onclick = () => { $('#pof').classList.remove('hidden'); chg.disabled = true; };
+  const f = $('#pof'), bankSel = $('#pobank'), acct = $('#poacct'), nameEl = $('#poname'), save = $('#posave'), manual = $('#pomanual'), mn = $('#pomn');
+  let resolved = null, seq = 0;
+  const valid = () => !!(bankSel.value && /^\d{10}$/.test(acct.value) && (resolved || (!manual.classList.contains('hidden') && mn.value.trim().length >= 2)));
+  const sync = () => { save.disabled = !valid(); };
+  const resolve = async () => {
+    resolved = null; manual.classList.add('hidden'); sync();
+    if (!(bankSel.value && /^\d{10}$/.test(acct.value))) { nameEl.textContent = ''; return; }
+    const my = ++seq; nameEl.innerHTML = '<span class="muted">Checking account…</span>';
+    try {
+      const r = await api('/barber/payout/resolve', { method: 'POST', body: { bank_code: bankSel.value, account_number: acct.value } });
+      if (my !== seq) return; resolved = r.account_name; nameEl.innerHTML = `<span class="okt">${ic('check', 'sm')} ${esc(r.account_name)}</span>`;
+    } catch (e) {
+      if (my !== seq) return;
+      if (e.code === 'RESOLVE_UNAVAILABLE' && st.test_mode) { nameEl.innerHTML = '<span class="muted">Couldn\'t look up the name.</span>'; manual.classList.remove('hidden'); }
+      else nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span>`;
+    }
+    sync();
+  };
+  bankSel.onchange = resolve; acct.oninput = () => { acct.value = acct.value.replace(/\D/g, '').slice(0, 10); resolve(); }; mn.oninput = sync;
+  f.onsubmit = async (ev) => {
+    ev.preventDefault(); if (!valid()) return; save.disabled = true; save.textContent = 'Saving…';
+    try {
+      await api('/barber/payout', { method: 'POST', body: { bank_code: bankSel.value, account_number: acct.value, ...(resolved ? {} : { account_name: mn.value.trim() }) } });
+      const me = await api('/auth/me'); state.user = me.user; toast('Payouts active'); barberPayouts();
+    } catch (e) { fail(e); save.textContent = 'Save payout account'; sync(); }
+  };
 }
 
 /* ---------- barber: plans manager (own tab) ---------- */
@@ -469,10 +523,15 @@ async function buyPlan(id, el) {
   try { const r = await api(`/plans/${id}/buy`, { method: 'POST' }); location.href = r.authorization_url; } catch (e) { fail(e); el.disabled = false; }
 }
 const expTxt = (iso) => dateLabel(String(iso).slice(0, 10));
-async function wallet(planResult) {
+async function wallet(planResult, ppId) {
+  if (planResult && ppId && !['processed', 'already_processed', 'refund_due', 'checked', 'amount_mismatch'].includes(planResult)) {
+    const r = await confirmReturn('plan', ppId, 'Confirming your plan payment…');
+    history.replaceState(null, '', '#/wallet?plan=' + (r === 'processed' || r === 'already_processed' || r === 'refund_due' || r === 'amount_mismatch' ? r : 'checked'));
+    planResult = new URLSearchParams(location.hash.split('?')[1] || '').get('plan');
+  }
   const w = await api('/me/wallet');
   const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">Plan purchased. Pick "Use plan session" when you book.</div>'
-    : planResult === 'not_paid' ? '<div class="err">Payment was not completed, so the plan was not activated.</div>' : planResult === 'refund_due' ? '<div class="info">That payment could not be applied and is being refunded.</div>' : '';
+    : planResult === 'not_paid' ? '<div class="err">Payment was not completed, so the plan was not activated.</div>' : planResult === 'checked' ? '<div class="info">We have not received confirmation from Paystack yet. If you were charged, the plan activates on its own within a few minutes (or the payment is refunded).</div>' : planResult === 'amount_mismatch' ? '<div class="err">We received your payment but the amount did not match, so the plan was not activated automatically. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">That payment could not be applied and is being refunded.</div>' : '';
   const live = w.credits.filter((c) => c.live), past = w.credits.filter((c) => !c.live);
   app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
     <h2>Session credits</h2>
@@ -494,12 +553,34 @@ async function myBookings() {
   app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.map(bookingCard).join('') || '<p class="muted">Nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.map(bookingCard).join('') || '<p class="muted">No past bookings yet.</p>'}`;
   startPoll(myBookings);
 }
+/* Back from Paystack: the redirect lands here before the webhook may have arrived, so we ask the server to verify by reference (a few tries, a few seconds apart) instead of showing a stale "not confirmed". */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function confirmReturn(kind, id, title) {
+  app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please don't close this page. This usually takes a few seconds.</p></div>`;
+  let last = null;
+  for (let i = 0; i < 6; i++) {
+    try {
+      last = await api(kind === 'plan' ? `/plan-purchases/${id}/verify` : `/bookings/${id}/verify`, { method: 'POST' });
+      if (last.result === 'processed' || last.result === 'already_processed' || last.result === 'slot_taken' || last.result === 'refund_due') break;
+      if (last.result === 'amount_mismatch') break;
+    } catch (e) { last = { result: 'error' }; }
+    await sleep(2000);
+  }
+  return last ? last.result : 'not_paid';
+}
 async function bookingDetail(id, payResult) {
   const { booking: b } = await api('/bookings/' + id);
+  if (payResult && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'checked'].includes(payResult)) {
+    const r = await confirmReturn('booking', id, 'Confirming your payment…');
+    history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : r === 'slot_taken' || r === 'refund_due' ? r : r === 'amount_mismatch' ? 'amount_mismatch' : 'checked'));
+    return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'));
+  }
   const q = b.queue;
   let payMsg = '';
   if (payResult === 'processed' || payResult === 'already_processed') payMsg = '<div class="ok">Payment received. Your booking is confirmed.</div>';
   else if (payResult === 'not_paid') payMsg = '<div class="err">Payment was not completed. Your slot is not secured yet — pay below to lock it in, if it is still free.</div>';
+  else if (payResult === 'amount_mismatch') payMsg = '<div class="err">We received your payment but the amount did not match this booking, so it was not confirmed automatically. Please contact support with your booking number #' + id + ' — we will confirm it or refund you.</div>';
+  else if (payResult === 'checked') payMsg = '<div class="info">We have not received confirmation from Paystack yet. If you were charged, your booking will confirm on its own within a few minutes (or the payment is refunded). Tap “Check payment” to try again.</div>';
   else if (payResult === 'slot_taken' || payResult === 'refund_due') payMsg = '<div class="err">Sorry — someone else booked that time before your payment completed, so this booking was <b>not confirmed</b>. Your payment is being refunded. Please pick another time.</div>';
   const canCancel = b.can_cancel;
   const locked = ['CONFIRMED', 'ARRIVED'].includes(b.status) && !b.can_cancel;
@@ -617,6 +698,10 @@ document.addEventListener('click', async (ev) => {
   try { const r = await api('/barber/resubmit', { method: 'POST', body: {} }); state.user = { ...state.user, review_status: r.review_status, review_reason: r.review_reason, verified: r.verified }; toast('Sent for review'); route(); }
   catch (e) { b.disabled = false; toast(e.message || 'Could not resubmit', true); }
 });
+const payoutBanner = () => {
+  const u = state.user; if (!u || u.role !== 'barber' || u.verified === false || u.payout_ok !== false) return '';
+  return `<a class="notice warn payban" href="#/payouts">${ic('wallet')}<div><b>Set up payouts to take online payments.</b><div class="small">Until you add your bank account, customers can only pay you on arrival. <u>Set up now</u></div></div></a>`;
+};
 async function barberToday(keepScroll) {
   const d = await api('/barber/today');
   const ns = d.now_serving;
@@ -634,7 +719,7 @@ async function barberToday(keepScroll) {
     <div class="small muted" style="margin:-2px 0 8px">${sm.yesterday.completed ? `Yesterday: ${sm.yesterday.completed} cuts · ${naira(sm.yesterday.earned)}` : 'No cuts yesterday'}${sm.rating && sm.rating.count ? ` · ${ratingChip(sm.rating)}` : ''}${sm.waitlisted ? ` · ${sm.waitlisted} on waitlist` : ''}</div>` : '';
   const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you're running late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Shift everyone's expected time</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
       <div class="small muted" style="margin:12px 0 6px">Or send a message to everyone still waiting</div><div class="btns">${tp.templates.map((t) => `<button class="btn sm sec" data-tpl="${t.key}">${esc(t.label)}</button>`).join('')}</div></div></details>` : '';
-  app.innerHTML = `${pendingBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
     ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else in line.</p>'}
@@ -749,7 +834,7 @@ function confirmSheet(e) {
   return new Promise((resolve) => {
     const d = e.details || { count: 0, bookings: [] };
     const el = document.createElement('div'); el.className = 'scrim';
-    el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="notice"><div class="logo" style="background:linear-gradient(135deg,#ffb27a,#ff9a5c)">${ic('warn')}</div><div><h3 style="margin:0">This affects ${d.count} booking${d.count === 1 ? '' : 's'}</h3>
+    el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="notice"><div class="logo" style="background:var(--accent)">${ic('warn')}</div><div><h3 style="margin:0">This affects ${d.count} booking${d.count === 1 ? '' : 's'}</h3>
       <p class="muted small" style="margin:4px 0 0">These customers will be notified. Nothing is cancelled automatically — they can keep, rebook or cancel.</p></div></div>
       <ul>${(d.bookings || []).map((b) => `<li>${esc(b.when)} · ${esc(b.service_name)}</li>`).join('')}${d.count > (d.bookings || []).length ? `<li>…and ${d.count - d.bookings.length} more</li>` : ''}</ul>
       <div class="btns cta"><button class="btn sec" id="sh-no">Go back</button><button class="btn amber" id="sh-yes">Save &amp; notify</button></div></div>`;
@@ -823,11 +908,10 @@ async function settings() {
   if (needsSetup) return setupFlow(r);
   const activeDays = r.schedule.filter((d) => d.is_working);
   const hoursSub = activeDays.length ? `${activeDays.length} days · ${t12(activeDays[0].start)}–${t12(activeDays[0].end)}` : 'No working days';
-  app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Shop settings</h1><p class="muted">Shop details, services and opening hours.</p><div id="msg"></div>
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Shop settings</h1><p class="muted">Shop details, services and opening hours.</p><div id="msg"></div>
     ${acc('profile', 'store', 'Shop profile', 'Name, photo, location, about', `<form id="pf">${photoBlock(p)}
       <label>Your name</label><input name="name" value="${esc(state.user.name)}"><label>Shop name</label><input name="shop_name" value="${esc(p.shop_name)}">
       <label>Location</label><input name="location" value="${esc(p.location || '')}"><label>About</label><textarea name="about" rows="3">${esc(p.about || '')}</textarea>
-      <label>Paystack subaccount code</label><input name="paystack_subaccount" value="${esc(p.paystack_subaccount || '')}" placeholder="ACCT_xxxxxxxx (optional)">
       <div class="btns cta"><button class="btn">Save profile</button></div></form>`)}
     ${acc('services', 'tag', 'Services', `${r.services.length} service${r.services.length === 1 ? '' : 's'}`, `<p class="small muted" style="margin:10px 0 0">Price changes only affect future bookings.</p>${r.services.map(svcLine).join('')}<h3 style="margin-top:14px">Add a service</h3>${addSvcForm()}`)}
     ${acc('hours', 'clock', 'Weekly hours', hoursSub, `<p class="small muted" style="margin:10px 0">Leave break empty for no break. If a change affects existing bookings you'll be asked to confirm and those customers are notified.</p><div class="days-grid">${scheduleRows(r.schedule)}</div><div class="btns cta"><button class="btn" id="savesch">Save hours</button></div>`)}

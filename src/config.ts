@@ -63,6 +63,8 @@ export const config = {
   get webhookSecret() { return this.mockMode ? MOCK_SECRET : this.paystackKey; },
   get platformFeeKobo() { return Math.max(0, Math.round(Number(process.env.PLATFORM_FEE_KOBO || 0))); },
   get platformFeePercent() { return Math.max(0, Number(process.env.PLATFORM_FEE_PERCENT || 0)); },
+  /** Online payment needs a barber payout (Paystack subaccount). Always on in real modes; in MOCK dev mode it is opt-in (REQUIRE_PAYOUT=1) so demos keep working. */
+  get requirePayout() { return !this.mockMode || process.env.REQUIRE_PAYOUT === '1'; },
   get paymentHoldMin() { return Math.max(1, Number(process.env.PAYMENT_HOLD_MINUTES || 15)); },
 };
 

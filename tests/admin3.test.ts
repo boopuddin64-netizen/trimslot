@@ -1,16 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { setupPin } from '../src/adminPin';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { createBooking } from '../src/bookingService';
 
 const KEY = 'test-admin-key-0123456789';
 async function boot() {
-  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY;
+  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
   for (let i = 0; i < 60; i++) await s.db.query(`INSERT INTO users (role,name,email,phone,password_hash) VALUES ('customer',$1,$2,$3,'x')`, [`Bulk Person ${String(i).padStart(2, '0')}`, `bulk${i}@t.test`, `0800000${String(i).padStart(4, '0')}`]);
   const server = createApp(s.db).listen(0); const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const j = async (p: string, o: any = {}) => { const r = await fetch(base + '/api/admin' + p, { ...o, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KEY, ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
+  const j = async (p: string, o: any = {}) => { const r = await fetch(base + '/api/admin' + p, { ...o, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KEY, 'X-Admin-Pin': '4821', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
   return { ...s, server, get: (p: string) => j(p), post: (p: string, body: any = {}) => j(p, { method: 'POST', body }), base } as any;
 }
 

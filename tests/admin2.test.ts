@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { setupPin } from '../src/adminPin';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { createBooking } from '../src/bookingService';
@@ -11,12 +12,12 @@ import { initializePlanPurchase } from '../src/paystack';
 const KEY = 'test-admin-key-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY;
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
   for (const n of [3, 4]) s.customerIds.push((await s.db.one(`INSERT INTO users (role,name,email,phone,password_hash) VALUES ('customer',$1,$2,$3,'x') RETURNING id`, ['Extra ' + n, `extra${n}@trimslot.demo`, '0806000000' + n])).id);
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); const text = await r.text(); let body: any = {}; try { body = JSON.parse(text); } catch { body = { text }; } return { status: r.status, body, headers: r.headers }; };
-  const A = { Authorization: 'Bearer ' + KEY };
+  const A = { Authorization: 'Bearer ' + KEY, 'X-Admin-Pin': '4821' };
   const post = (p: string, body: any = {}) => j('/api/admin' + p, { method: 'POST', headers: A, body });
   const get = (p: string) => j('/api/admin' + p, { headers: A });
   const login = async (email: string, password: string) => { const r = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: email, password }) }); return { status: r.status, cookie: (r.headers.get('set-cookie') || '').split(';')[0] }; };

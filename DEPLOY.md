@@ -66,6 +66,8 @@ CLI equivalent: `vercel env add DATABASE_URL production` (repeat per variable).
 
 > Migration `008_push_and_smart.sql` adds push subscriptions, the smart-feature tables, feature toggles and the admin indexes (trigram search needs the `pg_trgm` extension, which Supabase allows; if unavailable it is skipped and search still works, just slower). Apply it before deploying.
 
+> Migration `009_payouts_pin_softdelete.sql` adds `payments.paid_kobo/gateway_fee_kobo`, the barber payout columns, soft-delete columns (+ `DELETED` account status) and the `admin_pin` table. Apply it **before** deploying. After deploying: each barber sets up payouts in the app (Profile → Payouts) before customers can pay them online, and you set your admin PIN once in the admin portal (Settings → Admin PIN). Payments stuck as `INITIATED` from before the fee fix can be recovered with *Re-verify with Paystack* in the payment sheet.
+
 ## 4. Deploy to Vercel
 **Option A — GitHub import (recommended):** push this repo to *your* GitHub → vercel.com → **Add New → Project → Import** the repo. Framework Preset: **Other**; leave Build/Output/Install commands at defaults (`vercel.json` supplies them; there is no build step — Vercel compiles `api/index.ts` itself). Add the env vars from §3 *before* the first deploy (or redeploy afterwards). Every push to the main branch redeploys.
 **Option B — CLI:**

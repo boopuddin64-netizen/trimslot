@@ -2,10 +2,11 @@
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
+import { requirePin } from './adminPin';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
-import { requestRefund } from './paystack';
+import { requestRefund, processReference } from './paystack';
 import { isoNow, lagosDate } from './time';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
@@ -43,7 +44,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
 
   /* ---------- barbers: review workflow (PENDING / NEEDS_INFO / VERIFIED / REJECTED / SUSPENDED) ---------- */
   const STATES = ['PENDING', 'NEEDS_INFO', 'VERIFIED', 'REJECTED', 'SUSPENDED'] as const;
-  const BARBER_SQL = `SELECT b.id, b.shop_name, b.location, b.verified, b.verified_at, b.created_at, b.paystack_subaccount, b.review_status, b.review_reason, b.reviewed_at, b.resubmit_note, b.resubmitted_at, b.booking_paused, b.pause_reason, b.fee_percent_override, b.fee_flat_kobo_override,
+  const BARBER_SQL = `SELECT b.id, b.shop_name, b.location, b.verified, b.verified_at, b.created_at, b.paystack_subaccount, b.payout_bank_name, b.payout_account_last4, b.payout_account_name, b.payout_set_at, b.review_status, b.review_reason, b.reviewed_at, b.resubmit_note, b.resubmitted_at, b.booking_paused, b.pause_reason, b.fee_percent_override, b.fee_flat_kobo_override,
         (SELECT COALESCE(SUM(remaining_kobo),0) FROM commission_ledger l WHERE l.barber_id=b.id AND l.status='ACCRUED')::bigint AS owed_kobo,
         u.name, u.email, u.phone, u.id AS user_id,
         (SELECT COUNT(*) FROM services s WHERE s.barber_id=b.id AND s.active)::int AS services,
@@ -53,7 +54,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   const barberRow = (b: any) => ({ ...b, owed_kobo: Number(b.owed_kobo || 0), subaccount_status: b.paystack_subaccount ? 'SET' : 'MISSING' });
   api.get('/admin/barbers', guard, wrap(async (req, res) => {
     const st = String(req.query.status || '').toUpperCase();
-    const rows = (await db.many(`${BARBER_SQL} ORDER BY CASE b.review_status WHEN 'PENDING' THEN 0 WHEN 'NEEDS_INFO' THEN 1 WHEN 'SUSPENDED' THEN 2 WHEN 'VERIFIED' THEN 3 ELSE 4 END, b.id DESC`, [lagosDate()])).map(barberRow);
+    const rows = (await db.many(`${BARBER_SQL} WHERE u.deleted_at IS NULL ORDER BY CASE b.review_status WHEN 'PENDING' THEN 0 WHEN 'NEEDS_INFO' THEN 1 WHEN 'SUSPENDED' THEN 2 WHEN 'VERIFIED' THEN 3 ELSE 4 END, b.id DESC`, [lagosDate()])).map(barberRow);
     const counts: Record<string, number> = { ALL: rows.length }; for (const k of STATES) counts[k] = rows.filter((r: any) => r.review_status === k).length;
     res.json({ barbers: (STATES as readonly string[]).includes(st) ? rows.filter((r: any) => r.review_status === st) : rows, counts });
   }));
@@ -209,9 +210,18 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     const now = await db.one('SELECT refund_status, refund_error FROM payments WHERE reference=$1', [ref]);
     res.json({ result: r, refund_status: now.refund_status, refund_error: now.refund_error });
   }));
+  /** Ask Paystack again about a payment that never confirmed (webhook missed / old amount bug). Confirms the booking if it was really paid and the slot is still free; otherwise the customer is flagged for a refund. */
+  api.post('/admin/payments/:reference/reverify', guard, wrap(async (req, res) => {
+    const ref = String(req.params.reference);
+    const p = await db.maybeOne<any>('SELECT reference, status FROM payments WHERE reference=$1', [ref]); if (!p) throw notFound('Payment not found');
+    const result = await processReference(db, ref);
+    await audit(db, null, ADMIN, 'ADMIN_PAYMENT_REVERIFIED', { reference: ref, result: result.result });
+    res.json({ result: result.result, payment: await db.one('SELECT reference, status, refund_status, booking_id, plan_purchase_id FROM payments WHERE reference=$1', [ref]) });
+  }));
   api.post('/admin/payments/:reference/mark-refunded', guard, wrap(async (req, res) => {
     const ref = String(req.params.reference);
     const note = z.object({ note: z.string().trim().max(200).optional() }).parse(req.body || {}).note;
+    await requirePin(db, req);    // irreversible: records a refund as paid out
     const out = await db.tx(async (t) => {
       const p = await t.maybeOne('SELECT id, refund_status, amount_kobo, booking_id, plan_purchase_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]);
       if (!p) throw notFound('Payment not found');
@@ -234,6 +244,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     const id = Number(req.params.id);
     const d = z.object({ action: z.enum(['credit', 'refund']) }).safeParse(req.body);
     if (!d.success) throw badRequest("action must be 'credit' or 'refund'");
+    if (d.data.action === 'refund') await requirePin(db, req);    // refunding money is irreversible; choosing a credit is not
     let refRef: string | null = null; let credit: any = null;
     await db.tx(async (t) => {
       const b = Number.isInteger(id) ? await t.maybeOne<any>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id]) : undefined;

@@ -169,3 +169,25 @@ kbd{font:600 11px/1 ui-monospace,Menlo,monospace;background:var(--bg2);border:1p
 .palr .none{padding:20px;text-align:center;color:var(--mut)}
 .palh{display:flex;gap:16px;padding:8px 14px;border-top:1px solid var(--line);color:var(--mut);font-size:12px}
 @media (max-width:719px){.palh{display:none}.pal{padding-top:6vh}}
+
+/* ---------- compact pass (v4): flat, dense, hairline ---------- */
+body.adm{padding-bottom:16px}
+.tag-admin{border-radius:4px;font-size:10.5px}
+#shell #app{padding-top:10px}
+.anav{top:49px;padding:4px 12px;backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg)}
+.anav a{min-height:30px;padding:0 10px;border-radius:6px;font-size:13px}
+.anav .nlab{display:none}
+.page-h{margin-bottom:4px;gap:8px}
+.tiles{gap:6px;margin:10px 0}.tile{padding:10px 12px;border-radius:8px}.tile b{font-size:18px;letter-spacing:0}.tile span{font-size:11.5px}
+.filters{margin:10px 0 6px;gap:6px}
+.pills{margin:10px 0 6px;gap:4px}.pills button{min-height:28px;padding:0 10px;border-radius:6px;font-size:13px}
+.tbl{font-size:13px}.tbl tr{padding:8px 12px;margin:6px 0;border-radius:8px}.tbl td{padding:3px 0}
+.tbl td.main{padding-bottom:6px}.tbl td.act{padding-top:6px}
+.empty{padding:20px 12px;border-radius:8px}
+.modal{background:rgba(15,23,42,.4)}
+.sheet{border-radius:12px 12px 0 0;padding:14px 12px 0;box-shadow:none;border-top:1px solid var(--line2)}
+.sheet h3{margin:14px 0 4px;font-size:12px;letter-spacing:.3px}
+.kv{padding:5px 0;font-size:13px}
+.warnbox{background:var(--accent-soft);border:1px solid rgba(183,121,31,.25);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
+@media (min-width:720px){.tbl td{padding:8px 10px}.tbl th{padding:6px 10px}.tblwrap{border-radius:8px}}
+@media (min-width:1000px){.anav{top:49px;height:calc(100vh - 49px);padding:14px 12px 14px 0}.anav a{min-height:32px}.anav .nlab{display:block}#shell #app{padding:14px 0 12px 20px}}

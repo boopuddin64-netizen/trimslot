@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Db } from './db';
 import { config, MOCK_SECRET } from './config';
 import { AppError, notFound } from './errors';
-import { applyVerifiedPayment, getBooking, PaymentOutcome } from './bookingService';
+import { applyVerifiedPayment, assertPayoutReady, getBooking, PaymentOutcome } from './bookingService';
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow } from './time';
 import { applyNettingForPayment, inAppFeeKobo, planCheckoutSplit, reverseNettingForPayment } from './ledger';
@@ -41,9 +41,29 @@ export function platformFeeKobo(priceKobo: number, s?: Pick<Settings, 'platform_
   return Math.min(flat + Math.round((priceKobo * pct) / 100), priceKobo);
 }
 
-export interface VerifyResult { ok: boolean; status: string; amount_kobo?: number; reference: string }
+export interface VerifyResult { ok: boolean; status: string; amount_kobo?: number; requested_amount_kobo?: number; fees_kobo?: number; reference: string }
 
-async function paystackFetch(path: string, init: RequestInit = {}) {
+/** Paystack accounts can be set to pass the processing fee on to the customer. Then `amount` (what the customer paid) is the price GROSSED UP by the fee,
+ *  and `requested_amount` is the price we asked for. We must compare the price we asked for, never the grossed-up total. Pure + unit-tested. */
+export function parseGatewayData(d: any, reference: string): VerifyResult {
+  const num = (v: unknown) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? undefined : Math.round(Number(v)));
+  return { ok: d?.status === 'success', status: String(d?.status), amount_kobo: num(d?.amount), requested_amount_kobo: num(d?.requested_amount), fees_kobo: num(d?.fees), reference };
+}
+/** Does what the gateway reports match the price on our payment row? Returns the processing fee the customer paid on top (0 if none), or null on a real mismatch. */
+export function amountMatches(v: VerifyResult, expectedKobo: number): { fee_kobo: number; paid_kobo: number } | null {
+  if (v.amount_kobo === undefined) return null;
+  const requested = v.requested_amount_kobo ?? v.amount_kobo;           // old/odd responses without requested_amount must match exactly
+  if (requested !== expectedKobo) return null;
+  if (v.amount_kobo < expectedKobo) return null;                        // underpaid
+  const extra = v.amount_kobo - expectedKobo;
+  if (extra > Math.max(20000, Math.round(expectedKobo * 0.08))) return null;   // a "fee" bigger than 8% / ₦200 is not a processing fee
+  return { fee_kobo: extra, paid_kobo: v.amount_kobo };
+}
+let verifier: ((db: Db, reference: string) => Promise<VerifyResult>) | null = null;
+/** Test hook: replace the gateway verification (never used in production code paths). */
+export function setGatewayVerifier(fn: typeof verifier) { verifier = fn; }
+
+export async function paystackFetch(path: string, init: RequestInit = {}) {
   const res = await fetch(PAYSTACK_API + path, {
     ...init,
     signal: AbortSignal.timeout(9000),           // stay well inside the serverless function time limit
@@ -67,6 +87,7 @@ export async function initializePayment(db: Db, bookingId: number, customerEmail
 async function startCheckout(db: Db, o: { reference: string; amount: number; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
   const { reference, amount } = o;
   const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
+  assertPayoutReady(barber);
   const subaccount: string | null = barber.paystack_subaccount || null;
   const { fee, netted, charge } = await planCheckoutSplit(db, barber, amount);
   let authUrl: string;
@@ -97,6 +118,7 @@ export async function initializePlanPurchase(db: Db, customerId: number, planId:
   const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
     FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND b.verified`, [planId]);
   if (!plan) throw notFound('Plan not found');
+  assertPayoutReady(plan);
   const purchase = await db.one<{ id: number }>(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, created_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [plan.id, customerId, plan.barber_id, plan.name, plan.price_kobo, plan.sessions, plan.validity_days, plan.service_ids, isoNow()]);
   const out = await startCheckout(db, { reference: makePlanReference(purchase.id), amount: plan.price_kobo, barberId: plan.barber_id,
@@ -106,14 +128,14 @@ export async function initializePlanPurchase(db: Db, customerId: number, planId:
 
 /** Ask Paystack (server-side) whether `reference` was paid. In MOCK mode (non-production only) the "gateway" is our own mock_paid flag. */
 export async function verifyWithGateway(db: Db, reference: string): Promise<VerifyResult> {
+  if (verifier) return verifier(db, reference);
   if (config.mockMode) {
     const p = await db.maybeOne('SELECT * FROM payments WHERE reference=$1', [reference]);
     if (!p) return { ok: false, status: 'not_found', reference };
     return { ok: !!p.mock_paid, status: p.mock_paid ? 'success' : 'abandoned', amount_kobo: p.amount_kobo, reference };
   }
   const json = await paystackFetch(`/transaction/verify/${encodeURIComponent(reference)}`);
-  const d = json.data || {};
-  return { ok: d.status === 'success', status: String(d.status), amount_kobo: d.amount, reference };
+  return parseGatewayData(json.data || {}, reference);
 }
 
 export type ProcessResult = 'processed' | 'already_processed' | 'not_paid' | 'unknown_reference' | 'amount_mismatch' | 'slot_taken' | 'refund_due';
@@ -132,9 +154,10 @@ export async function processReference(db: Db, reference: string): Promise<{ res
   if (pay.status === 'SUCCESS') return { result: 'already_processed', ...ids };
   const v = await verifyWithGateway(db, reference);            // network call: no DB transaction is open here
   if (!v.ok) return { result: 'not_paid', ...ids };
-  if (v.amount_kobo !== pay.amount_kobo) return { result: 'amount_mismatch', ...ids };
+  const am = amountMatches(v, pay.amount_kobo);
+  if (!am) return { result: 'amount_mismatch', ...ids };
   const outcome = await db.tx(async (t): Promise<PaymentOutcome | 'activated' | 'already_active' | null> => {
-    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2 WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow()]);
+    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4 WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo]);
     if (claim.rowCount !== 1) return null;                     // someone else already processed it
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);

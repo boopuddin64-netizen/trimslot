@@ -20,6 +20,7 @@ async function main() {
   const base = `http://localhost:${PORT}`;
   const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(PORT), DATABASE_URL: url, CRON_SECRET: 'flow-cron-secret-0123456789abcdef', PAYSTACK_SECRET_KEY: '', NODE_ENV: 'development', BASE: base, SWEEP_EVERY_SECONDS: '0' };
   delete env.TRIMSLOT_FAKE_NOW;
+  if (process.env.FLOW_FAKE_NOW) env.TRIMSLOT_FAKE_NOW = process.env.FLOW_FAKE_NOW;   // lets the flow run outside the 09:00–19:00 Lagos window (the clock keeps ticking from this instant)
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   const admin = new Client({ connectionString: url });
   let code = 1;
