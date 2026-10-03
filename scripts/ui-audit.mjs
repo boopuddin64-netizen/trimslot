@@ -7,9 +7,11 @@ const BASE = process.env.BASE || 'http://localhost:4102', ADMINKEY = process.env
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 let fails = 0, total = 0; const errs = [];
 const res = (ok, name, extra = '') => { total++; if (!ok) fails++; if (!ok || process.env.VERBOSE) console.log((ok ? 'PASS ' : 'FAIL ') + name + (extra ? ' :: ' + extra : '')); };
-const CUSTOMER = ['#/', '#/barber/1', '#/book/1', '#/bookings', '#/wallet', '#/profile', '#/notifications'];
+const SHOP = process.env.SHOP_ID || '1', OUT = process.env.OUT_DIR || 'audit';   // live run: SHOP_ID=<throwaway shop>, CUST/BARB=identifier:password, ADMIN_PAGES=comma list
+const CUST = (process.env.CUST || 'chidi@trimslot.demo:Customer123!').split(':'), BARB = (process.env.BARB || 'mike@trimslot.demo:Barber123!').split(':');
+const CUSTOMER = ['#/', `#/barber/${SHOP}`, `#/book/${SHOP}`, '#/bookings', '#/wallet', '#/profile', '#/notifications'];
 const BARBER = ['#/today', '#/upcoming', '#/customers', '#/plans', '#/reviews', '#/settings', '#/payouts', '#/balance', '#/profile', '#/notifications'];
-const ADMIN = ['home', 'customers', 'barbers', 'bookings', 'decisions', 'payments', 'credits', 'plans', 'earnings', 'ledger', 'analytics', 'reviews', 'waitlist', 'broadcast', 'reports', 'controls', 'rules', 'audit', 'pin', 'deleted', 'testdata'];
+const ADMIN = process.env.ADMIN_PAGES ? process.env.ADMIN_PAGES.split(',') : ['home', 'customers', 'barbers', 'bookings', 'decisions', 'payments', 'credits', 'plans', 'earnings', 'ledger', 'analytics', 'reviews', 'waitlist', 'broadcast', 'reports', 'controls', 'rules', 'audit', 'pin', 'deleted', 'testdata'];
 const inspect = () => {
   const collapsed = (e) => { for (let x = e.parentElement; x && x !== document.body; x = x.parentElement) { if (x.tagName === 'DETAILS' && !x.open && !e.closest('summary')) return true; const st = getComputedStyle(x); if ((st.overflow !== 'visible' || st.overflowY !== 'visible') && x.getBoundingClientRect().height < 2) return true; } return false; };
   const vis = (e) => { if (collapsed(e)) return false; const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 2 && r.height > 2 && s.visibility !== 'hidden' && s.display !== 'none' && s.opacity !== '0'; };
@@ -39,7 +41,7 @@ async function audit(p, w, role, name) {
   res(o.shadow === 0, id + ' no shadows', o.shadowEls.slice(0, 3).join(' | '));
   res(o.body <= 15 && o.h.every((x) => x >= 15 && x <= 22), id + ' type scale', `body ${o.body}, h ${o.h.join('/')}`);
   if (o.small.length) console.log(`NOTE ${id} small controls: ${o.small.slice(0, 4).join(', ')}`);
-  const dir = `/workspace/trimslot/screenshots/audit/${w}/`; fs.mkdirSync(dir, { recursive: true });
+  const dir = `/workspace/trimslot/screenshots/${OUT}/${w}/`; fs.mkdirSync(dir, { recursive: true });
   await p.screenshot({ path: dir + `${role}-${name.replace(/[^a-z0-9]+/gi, '_')}.png`, fullPage: true });
 }
 async function mk(w) {
@@ -50,14 +52,14 @@ async function mk(w) {
 async function login(p, id, pw) { await p.goto('/#/login'); await p.fill('[name=identifier]', id); await p.fill('[name=password]', pw); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('login'), null, { timeout: 8000 }); await p.waitForTimeout(500); }
 for (const w of [360, 390, 1280]) {
   { const { ctx, p } = await mk(w); await p.goto('/'); await p.waitForTimeout(500); await audit(p, w, 'public', 'landing'); await p.goto('/#/login'); await p.waitForTimeout(300); await audit(p, w, 'public', 'login'); await p.goto('/#/signup?role=barber'); await p.waitForTimeout(300); await audit(p, w, 'public', 'signup-barber'); await ctx.close(); }
-  { const { ctx, p } = await mk(w); await login(p, 'chidi@trimslot.demo', 'Customer123!');
+  { const { ctx, p } = await mk(w); await login(p, CUST[0], CUST[1]);
     for (const r of CUSTOMER) { await p.goto('/' + r); await p.waitForTimeout(700); await audit(p, w, 'customer', r); }
     // booking wizard: service -> slots -> payment step
-    await p.goto('/#/book/1'); await p.waitForSelector('.svc'); await p.locator('.svc').first().click(); await audit(p, w, 'customer', 'wizard-service'); await p.click('#next'); await p.waitForSelector('[data-t]'); await p.waitForTimeout(400);
+    await p.goto(`/#/book/${SHOP}`); await p.waitForSelector('.svc'); await p.locator('.svc').first().click(); await audit(p, w, 'customer', 'wizard-service'); await p.click('#next'); await p.waitForSelector('[data-t]'); await p.waitForTimeout(400);
     await p.evaluate(() => { const c = document.querySelector('.chips'); c.innerHTML = Array.from({ length: 60 }, (_, i) => `<button class="chip" data-t="x">${(8 + Math.floor(i / 4)) % 12 || 12}:${['00', '15', '30', '45'][i % 4]} ${i < 16 ? 'AM' : 'PM'}</button>`).join(''); });
     await audit(p, w, 'customer', 'wizard-60-slots');
     await ctx.close(); }
-  { const { ctx, p } = await mk(w); await login(p, 'mike@trimslot.demo', 'Barber123!');
+  { const { ctx, p } = await mk(w); await login(p, BARB[0], BARB[1]);
     for (const r of BARBER) { await p.goto('/' + r); await p.waitForTimeout(700); await audit(p, w, 'barber', r); if (r === '#/settings') { await p.evaluate(() => document.querySelectorAll('details').forEach((d) => { d.open = true; })); await p.waitForTimeout(300); await audit(p, w, 'barber', 'settings-all-open'); } }
     await ctx.close(); }
   { const { ctx, p } = await mk(w); await p.goto('/admin.html'); await p.fill('#key', ADMINKEY); await p.click('#lf button'); await p.waitForSelector('.tiles', { timeout: 10000 }); await p.waitForTimeout(500);

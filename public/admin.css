@@ -194,3 +194,6 @@ body.adm{padding-bottom:16px}
 
 /* ---- v5.1: no shadows ---- */
 .bulkbar{box-shadow:none;border-radius:8px}
+.acard:hover{transform:none;box-shadow:none;border-color:var(--line2)}
+.gres,.palbox{box-shadow:none}.palbox{border-radius:10px}
+.pal{backdrop-filter:none;-webkit-backdrop-filter:none}
