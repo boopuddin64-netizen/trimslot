@@ -20,7 +20,11 @@ async function main() {
   const base = `http://localhost:${PORT}`;
   const env: NodeJS.ProcessEnv = { ...process.env, PORT: String(PORT), DATABASE_URL: url, CRON_SECRET: 'flow-cron-secret-0123456789abcdef', PAYSTACK_SECRET_KEY: '', NODE_ENV: 'development', BASE: base, SWEEP_EVERY_SECONDS: '0' };
   delete env.TRIMSLOT_FAKE_NOW;
-  if (process.env.FLOW_FAKE_NOW) env.TRIMSLOT_FAKE_NOW = process.env.FLOW_FAKE_NOW;   // lets the flow run outside the 09:00–19:00 Lagos window (the clock keeps ticking from this instant)
+  // Outside 09:00-18:00 Lagos the scenarios (which book "later today" and wait for a real no-show) cannot run on the real clock,
+  // so start the server's clock at 09:30 Lagos today instead. FLOW_FAKE_NOW overrides; FLOW_REAL_CLOCK=1 forces the real clock.
+  const lagos = new Date(Date.now() + 3600_000), lm = lagos.getUTCHours() * 60 + lagos.getUTCMinutes();
+  const auto = !process.env.FLOW_REAL_CLOCK && (lm < 9 * 60 || lm > 18 * 60) ? `${lagos.toISOString().slice(0, 10)}T09:30:00+01:00` : '';
+  if (process.env.FLOW_FAKE_NOW || auto) { env.TRIMSLOT_FAKE_NOW = process.env.FLOW_FAKE_NOW || auto; console.log(`(flow clock: ${env.TRIMSLOT_FAKE_NOW})`); }   // lets the flow run outside the 09:00–19:00 Lagos window (the clock keeps ticking from this instant)
   const server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
   const admin = new Client({ connectionString: url });
   let code = 1;

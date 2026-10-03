@@ -191,3 +191,6 @@ body.adm{padding-bottom:16px}
 .warnbox{background:var(--accent-soft);border:1px solid rgba(183,121,31,.25);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
 @media (min-width:720px){.tbl td{padding:8px 10px}.tbl th{padding:6px 10px}.tblwrap{border-radius:8px}}
 @media (min-width:1000px){.anav{top:49px;height:calc(100vh - 49px);padding:14px 12px 14px 0}.anav a{min-height:32px}.anav .nlab{display:block}#shell #app{padding:14px 0 12px 20px}}
+
+/* ---- v5.1: no shadows ---- */
+.bulkbar{box-shadow:none;border-radius:8px}

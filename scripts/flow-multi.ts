@@ -96,7 +96,11 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
   let barberId = 0;
   for (let i = 0; i < 200 && !barberId; i++) { const b = (await anon.call('GET', '/api/barbers')).j.barbers?.find((x: any) => x.shop_name === shop); if (b) barberId = b.id; else await sleep(3000); }
   if (!barberId) throw new Error('barber was not verified in time');
-  const notifs = async (c: Client) => (await c.call('GET', '/api/notifications')).j.notifications as any[];
+  const notifs = async (c: Client) => {   // the API pages (default 40): read every page so counts are complete
+    const all: any[] = []; let before = 0;
+    for (let i = 0; i < 20; i++) { const j = (await c.call('GET', '/api/notifications?limit=100' + (before ? '&before=' + before : ''))).j; all.push(...j.notifications); if (!j.next_before) break; before = j.next_before; }
+    return all;
+  };
   const ntype = (l: any[], t: string) => l.filter((n) => n.type === t).length;
 
   /* ---- S02 barber setup + plan rules ---- */
@@ -120,8 +124,8 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
     const buy = await c1.call('POST', `/api/plans/${planId}/buy`); expect(buy.status === 201 && /^TS-PLAN-/.test(buy.j.reference), 'buy initialised'); purchaseId = buy.j.purchase_id;
     if (!MOCK) expect(/^https:\/\/checkout\.paystack\.com\//.test(buy.j.authorization_url || ''), 'real Paystack TEST checkout url');
     expect((await barber.call('GET', '/api/barber/plans')).j.purchases.length === 0, 'unpaid purchase hidden from barber');
-    const no = await c1.call('POST', '/api/bookings', { barber_id: barberId, service_id: svcA, date: D1, time: '17:00', payment_option: 'PLAN' });
-    expect(no.status === 409 && no.code === 'NO_PLAN_SESSION', 'unpaid plan cannot be used');
+    const no = await c1.call('POST', '/api/bookings', { barber_id: barberId, service_id: svcA, date: weekday(D1) === 0 ? D2 : D1, time: '17:00', payment_option: 'PLAN' });
+    expect(no.status === 409 && no.code === 'NO_PLAN_SESSION', `unpaid plan cannot be used (got ${no.status} ${no.code}: ${no.j?.error?.message || ''})`);
     if (MOCK) {
       await anon.call('POST', `/api/payments/mock/${buy.j.reference}/complete`);
       const cb = await anon.call('GET', `/api/payments/callback?reference=${buy.j.reference}`); expect(/plan=processed/.test(cb.loc), 'callback processed -> wallet');
@@ -308,7 +312,7 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
     const dbl = await barber.call('POST', `/api/barber/bookings/${bk.plan1}/no-show`); expect(dbl.status === 409, 'second no-show -> 409 (no second credit)');
     const w = (await c1.call('GET', '/api/me/wallet')).j; const cr = w.credits.filter((c: any) => c.live);
     expect(cr.length === 1, `exactly 1 live credit (got ${cr.length})`);
-    const days = (Date.parse(cr[0]?.expires_at) - Date.now()) / 86400000; expect(days > 29 && days <= 30.01, `credit expires in ~30 days (${days.toFixed(2)})`);
+    const days = (Date.parse(cr[0]?.expires_at) - Date.parse((await anon.call('GET', '/api/config')).j.now)) / 86400000; expect(days > 29 && days <= 30.01, `credit expires in ~30 days (${days.toFixed(2)})`);
     expect(ntype(await notifs(c1), 'CREDIT_ISSUED') === 1, 'customer notified once (CREDIT_ISSUED)');
     expect(!(await slotsOf(c2, today)).includes(T(0)) || true, '');
     const ov = (await barber.call('GET', '/api/barber/plans')).j; expect(ov.credits.length === 1 && ov.credits[0].live, 'barber sees the credit issued');
@@ -404,7 +408,7 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
   /* ---- S20 notification counts ---- */
   await scenario('S20', 'Notification counts: barber NEW_BOOKING == complete bookings created; /auth/me unread matches list; mark-read clears; no notification leaks between customers', async () => {
     const nb = await notifs(barber); expect(ntype(nb, 'NEW_BOOKING') === completeCreated, `barber NEW_BOOKING ${ntype(nb, 'NEW_BOOKING')} == created ${completeCreated}`);
-    for (const c of [barber, c1, c2, c6]) { const l = (await c.call('GET', '/api/notifications')).j; const me = (await c.call('GET', '/api/auth/me')).j; expect(me.unread === l.unread && l.unread === l.notifications.filter((n: any) => !n.is_read).length, `${c.name}: unread ${me.unread} == ${l.unread}`); }
+    for (const c of [barber, c1, c2, c6]) { const l = (await c.call('GET', '/api/notifications')).j; const me = (await c.call('GET', '/api/auth/me')).j; expect(me.unread === l.unread && l.unread === (await notifs(c)).filter((n: any) => !n.is_read).length, `${c.name}: unread ${me.unread} == ${l.unread}`); }
     const c2n = await notifs(c2); expect(!c2n.some((n) => /paid|plan|credit/i.test(n.title) && n.type.startsWith('PLAN')), 'c2 has no plan notifications');
     await c2.call('POST', '/api/notifications/read'); expect((await c2.call('GET', '/api/auth/me')).j.unread === 0, 'mark-all-read -> 0');
     const own = (await c2.call('GET', '/api/bookings')).j.bookings; const other = (await c3.call('GET', '/api/bookings')).j.bookings;

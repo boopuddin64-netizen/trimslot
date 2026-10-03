@@ -390,3 +390,9 @@ a.payban{text-decoration:none;color:inherit;font-weight:400}.payban u{color:var(
 .maintbar,.mockbar{font-size:12px;padding:6px 8px}
 .notif{border-left-width:2px}
 .starpick button svg{width:24px;height:24px}
+
+/* ---- v5.1: no shadows anywhere (banner, active tab indicator) ---- */
+.banner{box-shadow:none;border:1px solid var(--line2)}
+.tabs a{border-top:2px solid transparent}
+.tabs a.on{box-shadow:none;border-top-color:var(--brand)}
+.seg button.on{box-shadow:none;border:1px solid var(--line2)}

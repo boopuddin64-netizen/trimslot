@@ -11,6 +11,7 @@
     "test": "tsx scripts/test.ts",
     "e2e": "tsx scripts/e2e-run.ts",
     "flow": "tsx scripts/flow-run.ts",
+    "ui-audit": "node scripts/ui-audit.mjs",
     "admin": "tsx scripts/admin.ts",
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "start:prod": "node dist/src/index.js",
