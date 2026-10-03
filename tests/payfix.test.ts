@@ -113,3 +113,19 @@ test('callback return URL: fee-inclusive payment redirects into the hash route a
     assert.equal((await fetch(s.base + `/api/admin/payments/${c.p.reference}/reverify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
   } finally { setGatewayVerifier(null); s.server.close(); resetNow(); }
 });
+
+test('sweep: stale unpaid plan checkouts are dropped, but one with a signed gateway charge on record is KEPT (regression: paid-but-unconfirmed plan purchases vanished after 2 days)', async () => {
+  const { runSweep } = await import('../src/sweep');
+  const { initializePlanPurchase } = await import('../src/paystack');
+  const s = await freshDb();
+  const plan = (await s.db.one<any>(`INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, active) VALUES ($1,'Gold',1000000,4,60,TRUE) RETURNING id`, [s.barberId])).id;
+  const a = await initializePlanPurchase(s.db, s.customerIds[0], plan, null);   // abandoned: no gateway event
+  const b = await initializePlanPurchase(s.db, s.customerIds[1] ?? s.customerIds[0], plan, null);   // charged at the gateway (signed webhook recorded) but never confirmed
+  await s.db.query(`INSERT INTO payment_events (source, event_key, event_type, reference, signature_valid, payload, result, last_result) VALUES ('WEBHOOK','k-${b.reference}','charge.success',$1,TRUE,'{}','amount_mismatch','amount_mismatch')`, [b.reference]);
+  await s.db.query(`UPDATE plan_purchases SET created_at = now() - interval '3 days'`);
+  await runSweep(s.db);
+  const left = (await s.db.many<any>('SELECT id FROM plan_purchases')).map((r) => r.id);
+  assert.ok(!left.includes(a.purchase_id), 'abandoned purchase removed');
+  assert.ok(left.includes(b.purchase_id), 'purchase with a signed charge kept');
+  assert.equal((await s.db.one<any>('SELECT COUNT(*)::int c FROM payments WHERE reference=$1', [b.reference])).c, 1, 'its payment row kept too');
+});

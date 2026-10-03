@@ -1,6 +1,7 @@
 import { Db } from './db';
 import { expireHolds } from './bookingService';
-import { requestRefund } from './paystack';
+import { requestRefund, processReference } from './paystack';
+import { config } from './config';
 import { sendLedgerReminders } from './ledger';
 import { runSmartTick } from './smart';
 import { flushPush } from './push';
@@ -15,7 +16,15 @@ export async function runSweep(db: Db): Promise<{ smart: { reminders: number; wa
   const due = await db.many<{ reference: string }>(`SELECT reference FROM payments WHERE refund_status='NEEDS_REFUND' LIMIT 20`);
   let refunds_retried = 0;
   for (const d of due) if ((await requestRefund(db, d.reference)) === 'requested') refunds_retried++;
-  const stale = `SELECT pp.id FROM plan_purchases pp WHERE pp.status='PENDING' AND pp.created_at < now() - interval '2 days' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.plan_purchase_id=pp.id AND p.status='SUCCESS')`;
+  // Abandoned never-paid plan checkouts are dropped after 2 days - but NEVER one the gateway may have charged:
+  // (1) ask the gateway first (a late/mismatched charge is then confirmed or flagged for refund instead of silently vanishing),
+  // (2) keep any purchase that has a signed charge event on record, so the money trail is not lost.
+  const staleBase = `FROM plan_purchases pp WHERE pp.status='PENDING' AND pp.created_at < now() - interval '2 days' AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.plan_purchase_id=pp.id AND p.status='SUCCESS')`;
+  if (!config.mockMode) {
+    const refs = await db.many<{ reference: string }>(`SELECT p.reference FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id WHERE p.status='INITIATED' AND pp.status='PENDING' AND pp.created_at < now() - interval '2 days' AND pp.created_at > now() - interval '30 days' LIMIT 10`).catch(() => []);
+    for (const r of refs) await processReference(db, r.reference).catch(() => undefined);
+  }
+  const stale = `SELECT pp.id ${staleBase} AND NOT EXISTS (SELECT 1 FROM payments p JOIN payment_events e ON e.reference=p.reference WHERE p.plan_purchase_id=pp.id AND e.signature_valid IS TRUE)`;
   await db.query(`DELETE FROM payments WHERE plan_purchase_id IN (${stale})`).catch(() => {});
   await db.query(`DELETE FROM plan_purchases WHERE id IN (${stale})`).catch(() => {});
   const ledger_reminders = await db.tx((t) => sendLedgerReminders(t)).catch(() => 0);
