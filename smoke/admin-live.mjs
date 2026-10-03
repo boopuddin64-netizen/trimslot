@@ -2,7 +2,7 @@
 // Does NOT flip global maintenance / feature switches (those are covered by unit tests + local runs).
 const B = process.env.BASE || 'https://trimslot-eight.vercel.app', KEY = process.env.CRON_SECRET; if (!KEY) throw new Error('CRON_SECRET missing');
 const tag = Date.now().toString(36);
-const call = async (p, o = {}, ck) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(ck ? { Cookie: ck } : {}), ...(o.auth ? { Authorization: 'Bearer ' + KEY } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); const j = await r.json().catch(() => ({})); return { s: r.status, j, r }; };
+const call = async (p, o = {}, ck) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(ck ? { Cookie: ck } : {}), ...(o.auth ? { Authorization: 'Bearer ' + KEY, ...(process.env.SMOKE_PIN ? { 'X-Admin-Pin': process.env.SMOKE_PIN } : {}) } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); const j = await r.json().catch(() => ({})); return { s: r.status, j, r }; };
 const A = (p, o = {}) => call(p, { ...o, auth: true });
 const P = (p, body) => A(p, { method: 'POST', body: body || {} });
 let bad = 0; const ck = (ok, m) => { if (!ok) bad++; console.log((ok ? 'ok   ' : 'FAIL ') + m); };
@@ -34,7 +34,7 @@ ck((await P(`/admin/barbers/${id}/reinstate`)).j.review_status === 'VERIFIED', '
 // ---- per-barber controls
 ck((await P(`/admin/barbers/${id}/pause`, { paused: true })).s === 400, 'pause needs a reason');
 ck((await P(`/admin/barbers/${id}/pause`, { paused: true, reason: 'smoke' })).j.changed === true, 'pause bookings');
-const d = new Date(Date.now() + 86400000 + 3600000).toISOString().slice(0, 10);
+const d = (() => { let t = Date.now() + 86400000 + 3600000; if (new Date(t).getUTCDay() === 0) t += 86400000; return new Date(t).toISOString().slice(0, 10); })(); // never a Sunday (default schedule is closed)
 const paused = await call('/bookings', { method: 'POST', body: { barber_id: id, service_id: sid, date: d, time: '10:00', payment_option: 'ON_ARRIVAL' } }, cck); ck(paused.s === 409 && paused.j.error?.code === 'BARBER_PAUSED', 'booking blocked while paused ' + paused.s);
 ck((await call(`/barbers/${id}`)).j.booking?.paused === true, 'barber page exposes paused flag');
 ck((await P(`/admin/barbers/${id}/pause`, { paused: false })).j.changed === true, 'resume bookings');
@@ -42,8 +42,9 @@ ck((await P(`/admin/barbers/${id}/fee`, { percent: 5, flat_naira: 0, reason: 'sm
 // ---- bookings: reschedule, cancel, online payment init
 const mk = async (ck2, time, opt) => call('/bookings', { method: 'POST', body: { barber_id: id, service_id: sid, date: d, time, payment_option: opt } }, ck2);
 const b1 = await mk(cck, '10:00', 'ON_ARRIVAL'); ck(b1.s === 201, 'customer books pay-on-arrival ' + b1.s); const bid1 = b1.j.booking?.id;
-const b2 = await mk(dck, '12:00', 'ONLINE'); ck(b2.s === 201, 'customer 2 books online ' + b2.s); const bid2 = b2.j.booking?.id;
-const pay = await call(`/bookings/${bid2}/pay`, { method: 'POST', body: {} }, dck); ck(pay.s < 300 && !!pay.j.reference, 'payment initialised (Paystack TEST)'); const ref = pay.j.reference;
+const blk = await mk(dck, '12:00', 'ONLINE'); ck(blk.s === 409 && blk.j.error?.code === 'PAYOUT_NOT_SETUP', 'online payment refused until the barber has payouts ' + blk.s);
+const b2 = await mk(dck, '12:00', 'ON_ARRIVAL'); ck(b2.s === 201, 'customer 2 books pay-on-arrival ' + b2.s); const bid2 = b2.j.booking?.id;
+const ref = 'TS-SMOKE-NONE-' + tag; // real payment init is covered by smoke/pay-live.mjs
 ck((await P(`/admin/bookings/${bid1}/reschedule`, { date: d, time: '11:00' })).s === 400, 'reschedule needs a reason');
 const mv = await P(`/admin/bookings/${bid1}/reschedule`, { date: d, time: '11:00', reason: 'smoke test move' }); ck(mv.s === 200, 'admin reschedules ' + mv.s + ' ' + JSON.stringify(mv.j).slice(0, 100));
 ck((await call('/notifications', {}, cck)).j.notifications.some((n) => n.type === 'BOOKING_RESCHEDULED'), 'customer notified of the move');
@@ -62,7 +63,7 @@ if (owed > 0) {
   ck((await P(`/admin/ledger/${id}/waive`, { all: true, reason: 'smoke waive' })).j.owed_kobo === 0, 'waive all -> zero');
 }
 // ---- cancel with credit/refund options (customer 2's unpaid online booking: plain cancel)
-ck((await P(`/admin/bookings/${bid2}/cancel`, {})).s === 400, 'cancel needs a reason'); ck((await P(`/admin/bookings/${bid2}/cancel`, { reason: 'smoke cancel' })).j.status === 'CANCELLED', 'admin cancels the unpaid booking');
+ck((await P(`/admin/bookings/${bid2}/cancel`, {})).s === 400, 'cancel needs a reason'); ck((await P(`/admin/bookings/${bid2}/cancel`, { reason: 'smoke cancel' })).j.status === 'CANCELLED', 'admin cancels the booking');
 // ---- customers: warn / suspend / ban / reinstate
 const cl = await A('/admin/customers?q=' + encodeURIComponent(cEmail)); const cid = cl.j.customers[0]?.id; ck(cl.j.customers.length === 1 && cid > 4, 'customer search finds only the throwaway (id ' + cid + ')');
 if (!cid || cid <= 4) throw new Error('unexpected customer id; refusing');

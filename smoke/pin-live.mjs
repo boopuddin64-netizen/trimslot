@@ -1,0 +1,22 @@
+// Live smoke: admin PIN + soft delete/restore/purge on a throwaway customer. Needs CRON_SECRET and SMOKE_PIN (a PIN already set). Only touches smoketest+pin-*@example.com.
+const B = process.env.BASE || 'https://trimslot-eight.vercel.app', KEY = process.env.CRON_SECRET, PIN = process.env.SMOKE_PIN; if (!KEY || !PIN) throw new Error('CRON_SECRET and SMOKE_PIN needed');
+const tag = Date.now().toString(36); let bad = 0; const ck = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
+const call = async (p, o = {}) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(o.auth ? { Authorization: 'Bearer ' + KEY } : {}), ...(o.pin ? { 'X-Admin-Pin': o.pin } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); return { s: r.status, j: await r.json().catch(() => ({})), r }; };
+const A = (p, o = {}) => call(p, { ...o, auth: true });
+const email = `smoketest+pin-${tag}@example.com`, pw = 'Smoke12345!';
+const su = await call('/auth/signup', { method: 'POST', body: { name: 'Pin Smoke', email, password: pw, role: 'customer' } }); ck(su.s === 201, 'throwaway customer ' + su.s); const uid = su.j.user?.id;
+ck((await A('/admin/pin/status')).j.set === true, 'PIN is set');
+const n = await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke' } }); ck(n.s === 403 && n.j.error?.code === 'PIN_REQUIRED', 'delete without PIN refused ' + n.s + ' ' + n.j.error?.code);
+const w = await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke' }, pin: PIN === '4829' ? '4830' : '4829' }); ck(w.s === 403 && w.j.error?.code === 'PIN_WRONG' && (w.j.error?.attempts_left ?? w.j.attempts_left ?? w.j.error?.details?.attempts_left) !== undefined, 'wrong PIN refused ' + JSON.stringify(w.j).slice(0, 160));
+const cw = await A('/admin/pin/change', { method: 'POST', body: { old_pin: '9999', new_pin: '4831' } }); ck(cw.s === 403, 'change PIN with wrong old PIN refused ' + cw.s);
+const d = await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke' }, pin: PIN }); ck(d.s === 200, 'soft delete with PIN ' + d.s + ' ' + JSON.stringify(d.j).slice(0, 100));
+const lg = await call('/auth/login', { method: 'POST', body: { identifier: email, password: pw } }); ck(lg.s >= 400, 'deleted customer cannot log in ' + lg.s);
+const ls = await A('/admin/deleted'); ck(JSON.stringify(ls.j).includes(email) || JSON.stringify(ls.j).includes('Pin Smoke'), 'listed under recently deleted');
+const rs = await A(`/admin/restore/customer/${uid}`, { method: 'POST', body: {} }); ck(rs.s === 200, 'restore (no PIN) ' + rs.s);
+const lg2 = await call('/auth/login', { method: 'POST', body: { identifier: email, password: pw } }); ck(lg2.s === 200, 'restored customer logs in ' + lg2.s);
+const pg0 = await A(`/admin/purge/customer/${uid}`, { method: 'POST', body: { reason: 'smoke purge' }, pin: PIN }); ck(pg0.s >= 400 && pg0.j.error?.code === 'DELETE_FIRST', 'purge before soft delete refused ' + pg0.j.error?.code);
+await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke 2' }, pin: PIN });
+const pg = await A(`/admin/purge/customer/${uid}`, { method: 'POST', body: { reason: 'smoke purge' }, pin: PIN }); ck(pg.s === 200, 'hard delete with PIN ' + pg.s + ' ' + JSON.stringify(pg.j).slice(0, 100));
+const tp = await A('/admin/testdata/preview'); ck(tp.s === 200, 'test-data preview ' + tp.s + ' ' + JSON.stringify(tp.j).slice(0, 160));
+const tn = await A('/admin/testdata/purge', { method: 'POST', body: { confirm: 'nope' }, pin: PIN }); ck(tn.s >= 400, 'test-data purge needs the typed phrase ' + tn.s);
+console.log(bad ? bad + ' FAILED' : 'ALL OK'); process.exit(bad ? 1 : 0);

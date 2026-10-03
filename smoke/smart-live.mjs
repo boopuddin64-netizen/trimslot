@@ -2,7 +2,7 @@
 // Push: subscribes with an obviously fake https endpoint on example.invalid (never a real push service). Toggles are restored at the end.
 const B = process.env.BASE || 'https://trimslot-eight.vercel.app', KEY = process.env.CRON_SECRET; if (!KEY) throw new Error('CRON_SECRET missing');
 const tag = Date.now().toString(36);
-const call = async (p, o = {}, ck) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(ck ? { Cookie: ck } : {}), ...(o.auth ? { Authorization: 'Bearer ' + KEY } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); let j = {}; try { j = await r.json(); } catch { /* */ } return { s: r.status, j, r }; };
+const call = async (p, o = {}, ck) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(ck ? { Cookie: ck } : {}), ...(o.auth ? { Authorization: 'Bearer ' + KEY, ...(process.env.SMOKE_PIN ? { 'X-Admin-Pin': process.env.SMOKE_PIN } : {}) } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); let j = {}; try { j = await r.json(); } catch { /* */ } return { s: r.status, j, r }; };
 const A = (p, o = {}) => call(p, { ...o, auth: true }); const P = (p, body) => A(p, { method: 'POST', body: body || {} });
 let bad = 0; const ck = (ok, m) => { if (!ok) bad++; console.log((ok ? 'ok   ' : 'FAIL ') + m); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,7 +27,7 @@ ck((await call('/push/subscribe', { method: 'POST', body: { subscription: fake }
 ck((await call('/push/status', {}, cck)).j.devices === 1, 'device counted');
 
 // ---- booking flow triggers notifications + push attempt
-const d = new Date(Date.now() + 86400000 + 3600000).toISOString().slice(0, 10);
+const d = (() => { let t = Date.now() + 86400000 + 3600000; if (new Date(t).getUTCDay() === 0) t += 86400000; return new Date(t).toISOString().slice(0, 10); })(); // never a Sunday (default schedule is closed)
 const bk = await call('/bookings', { method: 'POST', body: { barber_id: bid, service_id: sid, date: d, time: '10:00', payment_option: 'ON_ARRIVAL', note: 'Low fade please' } }, cck); ck(bk.s === 201, 'book with a note ' + bk.s);
 const bkid = bk.j.booking?.id;
 ck((await call('/barber/bookings', {}, bck)).j !== undefined, 'barber bookings load');

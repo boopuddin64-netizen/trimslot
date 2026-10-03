@@ -24,22 +24,25 @@ const bk = await call('/bookings', { method: 'POST', body: { barber_id: bid, ser
 const bkid = bk.j.booking?.id;
 const pay = await call(`/bookings/${bkid}/pay`, { method: 'POST', body: {} }, cck); ck(pay.s === 200 && /^https:\/\/checkout\.paystack\.com\//.test(pay.j.authorization_url || ''), 'real Paystack initialize returned a checkout URL ' + pay.s + ' ' + (pay.j.error?.message || ''));
 if (pay.s !== 200) { console.log(JSON.stringify(pay.j).slice(0, 300)); process.exit(1); }
-const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: !process.env.HEADED, args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 await ctx.addCookies([{ name: cck.split('=')[0], value: cck.split('=').slice(1).join('='), url: B }]);
 const p = await ctx.newPage(); const nav = []; p.on('framenavigated', (f) => { if (f === p.mainFrame()) nav.push(f.url().replace(/reference=[^&]+/, 'reference=…').replace(/trxref=[^&]+/, 'trxref=…').slice(0, 120)); });
 await p.goto(pay.j.authorization_url, { waitUntil: 'domcontentloaded' }); await p.waitForTimeout(6000);
 await p.screenshot({ path: '/workspace/trimslot/screenshots/pay-1-checkout.png' });
 console.log('checkout title:', await p.title());
-// pick card if a channel chooser is shown, then fill the public test card
-try { await p.getByText(/pay with card|card/i).first().click({ timeout: 4000 }); } catch { /* maybe already on card form */ }
-await p.waitForTimeout(1500);
-const fillAny = async (sels, v) => { for (const s of sels) { const l = p.locator(s).first(); if (await l.count()) { await l.click().catch(() => {}); await l.fill(v).catch(async () => { await p.keyboard.type(v); }); return true; } } return false; };
-ck(await fillAny(['#card-number', 'input[name=cardnumber]', 'input[placeholder*="0000"]', 'input[autocomplete="cc-number"]'], '4084084084084081'), 'card number field found');
-await fillAny(['#expiry', 'input[name=expiry]', 'input[placeholder*="MM"]', 'input[autocomplete="cc-exp"]'], '1230');
-await fillAny(['#cvv', 'input[name=cvv]', 'input[placeholder*="123"]', 'input[autocomplete="cc-csc"]'], '408');
+// Paystack TEST checkout is a simulator: choose "Success" then press the Pay button
+const sim = p.getByText(/^\s*Success\s*$/i).first(); const hasSim = await sim.count();
+if (hasSim) { await sim.click().catch(() => {}); ck(true, 'test checkout simulator shows (fee passed through: ' + (await p.locator('body').innerText()).match(/Pay NGN [\d,.]+/)?.[0] + ')'); }
+else {
+  try { await p.getByText(/pay with card|card/i).first().click({ timeout: 4000 }); } catch {}
+  const fillAny = async (sels, v) => { for (const s of sels) { const l = p.locator(s).first(); if (await l.count()) { await l.click().catch(() => {}); await l.fill(v).catch(async () => { await p.keyboard.type(v); }); return true; } } return false; };
+  ck(await fillAny(['#card-number', 'input[name=cardnumber]', 'input[placeholder*="0000"]', 'input[autocomplete="cc-number"]'], '4084084084084081'), 'card number field found');
+  await fillAny(['#expiry', 'input[name=expiry]', 'input[placeholder*="MM"]', 'input[autocomplete="cc-exp"]'], '1230');
+  await fillAny(['#cvv', 'input[name=cvv]', 'input[placeholder*="123"]', 'input[autocomplete="cc-csc"]'], '408');
+}
 await p.screenshot({ path: '/workspace/trimslot/screenshots/pay-2-card.png' });
-await p.getByRole('button', { name: /pay/i }).first().click().catch(() => {});
+await p.getByRole('button', { name: /^pay/i }).first().click().catch(() => {});
 await p.waitForTimeout(8000); await p.screenshot({ path: '/workspace/trimslot/screenshots/pay-3-after.png' });
 // OTP / PIN steps if shown
 for (let i = 0; i < 4; i++) {
