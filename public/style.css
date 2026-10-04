@@ -422,3 +422,4 @@ input::placeholder,textarea::placeholder{color:var(--mut);opacity:1}
 :root[data-theme=dark] .nitem.money .nico{color:#c4b5fd}
 .chip:hover,.svc:hover{border-color:var(--ctl)}.now.idle .lbl{opacity:1}
 .warn-t{color:var(--accent-ink)}
+.rate svg{color:var(--star)}

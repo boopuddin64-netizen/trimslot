@@ -5,6 +5,7 @@
 import { chromium } from '/workspace/pw-tools/node_modules/playwright-core/index.mjs';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:4102', ADMINKEY = process.env.ADMINKEY || 'local-admin-key-xyz';
+const SHOP = process.env.SHOP_ID || '1';   // shop used for the customer pages (live: a verified shop)
 const WIDTHS = (process.env.WIDTHS || '390').split(',').map(Number), THEMES = (process.env.THEMES || 'light,dark').split(',');
 const CUST = (process.env.CUST || 'chidi@trimslot.demo:Customer123!').split(':'), BARB = (process.env.BARB || 'mike@trimslot.demo:Barber123!').split(':');
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
@@ -87,10 +88,10 @@ for (const theme of THEMES) for (const w of WIDTHS) {
   { const { ctx, p } = await newPage(w, theme); for (const r of ['#/', '#/login', '#/signup?role=barber', '#/signup?role=customer']) { await p.goto('/' + r); await p.waitForTimeout(500); await check(p, 'public ' + r, w, theme); } await ctx.close(); }
   { const { ctx, p } = await newPage(w, theme); await login(p, CUST[0], CUST[1]);
     const bks = (await api(p, '/bookings')).bookings || []; const byStatus = {}; for (const k of bks) byStatus[k.status] ??= k.id;
-    const pages = ['#/', '#/barber/1', '#/book/1', '#/bookings', '#/wallet', '#/profile', '#/notifications', ...Object.entries(byStatus).map(([s, id]) => `#/booking/${id}`)];
+    const pages = ['#/', `#/barber/${SHOP}`, `#/book/${SHOP}`, '#/bookings', '#/wallet', '#/profile', '#/notifications', ...Object.entries(byStatus).map(([s, id]) => `#/booking/${id}`)];
     for (const r of pages) { await p.goto('/' + r); await p.waitForTimeout(700); await check(p, 'customer ' + r, w, theme); }
     // wizard: service selected, slot selected, form states
-    await p.goto('/#/book/1'); await p.waitForSelector('.svc'); await p.locator('.svc').first().click(); await check(p, 'customer wizard svc selected', w, theme); await p.click('#next'); await p.waitForSelector('[data-t]'); await p.locator('[data-t]').first().click(); await check(p, 'customer wizard slot selected', w, theme);
+    await p.goto('/#/book/' + SHOP); await p.waitForSelector('.svc'); await p.locator('.svc').first().click(); await check(p, 'customer wizard svc selected', w, theme); await p.click('#next'); if (await p.waitForSelector('[data-t]', { timeout: 8000 }).then(() => true, () => false)) { await p.locator('[data-t]').first().click(); await check(p, 'customer wizard slot selected', w, theme); } else await check(p, 'customer wizard no slots (paused/maintenance)', w, theme);
     const done = byStatus.COMPLETED; if (done) { await p.goto('/#/booking/' + done); await p.waitForTimeout(600); const star = p.locator('.starpick button').nth(3); if (await star.count()) { await star.click(); await check(p, 'customer review stars picked', w, theme); } }
     await ctx.close(); }
   { const { ctx, p } = await newPage(w, theme); await login(p, BARB[0], BARB[1]);
