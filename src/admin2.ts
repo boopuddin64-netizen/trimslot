@@ -193,7 +193,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
         if (d.paid === undefined) throw new AppError(409, 'PAYMENT_CHOICE', 'This is a pay-on-arrival booking. Say whether the customer paid (paid: true) or not (paid: false).');
         await t.query(d.paid ? `UPDATE bookings SET payment_status='PAID', paid_via='ADMIN', paid_at=$2 WHERE id=$1` : `UPDATE bookings SET payment_status='VOID' WHERE id=$1`, d.paid ? [id, now] : [id]);
       } else if (b.payment_status === 'PENDING') throw conflict('UNPAID', 'This booking is an unpaid online attempt; it cannot be completed.');
-      await t.query(`UPDATE bookings SET status='COMPLETED', service_complete=$2, arrival_time=COALESCE(arrival_time,$2), service_start=COALESCE(service_start,$2) WHERE id=$1`, [id, now]);
+      await t.query(`UPDATE bookings SET status='COMPLETED', service_complete=$2, service_start=COALESCE(service_start,$2) WHERE id=$1`, [id, now]);
       const after = await t.one<any>('SELECT * FROM bookings WHERE id=$1', [id]);
       const ledger = await accrueCommission(t, after);
       await audit(t, id, ADMIN, 'ADMIN_BOOKING_COMPLETED', { reason: d.reason, paid: d.paid ?? null, ledger_id: ledger });

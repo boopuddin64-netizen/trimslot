@@ -64,13 +64,18 @@ let verifier: ((db: Db, reference: string) => Promise<VerifyResult>) | null = nu
 export function setGatewayVerifier(fn: typeof verifier) { verifier = fn; }
 
 export async function paystackFetch(path: string, init: RequestInit = {}) {
-  const res = await fetch(PAYSTACK_API + path, {
-    ...init,
-    signal: AbortSignal.timeout(9000),           // stay well inside the serverless function time limit
-    headers: { Authorization: `Bearer ${config.paystackKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(PAYSTACK_API + path, {
+      ...init,
+      signal: AbortSignal.timeout(9000),           // stay well inside the serverless function time limit
+      headers: { Authorization: `Bearer ${config.paystackKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) },
+    });
+  } catch (e: any) {   // timeout / DNS / connection reset: say so (and let callers retry) instead of an opaque 500
+    throw new AppError(502, 'PAYSTACK_UNREACHABLE', 'Could not reach Paystack. Check your connection and try again.', { transient: true, gateway_message: String(e?.name || 'network') });
+  }
   const json: any = await res.json().catch(() => ({}));
-  if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', `Paystack error: ${json.message || res.statusText}`);
+  if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', `Paystack error: ${json.message || res.statusText}`, { gateway_status: res.status, gateway_message: String(json.message || res.statusText || '').slice(0, 200), transient: res.status >= 500 || res.status === 429 });
   return json;
 }
 

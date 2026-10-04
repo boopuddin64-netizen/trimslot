@@ -31,7 +31,7 @@ import { vapidPublicKey, pushAvailable, flushPush } from './push';
 import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
 import { getSettingsCached } from './plans';
 import { runSweep } from './sweep';
-import { listBanks, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
+import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
@@ -461,7 +461,7 @@ export function createApp(db: Db) {
   }));
   /* ---- payouts: bank list -> resolve account name -> create Paystack subaccount ---- */
   barberR.get('/payout', wrap(async (req, res) => res.json(await payoutStatus(db, bid(req)))));
-  barberR.get('/payout/banks', wrap(async (_req, res) => res.json({ banks: await listBanks() })));
+  barberR.get('/payout/banks', wrap(async (_req, res) => res.json(await listBankInfo())));
   barberR.post('/payout/resolve', limits.payment, wrap(async (req, res) => {
     const d = parse(acctSchema, req.body);
     res.json({ account_name: await resolveAccount(d.bank_code, d.account_number) });

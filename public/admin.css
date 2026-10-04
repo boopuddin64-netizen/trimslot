@@ -9,7 +9,7 @@ body.adm{padding-bottom:32px}
 .anav a{flex:none;display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 12px;border-radius:8px;color:var(--mut);font-size:14px;font-weight:500;white-space:nowrap}
 .anav a.on{background:var(--brand-soft);color:var(--brand-d);font-weight:600}
 .anav a:hover{color:var(--ink)}
-.anav .cnt{background:var(--red);color:#fff;border-radius:8px;font-size:11px;font-weight:600;padding:0 6px;line-height:16px;min-width:16px;text-align:center}
+.anav .cnt{background:var(--red);color:var(--on-red);border-radius:8px;font-size:11px;font-weight:600;padding:0 6px;line-height:16px;min-width:16px;text-align:center}
 .anav .sep{display:none}
 .page-h{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:8px}
 .page-h p{margin:0}
@@ -29,7 +29,8 @@ body.adm{padding-bottom:32px}
 .tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
 .tbl thead{display:none}
 .tbl tr{display:block;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 16px;margin:8px 0}
-.tbl td{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 0;text-align:right;min-width:0}
+.tbl td{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:4px 0;text-align:right;min-width:0;overflow-wrap:anywhere}
+.tbl td>*{min-width:0}
 .tbl td:before{content:attr(data-l);color:var(--mut);font-size:12.5px;text-align:left;flex:none}
 .tbl td.main{display:block;text-align:left;font-weight:600;padding-bottom:8px;border-bottom:1px solid var(--line);margin-bottom:4px}
 .tbl td.main:before{display:none}
@@ -70,7 +71,7 @@ body.adm{padding-bottom:32px}
 }
 
 .pills .c{display:inline-block;margin-left:4px;min-width:18px;padding:0 5px;border-radius:8px;background:var(--bg2);color:var(--mut);font-size:11.5px;line-height:18px;text-align:center}
-.pills button.on .c{background:var(--brand);color:#fff}
+.pills button.on .c{background:var(--brand);color:var(--on-brand)}
 .modal{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--card);width:100%;max-height:92vh;overflow:auto;border-radius:16px 16px 0 0;padding:20px 16px 0;box-shadow:0 -8px 30px rgba(0,0,0,.2)}
 .sheet h3{margin:20px 0 6px;font-size:12.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}

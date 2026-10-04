@@ -283,7 +283,7 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     await setStatus(t, b, 'CANCELLED', { payment_status: payStatus, cancelled_at: now, cancelled_by: 'customer', hold_expires_at: null });
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'CANCELLED', {
       payment_status: payStatus,
-      ...(payStatus === 'CREDIT_PENDING' ? { note: 'TODO(owner): refund/credit policy undecided - NOT refunded automatically' } : note ? { note } : {}),
+      ...(payStatus === 'CREDIT_PENDING' ? { note: 'Not refunded automatically - the shop or admin will follow up with a refund or session credit' } : note ? { note } : {}),
     });
     if (!abandoned) await notify(t, await barberUserId(t, b.barber_id), 'BOOKING_CANCELLED', 'Booking cancelled', `${await customerName(t, customerId)} cancelled ${b.service_name} on ${fmtWhen(b.date, b.start_min)}. The slot is open again.`, b.id);
     await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left this booking before paying, so it was marked incomplete. You have not been charged.' : payStatus === 'CREDIT_PENDING'
@@ -385,7 +385,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         const credit = b.payment_status === 'PAID' && !entitlement;
         if (entitlement) await restoreEntitlement(t, b);
         await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'CREDIT_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
-        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(credit ? { note: 'TODO(owner): refund/credit policy undecided - CREDIT_PENDING' } : entitlement ? { note: 'plan session / credit returned' } : {}) });
+        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(credit ? { note: 'Not refunded automatically - the shop or admin will follow up with a refund or session credit' } : entitlement ? { note: 'plan session / credit returned' } : {}) });
         await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ' Your payment is marked credit pending.' : entitlement ? ' Your session has been returned.' : ''}`, b.id);
         break;
       }

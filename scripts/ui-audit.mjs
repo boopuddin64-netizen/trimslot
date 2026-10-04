@@ -46,6 +46,7 @@ async function audit(p, w, role, name) {
 }
 async function mk(w) {
   const mobile = w < 800; const ctx = await b.newContext({ viewport: { width: w, height: mobile ? 800 : 900 }, deviceScaleFactor: 1, isMobile: mobile, hasTouch: mobile, baseURL: BASE });
+  if (process.env.THEME) await ctx.addInitScript((t) => { try { localStorage.setItem('trimslot_theme', t); } catch {} }, process.env.THEME);   // THEME=dark|light
   const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(w + ' ' + e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/favicon|429|Failed to load resource/.test(m.text())) errs.push(w + ' console ' + m.text().slice(0, 120)); });
   return { ctx, p };
 }

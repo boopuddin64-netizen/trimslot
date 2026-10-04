@@ -18,7 +18,8 @@
     "admin:prod": "node dist/scripts/admin.js",
     "migrate": "tsx scripts/migrate.ts",
     "vercel:local": "tsx scripts/vercel-local.ts",
-    "migrate:prod": "node dist/scripts/migrate.js"
+    "migrate:prod": "node dist/scripts/migrate.js",
+    "contrast": "node scripts/contrast-check.mjs"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

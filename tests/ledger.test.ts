@@ -253,6 +253,7 @@ test('admin force-complete of a pay-on-arrival booking accrues commission once',
     const b = await createBooking(s.db, s.customerIds[0 % s.customerIds.length], { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '09:00', payment_option: 'ON_ARRIVAL' });
     const r = await s.j(`/api/admin/bookings/${b.id}/complete`, { method: 'POST', headers: s.A, body: { reason: 'barber forgot to tap', paid: true } });
     assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(await outstandingKobo(s.db, s.barberId), 15000);
+    assert.equal(((await s.db.one('SELECT arrival_time FROM bookings WHERE id=$1', [b.id])) as any).arrival_time, null, 'admin force-complete must not invent an arrival time (it showed "Arrived 2:49 PM" on a 10:00 booking)');
     await s.j(`/api/admin/bookings/${b.id}/complete`, { method: 'POST', headers: s.A, body: { reason: 'again again', paid: true } });
     assert.equal(await outstandingKobo(s.db, s.barberId), 15000);
   } finally { s.server.close(); resetNow(); }

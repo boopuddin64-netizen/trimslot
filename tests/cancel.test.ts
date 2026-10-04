@@ -44,6 +44,6 @@ test('cancelling a PAID online booking never refunds: payment_status -> CREDIT_P
     assert.equal(after.status, 'CANCELLED');
     assert.equal(after.payment_status, 'CREDIT_PENDING');
     const log = await db.one(`SELECT details FROM audit_log WHERE booking_id=$1 AND action='CANCELLED'`, [b.id]);
-    assert.match(JSON.stringify(log.details), /TODO\(owner\)/);
+    assert.match(JSON.stringify(log.details), /Not refunded automatically/);
   } finally { resetNow(); }
 });

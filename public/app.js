@@ -49,16 +49,46 @@ async function api(path, opts = {}) {
   if (!isGet) gcache.clear();
   return apiRaw(path, opts);
 }
-async function apiRaw(path, opts = {}) {
+/* Network layer: in-flight de-duplication of identical writes (double-tap protection), a timeout, plain-English offline /
+   server / rate-limit messages, and stale-session handling (expired login -> back to the login page, then back to where you were). */
+const inflight = new Map();
+const NET_MSG = "Can't reach TrimSlot. Check your internet connection and try again.";
+function apiRaw(path, opts = {}) {
+  const method = opts.method || 'GET';
+  const key = method === 'GET' ? null : method + ' ' + path + ' ' + (opts.body === undefined ? '' : JSON.stringify(opts.body));
+  if (key && inflight.has(key)) return inflight.get(key);
+  const p = apiCall(path, opts);
+  if (key) { inflight.set(key, p); const done = () => inflight.delete(key); p.then(done, done); }
+  return p;
+}
+async function apiCall(path, opts = {}) {
   const init = { method: opts.method || 'GET', headers: {}, credentials: 'same-origin' };
   if (opts.body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
   else if (init.method !== 'GET') { init.headers['Content-Type'] = 'application/json'; init.body = '{}'; }
-  const r = await fetch('/api' + path, init);
-  let j = {};
-  try { j = await r.json(); } catch { /* empty */ }
-  if (!r.ok) { const e = new Error(j.error?.message || 'Request failed'); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details; throw e; }
+  const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 30000); init.signal = ac.signal;
+  let r, j = {};
+  try {
+    try { r = await fetch('/api' + path, init); }
+    catch {
+      const e = new Error(ac.signal.aborted ? 'This is taking too long. Check your connection and try again.' : navigator.onLine === false ? "You're offline. Reconnect and try again." : NET_MSG);
+      e.code = 'NETWORK'; throw e;
+    }
+    try { j = await r.json(); } catch { /* empty or HTML error page */ }
+  } finally { clearTimeout(to); }
+  if (!r.ok) {
+    const fallback = r.status === 429 ? 'Too many attempts. Please wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Please try again in a moment.' : 'Request failed';
+    const e = new Error(j.error?.message || fallback); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details;
+    if (r.status === 401 && e.code === 'UNAUTHENTICATED' && state.user && !path.startsWith('/auth/')) {   // login expired while the app was open
+      state.user = null; state.unread = 0; e.message = 'Your session has expired. Please log in again.';
+      try { sessionStorage.setItem('trimslot_next', location.hash); } catch { /* private mode */ }
+      gcache.clear(); location.hash = '#/login';
+    }
+    throw e;
+  }
   return j;
 }
+window.addEventListener('offline', () => toast("You're offline. Changes won't save until you reconnect.", true));
+window.addEventListener('online', () => toast('Back online'));
 function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
@@ -67,6 +97,10 @@ const fail = (e) => toast(e.message || 'Something went wrong', true);
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
+const lagosDay = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lagos' }).format(new Date(iso));
+/* a time with its date whenever it falls on a different Lagos day than `ref` (so "2:49 PM" never looks like it belongs to the wrong day) */
+const lagosWhen = (iso, ref) => !iso ? '—' : (ref && lagosDay(iso) !== lagosDay(ref) ? `${dateLabel(lagosDay(iso))}, ` : '') + lagosTime(iso);
+const lateBy = (iso, ref) => { const m = Math.round((new Date(iso) - new Date(ref)) / 60000); return m >= 20 ? ` (${m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60 ? m % 60 + ' min ' : '') : m + ' min '}after the start time)` : ''; };
 const lagosStamp = (iso) => new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).format(new Date(iso));
 
 const STATUS_BADGE = {
@@ -142,7 +176,9 @@ async function route() {
   const q = new URLSearchParams(qs || '');
   try {
     // config + session in parallel (one round trip instead of two sequential ones); the unread count rides along with /auth/me
-    const [cfg, me] = await Promise.all([state.cfg ? state.cfg : api('/config'), api('/auth/me')]);
+    const stale = !state.cfg || Date.now() - (state.cfgAt || 0) > 10 * 60 * 1000;   // refresh config (incl. "today") so a tab left open overnight isn't a day behind
+    const [cfg, me] = await Promise.all([stale ? api('/config').catch((e) => { if (state.cfg) return state.cfg; throw e; }) : state.cfg, api('/auth/me')]);
+    if (stale) state.cfgAt = Date.now();
     state.cfg = cfg; state.user = me.user; state.unread = me.unread || 0;
     chrome();
     if (state.user) { if (state.notifFor !== state.user.id) { state.notifFor = state.user.id; Notify.start(); Notify.resync(); } } else if (state.notifFor) { state.notifFor = null; Notify.stop(); }
@@ -152,7 +188,7 @@ async function route() {
     if (!parts.length) return role === 'barber' ? go('#/today') : role === 'customer' ? customerHome() : landing();
     if (parts[0] === 'login') return authPage('login');
     if (parts[0] === 'signup') return authPage('signup', q.get('role'));
-    if (!state.user) return go('#/login');
+    if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (parts[0] === 'notifications') return notifications();
     if (parts[0] === 'profile') return role === 'barber' ? barberProfile() : profile();
     if (parts[0] === 'barber') return barberPage(Number(parts[1]));
@@ -179,6 +215,11 @@ async function route() {
 }
 const go = (h) => { if (location.hash === h) route(); else location.hash = h; };
 window.addEventListener('hashchange', route);
+window.addEventListener('popstate', () => {   // Back/Forward between booking-wizard steps (same #/book/<id> URL)
+  if (!location.hash.startsWith('#/book/') || !state.wiz || !state.wizDraw) return;
+  const st = (history.state && history.state.wiz) || 1;
+  if (st !== state.wiz.step) { state.wiz.step = Math.min(st, state.wiz.service ? (state.wiz.time ? 4 : 2) : 1); state.wizDraw(); }
+});
 
 /* ---------- landing / auth ---------- */
 function landing() {
@@ -192,7 +233,7 @@ function landing() {
     <p class="center"><a href="#/login">I already have an account</a></p>`;
 }
 function authPage(mode, roleQ) {
-  let role = roleQ === 'barber' ? 'barber' : 'customer';
+  let role = roleQ === 'barber' ? 'barber' : 'customer', saved = null;
   const draw = (err) => {
     const signup = mode === 'signup';
     app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book or manage your shop.'}</p>
@@ -213,17 +254,19 @@ function authPage(mode, roleQ) {
         <a href="#" data-fill="chidi@trimslot.demo|Customer123!">Customer: chidi@trimslot.demo</a><br>
         <a href="#" data-fill="tunde@trimslot.demo|Customer123!">Customer 2: tunde@trimslot.demo</a><br>
         <a href="#" data-fill="mike@trimslot.demo|Barber123!">Barber: mike@trimslot.demo</a></div>` : ''}`;
-    document.querySelectorAll('#roleseg button').forEach((b) => b.onclick = () => { role = b.dataset.r; draw(); });
+    if (saved) { for (const [k, v] of Object.entries(saved)) { const el = document.querySelector(`#f [name="${k}"]`); if (el && k !== 'password') el.value = v; } }   // keep what was typed after an error
+    document.querySelectorAll('#roleseg button').forEach((b) => b.onclick = () => { saved = Object.fromEntries(new FormData($('#f'))); role = b.dataset.r; draw(); });
     document.querySelectorAll('[data-fill]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const [i, p] = a.dataset.fill.split('|'); $('[name=identifier]').value = i; $('[name=password]').value = p; $('#f').dispatchEvent(new Event('input')); });
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = Object.fromEntries(new FormData(ev.target));
-      const btn = ev.target.querySelector('button'); btn.disabled = true;
+      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Creating account…' : 'Logging in…';
       try {
         if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role } });
         else await api('/auth/login', { method: 'POST', body: fd });
-        go('#/');
-      } catch (e) { draw(e.message); }
+        let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
+        go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/');
+      } catch (e) { saved = fd; draw(e.message); }
     };
   };
   draw();
@@ -272,6 +315,7 @@ function bookingCard(b) {
 async function bookWizard(barberId) {
   if (!state.wiz || state.wiz.barberId !== barberId) state.wiz = { barberId, step: 1, service: null, date: null, time: null, pay: 'ON_ARRIVAL', payTouched: false };
   const w = state.wiz;
+  if (w.date && w.date < state.cfg.today) { w.date = null; w.time = null; w.step = Math.min(w.step, 2); }   // a wizard left open since yesterday must not book in the past
   const data = await api('/barbers/' + barberId);
   const { barber, services } = data;
   const plans = data.plans || [], my = data.my || { plans: [], credits: [] };
@@ -283,6 +327,10 @@ async function bookWizard(barberId) {
   const closedDates = new Set(notices.filter((n) => n.type === 'CLOSED').map((n) => n.date));
   const offWeekdays = new Set((data.schedule || []).filter((d) => !d.is_working).map((d) => d.weekday));
   const noticeHtml = notices.length ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${notices.map((n) => `<div><b>${esc(n.title)}</b>${n.type === 'CLOSED' && n.reason ? ' — ' + esc(n.reason) : n.type === 'HOURS_UPDATED' ? ' — ' + esc(n.text) : ''}</div>`).join('')}</div></div>` : '';
+  /* wizard steps live in browser history, so the phone's Back button goes to the previous step instead of leaving the wizard */
+  const setStep = (n) => { if (n > w.step) history.pushState({ wiz: n }, ''); w.step = n; draw(); };
+  const stepBack = (n) => { if (history.state && history.state.wiz && history.state.wiz > n) history.back(); else { w.step = n; draw(); } };
+  state.wizDraw = () => draw();
   const draw = async (err) => {
     const stepBar = `<div class="steps">${[1, 2, 3, 4].map((i) => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
     const head = `<a href="#/barber/${barberId}" class="back">${ic('back', 'sm')} ${esc(barber.shop_name)}</a><div class="wiz-head">${avatar(barber, 'sm')}<div class="grow"><h1 class="ellip">Book a session</h1><div class="muted small ellip">${esc(barber.shop_name)}${barber.location ? ' · ' + esc(barber.location) : ''}</div></div></div>${noticeHtml}${stepBar}${err ? `<div class="err">${esc(err)}</div>` : ''}`;
@@ -292,7 +340,7 @@ async function bookWizard(barberId) {
         + (my.plans && my.plans.some((p) => p.sessions_left > 0) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have an active plan with this barber. You can use a plan session at the payment step.</div></div>` : '')
         + `<div class="btns cta"><button class="btn" id="next" ${w.service ? '' : 'disabled'}>Continue</button></div>`;
       document.querySelectorAll('[data-s]').forEach((el) => el.onclick = () => { w.service = services.find((s) => s.id === Number(el.dataset.s)); w.time = null; draw(); });
-      $('#next').onclick = () => { w.step = 2; draw(); };
+      $('#next').onclick = () => setStep(2);
     } else if (w.step === 2) {
       const today = state.cfg.today;
       const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
@@ -300,8 +348,8 @@ async function bookWizard(barberId) {
       app.innerHTML = head + `<h2>Pick a date &amp; time</h2><div class="days">${days.map((d) => { const x = new Date(d + 'T00:00:00Z'); return `<button class="chip ${w.date === d ? 'on' : ''} ${closedDates.has(d) || offWeekdays.has(x.getUTCDay()) ? 'closed' : ''}" data-d="${d}">${DAYN[x.getUTCDay()]}<b>${x.getUTCDate()}</b>${MON[x.getUTCMonth()]}</button>`; }).join('')}</div>
         <div id="slots" class="card muted">Loading times…</div><div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="next" ${w.time ? '' : 'disabled'}>Continue</button></div>`;
       document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { w.date = el.dataset.d; w.time = null; draw(); });
-      $('#back').onclick = () => { w.step = 1; draw(); };
-      $('#next').onclick = () => { w.step = 3; draw(); };
+      $('#back').onclick = () => stepBack(1);
+      $('#next').onclick = () => setStep(3);
       try {
         const r = await api(`/barbers/${barberId}/slots?service_id=${w.service.id}&date=${w.date}`);
         $('#slots').className = 'card';
@@ -334,7 +382,7 @@ async function bookWizard(barberId) {
         <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
       const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
-      $('#back').onclick = () => { w.step = 2; draw(); };
+      $('#back').onclick = () => stepBack(2);
       $('#confirm').onclick = async () => {
         $('#confirm').disabled = true;
         try {
@@ -419,22 +467,23 @@ async function barberProfile() {
 
 /* ---------- barber: payouts (bank list -> account number -> resolve name -> save -> "Payouts active") ---------- */
 async function barberPayouts() {
-  const [st, bl] = await Promise.all([api('/barber/payout'), api('/barber/payout/banks').catch(() => ({ banks: [] }))]);
+  const [st, bl] = await Promise.all([api('/barber/payout'), api('/barber/payout/banks').catch(() => ({ banks: [], source: 'none' }))]);
   const active = st.status === 'ACTIVE';
   const bank = (code) => (bl.banks.find((b) => b.code === code) || {}).name || '';
   app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Payouts</h1>
     <p class="muted">Money from online bookings goes straight to your bank account through Paystack. Pay-on-arrival bookings are paid to you directly.</p><div id="msg"></div>
     ${active ? `<div class="card payok"><div class="row between"><b>${ic('check', 'sm')} Payouts active</b><span class="badge b-green">ACTIVE</span></div>
-        <div class="small" style="margin-top:6px">${esc(st.bank_name || 'Bank')} · account ••••${esc(st.account_last4 || '')}</div><div class="small muted">${esc(st.account_name || '')}</div>
+        <div class="small" style="margin-top:6px">${esc(st.bank_name || 'Bank')} · account ••••${esc(st.account_last4 || '')}</div><div class="small muted">${esc(st.account_name || '')}${st.name_verified === false ? ' · <span class="badge b-amber">NAME NOT VERIFIED</span>' : ''}</div>
         <div class="btns" style="margin-top:10px"><button class="btn sm sec" id="chg">Change account</button></div></div>`
       : `<div class="warn notice">${ic('warn')}<div><b>Payouts not set up.</b> Until you add your bank account, customers can't pay you online — they will only see “Pay on arrival”.</div></div>`}
     <form id="pof" class="card ${active ? 'hidden' : ''}" novalidate>
+      ${bl.source === 'fallback' || bl.source === 'stale' ? '<div class="info small">We couldn\'t load the full bank list just now, so this is a shorter list. If your bank isn\'t here, reload in a minute.</div>' : ''}${!bl.banks.length ? '<div class="err">We couldn\'t load the list of banks. Check your connection and <a href="#/payouts" onclick="event.preventDefault();location.reload()">reload</a>.</div>' : ''}
       <label for="pobank">Bank</label>
       <select id="pobank" name="bank_code" required><option value="">Choose your bank…</option>${bl.banks.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join('')}</select>
       <label for="poacct">Account number</label>
       <input id="poacct" name="account_number" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10-digit NUBAN" required>
       <div id="poname" class="small" aria-live="polite" style="min-height:20px;margin-top:6px"></div>
-      <div id="pomanual" class="hidden"><label for="pomn">Account name</label><input id="pomn" name="account_name" maxlength="80" placeholder="Name on the account"><div class="small muted">Test mode: the bank lookup is unavailable, so type the account name.</div></div>
+      <div id="pomanual" class="hidden"><label for="pomn">Account name</label><input id="pomn" name="account_name" maxlength="80" autocomplete="off" placeholder="Name exactly as on the account"><div class="small muted" id="pomnote" style="margin-top:6px"></div><div class="btns" style="margin-top:8px"><button type="button" class="btn sm sec" id="poretry">Try the lookup again</button></div></div>
       <div class="btns cta"><button class="btn" id="posave" disabled>Save payout account</button></div>
       <p class="small muted">We never store your full account number — only the last 4 digits and a Paystack subaccount code.</p>
     </form>`;
@@ -452,12 +501,16 @@ async function barberPayouts() {
       if (my !== seq) return; resolved = r.account_name; nameEl.innerHTML = `<span class="okt">${ic('check', 'sm')} ${esc(r.account_name)}</span>`;
     } catch (e) {
       if (my !== seq) return;
-      if (e.code === 'RESOLVE_UNAVAILABLE' && st.test_mode) { nameEl.innerHTML = '<span class="muted">Couldn\'t look up the name.</span>'; manual.classList.remove('hidden'); }
+      if (e.code === 'RESOLVE_UNAVAILABLE') {   // the automatic name lookup is down / limited: let the barber type the name instead
+        nameEl.innerHTML = '<span class="muted">We couldn\'t check the account name automatically.</span>';
+        $('#pomnote').textContent = e.message + ' We\'ll mark the name as not verified.'; manual.classList.remove('hidden');
+      } else if (e.code === 'NETWORK') nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span> <button type="button" class="linkbtn" id="poagain">Try again</button>`;
       else nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span>`;
+      const ag = $('#poagain'); if (ag) ag.onclick = resolve;
     }
     sync();
   };
-  bankSel.onchange = resolve; acct.oninput = () => { acct.value = acct.value.replace(/\D/g, '').slice(0, 10); resolve(); }; mn.oninput = sync;
+  $('#poretry').onclick = resolve; bankSel.onchange = resolve; acct.oninput = () => { acct.value = acct.value.replace(/\D/g, '').slice(0, 10); resolve(); }; mn.oninput = sync;
   f.onsubmit = async (ev) => {
     ev.preventDefault(); if (!valid()) return; save.disabled = true; save.textContent = 'Saving…';
     try {
@@ -598,7 +651,7 @@ async function bookingDetail(id, payResult) {
       <hr><div class="row between"><span>${ic('cal', 'sm')} ${dateLabel(b.date)}</span><b>${esc(b.start_label)}</b></div>
       <div class="row between" style="margin-top:6px"><span>${ic('clock', 'sm')} ${b.duration_min} min</span><b>${naira(b.price_kobo)}</b></div>
       <div class="row between" style="margin-top:8px"><span class="small muted">Payment</span>${payBadge(b)}</div>
-      ${b.arrival_time ? `<div class="small muted" style="margin-top:6px">Arrived at ${lagosTime(b.arrival_time)}</div>` : ''}</div>
+      ${b.arrival_time ? `<div class="small muted" style="margin-top:6px">Checked in ${lagosWhen(b.arrival_time, b.scheduled_time)}${lateBy(b.arrival_time, b.scheduled_time)}</div>` : ''}</div>
     ${b.note_to_barber ? `<div class="card small"><span class="muted">Your note to the barber:</span> ${esc(b.note_to_barber)}</div>` : ''}
     ${qHtml}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).reviews ? (b.review ? `<div class="card review"><div class="row between"><b>Your review</b>${stars(b.review.rating)}</div>${b.review.comment ? `<p style="margin:8px 0 0">${esc(b.review.comment)}</p>` : ''}${b.review.reply ? `<div class="reply small"><b>Reply from your barber</b><div>${esc(b.review.reply)}</div></div>` : ''}</div>` : `<div class="card" id="rvcard"><h3 style="margin:0 0 4px">How was your visit?</h3><div class="starpick" id="starpick" role="radiogroup" aria-label="Rating">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" role="radio" aria-checked="false" aria-label="${i} star${i > 1 ? 's' : ''}">${ic('star')}</button>`).join('')}</div><textarea id="rvtext" rows="2" maxlength="500" placeholder="Add a short comment (optional)"></textarea><div class="btns"><button class="btn sm" id="rvsend" disabled>Send review</button></div></div>`) : ''}
@@ -707,7 +760,7 @@ async function barberToday(keepScroll) {
   const ns = d.now_serving;
   const nowCard = ns ? `<div class="now"><div class="lbl">NOW SERVING</div><div class="nm">${esc(ns.customer.name)}</div>
       <div>${esc(ns.service_name)} · ${naira(ns.price_kobo)} ${payBadge(ns)}</div><div class="small" style="opacity:.8;margin:4px 0 12px">Started ${lagosTime(ns.service_start)} · booked for ${esc(ns.start_label)}</div>
-      ${ns.payment_status === 'PAYMENT_DUE' ? `<div class="info small" style="color:#1e3a8a">Collect ${naira(ns.price_kobo)} before completing:</div><div class="btns"><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="cash">Cash received</button><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="transfer">Transfer received</button></div><div style="height:12px"></div>` : ''}
+      ${ns.payment_status === 'PAYMENT_DUE' ? `<div class="info small">Collect ${naira(ns.price_kobo)} before completing:</div><div class="btns"><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="cash">Cash received</button><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="transfer">Transfer received</button></div><div style="height:12px"></div>` : ''}
       <button class="btn big green block" data-a="complete" data-id="${ns.id}" ${ns.payment_status === 'PAYMENT_DUE' ? 'disabled' : ''}>Complete</button></div>`
     : `<div class="now idle"><div class="lbl">NOW SERVING</div><div class="nm" style="font-size:20px">Nobody in the chair</div>
       ${d.next ? `<div class="small">Next: <b>${esc(d.next.customer.name)}</b> ${d.next.status === 'ARRIVED' ? '(here)' : '(not arrived)'}</div>` : '<div class="small">Queue is empty.</div>'}</div>`;
@@ -737,7 +790,7 @@ async function barberToday(keepScroll) {
 }
 function personRow(b, canStartNow) {
   const arrived = b.status === 'ARRIVED';
-  return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosTime(b.arrival_time)}` : ''}</div></a>
+  return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosWhen(b.arrival_time, b.scheduled_time)}` : ''}</div></a>
       <div style="text-align:right"><span class="badge ${arrived ? 'b-green' : 'b-gray'}">${arrived ? 'ARRIVED' : 'NOT ARRIVED'}</span><div style="margin-top:4px">${payBadge(b)}</div></div></div>
     ${b.note_to_barber ? `<div class="small cnote">${ic('pencil', 'sm')} <b>Note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="small cnote priv">${ic('shield', 'sm')} ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted">Usual: ${esc(b.customer.usual.service_name)}</div>` : ''}
     ${b.barber_hold && !arrived ? '<div class="small" style="color:var(--accent-ink);margin-top:4px">Waiting for this customer</div>' : ''}${b.skipped ? '<div class="small muted">Skipped, moved back in line</div>' : ''}
@@ -769,7 +822,7 @@ async function barberBooking(id) {
       ${relBadge(b.customer.reliability)}${b.note_to_barber ? `<div class="cnote small" style="margin-top:8px">${ic('pencil', 'sm')} <b>Customer note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="cnote priv small" style="margin-top:8px">${ic('shield', 'sm')} <b>Your private note:</b> ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted" style="margin-top:6px">Usual: ${esc(b.customer.usual.service_name)} (${b.customer.usual.times}×)</div>` : ''}
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
-    <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small" style="color:#92400e">${esc(t.details.note)}</div>` : ''}</div>`).join('')}</div></div>`;
+    <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded automatically - the shop or admin will follow up with a refund or session credit'))}</div>` : ''}</div>`).join('')}</div></div>`;
 }
 
 /* ---------- barber: customers ---------- */

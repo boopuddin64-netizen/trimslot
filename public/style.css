@@ -71,7 +71,6 @@ a.card:hover{border-color:var(--line2)}
 
 /* buttons: compact by default (42px), never full-width unless .block (one primary CTA per screen) */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto;min-height:42px;border:1px solid transparent;border-radius:10px;background:var(--brand);color:#fff;font:inherit;font-size:14.5px;font-weight:600;padding:0 18px;line-height:1.2;cursor:pointer;text-align:center;text-decoration:none;transition:background .15s,border-color .15s}
-:root[data-theme=dark] .btn{color:#0b1220}
 .btn:hover{background:var(--brand-d)}.btn:active{transform:translateY(1px)}.btn:disabled{opacity:.45;cursor:not-allowed}
 .btn.block{display:flex;width:100%}
 .btn.sec{background:var(--card);color:var(--ink);border-color:var(--line2)}
@@ -316,7 +315,6 @@ hr{margin:10px 0}p{margin:0 0 6px}
 .row{gap:8px}
 /* buttons: flat, solid accent. Neutral until the form is valid; subtle pressed state; no gradient, glow or lift. */
 .btn{min-height:38px;border-radius:8px;font-size:14px;padding:0 14px;gap:6px;background:var(--brand);color:#fff;border:1px solid var(--brand);box-shadow:none;background-image:none;transition:background-color .12s,border-color .12s,color .12s}
-:root[data-theme=dark] .btn{color:#0b1220}
 .btn:hover{background:var(--brand-d);border-color:var(--brand-d)}
 .btn:active{background:var(--brand-d);border-color:var(--brand-d);filter:brightness(.92);transform:none}
 .btn:focus-visible,.chip:focus-visible,.svc:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
@@ -396,3 +394,31 @@ a.payban{text-decoration:none;color:inherit;font-weight:400}.payban u{color:var(
 .tabs a{border-top:2px solid transparent}
 .tabs a.on{box-shadow:none;border-top-color:var(--brand)}
 .seg button.on{box-shadow:none;border:1px solid var(--line2)}
+
+/* ===== v5 contrast pass (WCAG AA, both themes; enforced by `npm run contrast`) =====
+   --ctl   : border of every interactive control (inputs, outlined buttons, chips, switches) - >= 3:1 against card and page
+   --mut   : secondary text - >= 4.5:1 on page, card and tinted surfaces
+   --star  : filled star; unfilled stars use --ctl.   Flat: no gradients, no shadows. */
+:root{--on-red:#fff;--ctl:#7b8aa0;--star:#b7791f;--on-brand:#fff;--mut:#5b6b82;--red:#c0392b}
+:root[data-theme=dark]{--on-red:#0b1220;--ctl:#6a7b95;--star:#f0b429;--on-brand:#0b1220;--mut:#9aa9bf;--red:#f2807f}
+.btn{color:var(--on-brand)}
+.btn.sec,.btn.red,.btn.ghost{background:var(--card);color:var(--ink);border-color:var(--ctl)}
+.btn.red{color:var(--red);border-color:var(--red)}
+.btn.sec:hover,.btn.red:hover,.btn.ghost:hover{background:var(--bg2)}
+.btn.amber{color:#1a1205}.btn.green{color:#fff}:root[data-theme=dark] .btn.amber{color:#1a1205}:root[data-theme=dark] .btn.green{color:#06160f}
+.btn:disabled,.btn.is-invalid,.btn[aria-disabled=true],.btn.sec:disabled,.btn.red:disabled,.btn.ghost:disabled,.btn.amber:disabled,.btn.green:disabled,.btn.blue:disabled,:root[data-theme=dark] .btn:disabled,:root[data-theme=dark] .btn.is-invalid{background:var(--bg2);border-color:var(--line2);color:var(--mut);opacity:1;cursor:not-allowed}
+input,select,textarea{border-color:var(--ctl)}
+input::placeholder,textarea::placeholder{color:var(--mut);opacity:1}
+.chip,.svc,.seg{border-color:var(--ctl)}
+.stars{color:var(--ctl)}.stars i.on{color:var(--star)}
+.starpick button{color:var(--ctl)}.starpick button.on,.starpick button:hover{color:var(--star)}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer}
+.dot,.anav .cnt{background:var(--red);color:var(--on-red)}
+.seg{border:1px solid var(--ctl)}.seg button.on{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
+.switch{background:var(--ctl)}.switch[aria-checked=true]{background:var(--brand)}
+.now .lbl{opacity:.85}
+.chip.closed,.svc.off{opacity:1;background:var(--bg2);color:var(--mut)}.chip.closed *,.svc.off b{color:var(--mut)}
+.pills .c{background:var(--bg2);color:var(--ink)}.pills button.on .c{background:var(--brand);color:var(--on-brand)}
+:root[data-theme=dark] .nitem.money .nico{color:#c4b5fd}
+.chip:hover,.svc:hover{border-color:var(--ctl)}.now.idle .lbl{opacity:1}
+.warn-t{color:var(--accent-ink)}
