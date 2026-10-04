@@ -78,14 +78,14 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
     const bucket = 15 * 60_000, left = bucket - (Date.now() % bucket);
     if (left < 40_000) { console.log(`     (waiting ${Math.ceil(left / 1000) + 2}s for a fresh signup window)`); await sleep(left + 2000); }
     phase = 'conc';
-    const su = (c: Client, role: string, k: string, extra: any = {}) => c.call('POST', '/api/auth/signup', { role, name: `Flow ${k}`, email: email(k), password: PW, ...extra });
+    const su = (c: Client, role: string, k: string, extra: any = {}) => c.call('POST', '/api/auth/signup', { role, accept_terms: true, accept_barber_agreement: true, name: `Flow ${k}`, email: email(k), password: PW, ...extra });
     let rs = await Promise.all([su(barber, 'barber', 'b', { shop_name: `Flow Shop ${RUN}`, location: 'Test' }), ...C.map((c, i) => su(c, 'customer', 'c' + (i + 1)))]);
     if (rs.some((r) => r.status === 429)) { console.log('     (signup window was already used - waiting for the next one)'); await sleep(bucket - (Date.now() % bucket) + 2000); rs = await Promise.all([su(barber, 'barber', 'b', { shop_name: `Flow Shop ${RUN}`, location: 'Test' }), ...C.map((c, i) => su(c, 'customer', 'c' + (i + 1)))]); }
     phase = 'seq';
     expect(rs.every((r) => r.status === 201), 'all 10 signups 201: ' + rs.map((r) => r.status).join(','));
-    const extra = await new Client('x').call('POST', '/api/auth/signup', { role: 'customer', name: 'Flow extra', email: email('x'), password: PW });
+    const extra = await new Client('x').call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Flow extra', email: email('x'), password: PW });
     expect(extra.status === 429 && extra.code === 'RATE_LIMITED', `11th signup -> 429 RATE_LIMITED (got ${extra.status})`);
-    const dup = await new Client('d').call('POST', '/api/auth/signup', { role: 'customer', name: 'Dup', email: email('c1'), password: PW });
+    const dup = await new Client('d').call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Dup', email: email('c1'), password: PW });
     expect([409, 429].includes(dup.status), 'duplicate email refused (409, or 429 by the limiter)');
     expect((await anon.call('GET', '/api/bookings')).status === 401, 'unauthenticated -> 401');
   });

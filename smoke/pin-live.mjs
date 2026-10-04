@@ -4,7 +4,7 @@ const tag = Date.now().toString(36); let bad = 0; const ck = (c, m) => { console
 const call = async (p, o = {}) => { const r = await fetch(B + '/api' + p, { method: o.method || 'GET', headers: { 'Content-Type': 'application/json', ...(o.auth ? { Authorization: 'Bearer ' + KEY } : {}), ...(o.pin ? { 'X-Admin-Pin': o.pin } : {}) }, body: o.body ? JSON.stringify(o.body) : undefined }); return { s: r.status, j: await r.json().catch(() => ({})), r }; };
 const A = (p, o = {}) => call(p, { ...o, auth: true });
 const email = `smoketest+pin-${tag}@example.com`, pw = 'Smoke12345!';
-const su = await call('/auth/signup', { method: 'POST', body: { name: 'Pin Smoke', email, password: pw, role: 'customer' } }); ck(su.s === 201, 'throwaway customer ' + su.s); const uid = su.j.user?.id;
+const su = await call('/auth/signup', { method: 'POST', body: { name: 'Pin Smoke', email, password: pw, accept_terms: true, role: 'customer' } }); ck(su.s === 201, 'throwaway customer ' + su.s); const uid = su.j.user?.id;
 ck((await A('/admin/pin/status')).j.set === true, 'PIN is set');
 const n = await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke' } }); ck(n.s === 403 && n.j.error?.code === 'PIN_REQUIRED', 'delete without PIN refused ' + n.s + ' ' + n.j.error?.code);
 const w = await A(`/admin/delete/customer/${uid}`, { method: 'POST', body: { reason: 'smoke' }, pin: PIN === '4829' ? '4830' : '4829' }); ck(w.s === 403 && w.j.error?.code === 'PIN_WRONG' && (w.j.error?.attempts_left ?? w.j.attempts_left ?? w.j.error?.details?.attempts_left) !== undefined, 'wrong PIN refused ' + JSON.stringify(w.j).slice(0, 160));

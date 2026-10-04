@@ -90,7 +90,7 @@ test('customer abandons a Pay-now hold by cancelling: "Incomplete", barber not n
     const after = await (await call(base, '/api/bookings', ck)).json() as any;
     const cancelled = after.bookings.find((b: any) => b.id === p.id);
     assert.equal(cancelled.incomplete, false, 'paid+cancelled is a normal cancellation, not Incomplete');
-    assert.equal(cancelled.payment_status, 'CREDIT_PENDING');
+    assert.equal(cancelled.payment_status, 'REFUND_PENDING');
     // pay-on-arrival cancelled is a normal cancellation too
     const c = await createBooking(db, customerIds[1], { barber_id: barberId, service_id: serviceIds[0], date: '2026-10-02', time: '12:00', payment_option: 'ON_ARRIVAL' });
     await customerCancel(db, customerIds[1], c.id);

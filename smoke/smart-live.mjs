@@ -7,8 +7,8 @@ const A = (p, o = {}) => call(p, { ...o, auth: true }); const P = (p, body) => A
 let bad = 0; const ck = (ok, m) => { if (!ok) bad++; console.log((ok ? 'ok   ' : 'FAIL ') + m); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const bE = `smoketest+smart-b-${tag}@example.com`, cE = `smoketest+smart-c-${tag}@example.com`;
-const sb = await call('/auth/signup', { method: 'POST', body: { role: 'barber', name: 'Smart Smoke Barber', email: bE, password: 'Smoke12345!', shop_name: 'Smart Smoke Shop', location: 'Test' } });
-const sc = await call('/auth/signup', { method: 'POST', body: { role: 'customer', name: 'Smart Smoke Cust', email: cE, password: 'Smoke12345!' } });
+const sb = await call('/auth/signup', { method: 'POST', body: { accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'Smart Smoke Barber', email: bE, password: 'Smoke12345!', shop_name: 'Smart Smoke Shop', location: 'Test' } });
+const sc = await call('/auth/signup', { method: 'POST', body: { accept_terms: true, role: 'customer', name: 'Smart Smoke Cust', email: cE, password: 'Smoke12345!' } });
 ck(sb.s === 201 && sc.s === 201, 'signup throwaway barber + customer');
 const bck = sb.r.headers.get('set-cookie').split(';')[0], cck = sc.r.headers.get('set-cookie').split(';')[0];
 const svc = await call('/barber/services', { method: 'POST', body: { name: 'Smoke cut', price_naira: 3000, duration_min: 30 } }, bck); const sid = svc.j.id ?? svc.j.service?.id;

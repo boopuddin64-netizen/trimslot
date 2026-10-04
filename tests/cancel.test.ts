@@ -32,7 +32,7 @@ test('customer cancel before cutoff frees slot immediately; after cutoff is lock
   } finally { resetNow(); }
 });
 
-test('cancelling a PAID online booking never refunds: payment_status -> CREDIT_PENDING', async () => {
+test('cancelling a PAID online booking in time opens a pending refund (never a credit): payment_status -> REFUND_PENDING', async () => {
   const { db, barberId, customerIds, serviceIds } = await freshDb();
   setNow(`${WED}T08:00:00+01:00`);
   try {
@@ -42,8 +42,9 @@ test('cancelling a PAID online booking never refunds: payment_status -> CREDIT_P
     await customerCancel(db, customerIds[0], b.id);
     const after = (await getBooking(db, b.id))!;
     assert.equal(after.status, 'CANCELLED');
-    assert.equal(after.payment_status, 'CREDIT_PENDING');
+    assert.equal(after.payment_status, 'REFUND_PENDING');
+    assert.equal((await db.many('SELECT 1 FROM session_credits')).length, 0, 'refund path never creates a credit');
     const log = await db.one(`SELECT details FROM audit_log WHERE booking_id=$1 AND action='CANCELLED'`, [b.id]);
-    assert.match(JSON.stringify(log.details), /Not refunded automatically/);
+    assert.match(JSON.stringify(log.details), /refund/i);
   } finally { resetNow(); }
 });

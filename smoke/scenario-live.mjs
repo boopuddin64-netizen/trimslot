@@ -39,8 +39,8 @@ async function payAt(url, who) {
   ck((await A('/admin/pin/status')).j.set === true, 'admin PIN is set');
   const T = (n) => hhmm(T0 + 15 * n);
   /* ---- 1. signup (barber + 5 customers) ---- */
-  const sb = await barber.call('/auth/signup', { method: 'POST', body: { role: 'barber', name: 'Scn Barber', email: barber.email, password: PW, shop_name: 'Scenario Shop', location: 'Test' } });
-  const sc = await Promise.all(C.map((c, i) => c.call('/auth/signup', { method: 'POST', body: { role: 'customer', name: 'Scn Cust ' + (i + 1), email: c.email, password: PW } })));
+  const sb = await barber.call('/auth/signup', { method: 'POST', body: { accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'Scn Barber', email: barber.email, password: PW, shop_name: 'Scenario Shop', location: 'Test' } });
+  const sc = await Promise.all(C.map((c, i) => c.call('/auth/signup', { method: 'POST', body: { accept_terms: true, role: 'customer', name: 'Scn Cust ' + (i + 1), email: c.email, password: PW } })));
   ck(sb.s === 201 && sc.every((r) => r.s === 201), 'signup: barber + 5 customers ' + [sb.s, ...sc.map((r) => r.s)]);
   if (sb.s !== 201) throw new Error('signup failed (rate limit?)');
   const bl = await A('/admin/barbers'); const bid = bl.j.barbers.find((x) => x.email === barber.email).id; if ([2, 9].includes(bid)) throw new Error('refusing');

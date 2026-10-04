@@ -98,7 +98,7 @@ test('cross-origin state-changing request is blocked; oversized body rejected; C
 
 test('barber onboarding: new barber is hidden + unbookable until verified; existing demo barber stays visible', async () => {
   await withServer(async (base, { db, customerIds, serviceIds, barberId }) => {
-    const su = await j(base, '/api/auth/signup', { role: 'barber', name: 'New Barber', email: 'new@barber.com', password: 'Password123', shop_name: 'Fresh Cuts', location: 'Yaba' });
+    const su = await j(base, '/api/auth/signup', { accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'New Barber', email: 'new@barber.com', password: 'Password123', shop_name: 'Fresh Cuts', location: 'Yaba' });
     assert.equal(su.status, 201);
     const body = await su.json() as any;
     assert.equal(body.user.verified, false);

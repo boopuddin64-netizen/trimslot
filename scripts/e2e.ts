@@ -30,11 +30,11 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
   check('unauthenticated /bookings -> 401', (await anon.call('GET', '/api/bookings')).status === 401);
   check('login wrong password -> 401', (await mike.call('POST', '/api/auth/login', { identifier: 'mike@trimslot.demo', password: 'nope' })).status === 401);
   check('barber login', (await mike.call('POST', '/api/auth/login', { identifier: 'mike@trimslot.demo', password: 'Barber123!' })).status === 200);
-  const bad1 = await cust.call('POST', '/api/auth/signup', { role: 'customer', name: 'X', password: 'short' });
+  const bad1 = await cust.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'X', password: 'short' });
   check('signup validation error (400)', bad1.status === 400, bad1.json);
-  const su = await cust.call('POST', '/api/auth/signup', { role: 'customer', name: 'Ngozi Test', email: `ngozi${stamp}@example.com`, phone: '', password: 'Password123' });
+  const su = await cust.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Ngozi Test', email: `ngozi${stamp}@example.com`, phone: '', password: 'Password123' });
   check('customer signup', su.status === 201, su.json);
-  check('duplicate signup -> 409', (await anon.call('POST', '/api/auth/signup', { role: 'customer', name: 'Dup', email: `ngozi${stamp}@example.com`, password: 'Password123' })).status === 409);
+  check('duplicate signup -> 409', (await anon.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Dup', email: `ngozi${stamp}@example.com`, password: 'Password123' })).status === 409);
   await cust2.call('POST', '/api/auth/login', { identifier: 'tunde@trimslot.demo', password: 'Customer123!' });
 
   const barbers = (await cust.call('GET', '/api/barbers')).json.barbers; const barber = barbers[0];
@@ -205,7 +205,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     // barber review workflow over HTTP
     const A = (path: string, m = 'GET', body?: unknown) => fetch(BASE + '/api/admin' + path, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CRON0}` }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: (await r.json().catch(() => ({}))) as any }));
     const nb = new Client(); const nbEmail = `review${stamp}@example.com`;
-    await nb.call('POST', '/api/auth/signup', { role: 'barber', name: 'Review Test', email: nbEmail, password: 'Password123', shop_name: 'Review Shop ' + stamp, location: 'Test' });
+    await nb.call('POST', '/api/auth/signup', { accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'Review Test', email: nbEmail, password: 'Password123', shop_name: 'Review Shop ' + stamp, location: 'Test' });
     const list: any = (await A('/barbers?status=PENDING')).json; const nbId = list.barbers.find((b: any) => b.email === nbEmail)?.id;
     check('admin sees new signup as PENDING with counts', !!nbId && list.counts.PENDING >= 1, list.counts);
     check('reject without a reason -> 400', (await A(`/barbers/${nbId}/reject`, 'POST', {})).status === 400);
@@ -224,7 +224,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     const CR = process.env.CRON_SECRET;
     const AA = (path: string, m = 'GET', body?: unknown) => fetch(BASE + '/api/admin' + path, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CR}` }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) as any }));
     const pc = new Client(); const pcEmail = `power${stamp}@example.com`;
-    await pc.call('POST', '/api/auth/signup', { role: 'customer', name: 'Power Test', email: pcEmail, password: 'Password123' });
+    await pc.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Power Test', email: pcEmail, password: 'Password123' });
     const pcId = (await AA('/customers?q=' + encodeURIComponent(pcEmail))).json.customers[0]?.id;
     check('admin finds the new customer', !!pcId);
     const tomorrow = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);

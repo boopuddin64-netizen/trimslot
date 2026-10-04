@@ -21,7 +21,7 @@ await call(`/admin/bookings/${b2}/resolve`, { method: 'POST', body: { action: 'c
 const plan = (await call('/barber/plans', { method: 'POST', body: { name: 'Monthly fresh (4 cuts)', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [svcs[0].id] } }, mike)).j.id;
 const pp = (await call(`/plans/${plan}/buy`, { method: 'POST', body: {} }, chidi)).j; if (pp.reference) { await call(`/payments/mock/${pp.reference}/complete`, { method: 'POST', body: {} }); await call(`/payments/callback?reference=${pp.reference}`); }
 // pending barber
-await call('/auth/signup', { method: 'POST', body: { role: 'barber', name: 'Tunde Adebayo', email: 'tunde@sharpedge.demo', password: 'Barber123!', shop_name: 'Sharp Edge Studio', location: 'Lekki Phase 1, Lagos' } });
+await call('/auth/signup', { method: 'POST', body: { accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'Tunde Adebayo', email: 'tunde@sharpedge.demo', password: 'Barber123!', shop_name: 'Sharp Edge Studio', location: 'Lekki Phase 1, Lagos' } });
 const c = new pg.Client({ connectionString: 'postgres://postgres:postgres@127.0.0.1:54320/trimslot' }); await c.connect();
 await c.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason='Paystack refund API timed out' WHERE reference=$1`, [r3]);
 await c.query(`UPDATE payments SET status='FAILED' WHERE id=(SELECT id FROM payments WHERE status='INITIATED' ORDER BY id DESC LIMIT 1)`);

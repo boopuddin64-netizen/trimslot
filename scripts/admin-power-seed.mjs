@@ -27,7 +27,7 @@ await call('/reports', { method: 'POST', body: { category: 'BEHAVIOUR', message:
 await call('/reports', { method: 'POST', body: { category: 'NO_SHOW', message: 'Customer never showed up and did not answer calls.', booking_id: bk } }, mike);
 const uid = (await c.query(`SELECT id FROM users WHERE email='tunde@trimslot.demo'`)).rows[0].id;
 await call(`/admin/users/${uid}/warn`, { method: 'POST', auth: true, body: { reason: 'Please arrive on time.' } });
-const extra = await call('/auth/signup', { method: 'POST', body: { role: 'customer', name: 'Amaka Eze', email: 'amaka@trimslot.demo', password: 'Customer123!' } });
+const extra = await call('/auth/signup', { method: 'POST', body: { accept_terms: true, role: 'customer', name: 'Amaka Eze', email: 'amaka@trimslot.demo', password: 'Customer123!' } });
 const aid = (await c.query(`SELECT id FROM users WHERE email='amaka@trimslot.demo'`)).rows[0].id;
 await call(`/admin/users/${aid}/suspend`, { method: 'POST', auth: true, body: { reason: 'Three no-shows in a row.' } });
 await call('/admin/broadcast', { method: 'POST', auth: true, body: { audience: 'customers', title: 'Holiday hours', body: 'Most shops are closed on Friday for the public holiday.' } });

@@ -58,7 +58,7 @@ async function main() {
     ({ r, b } = await j('/api/config'));
     check('GET /api/config -> 200, payments not mock', r.status === 200 && b.mock === false, b);
     check('security headers present on API', /default-src 'self'/.test(r.headers.get('content-security-policy') || ''));
-    const signup = await j('/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://trimslot-local.vercel.app' }, body: JSON.stringify({ role: 'barber', name: 'Local Barber', email: 'lb@example.com', password: 'Password123', shop_name: 'LB', location: 'Yaba' }) });
+    const signup = await j('/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://trimslot-local.vercel.app' }, body: JSON.stringify({ accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'Local Barber', email: 'lb@example.com', password: 'Password123', shop_name: 'LB', location: 'Yaba' }) });
     check('signup works through the handler (JSON body parsed by Express)', signup.r.status === 201, signup.b);
     const blocked = await j('/api/auth/signup', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: '{}' });
     check('cross-origin POST blocked (APP_BASE_URL origin check)', blocked.r.status === 403);

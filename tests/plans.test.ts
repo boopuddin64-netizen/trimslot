@@ -200,18 +200,18 @@ test('late cancel of a PAID session is refused (slot stays booked); after the ti
   } finally { resetNow(); }
 });
 
-test('prepaid online booking cancelled IN TIME: stays CREDIT_PENDING by default, becomes a same-barber credit when the admin rule is on', async () => {
+test('prepaid online booking cancelled IN TIME: a pending REFUND, never a credit (the old credit_on_early_cancel_prepaid switch is ignored)', async () => {
   const c = await setup();
   try {
     const mk = async (time: string) => { const b = await book(c, c.customerIds[0], time, 'ONLINE'); const i = await initializePayment(c.db, b.id, null); await mockMarkPaid(c.db, i.reference); await processReference(c.db, i.reference); return b; };
     const b1 = await mk('10:00');
     await customerCancel(c.db, c.customerIds[0], b1.id);
-    assert.equal((await getBooking(c.db, b1.id))!.payment_status, 'CREDIT_PENDING');
-    await c.db.tx((t) => updateSettings(t, { credit_on_early_cancel_prepaid: true }));
+    assert.equal((await getBooking(c.db, b1.id))!.payment_status, 'REFUND_PENDING');
+    await c.db.tx((t) => updateSettings(t, { credit_on_early_cancel_prepaid: true } as any)); // deprecated key: accepted, ignored
     const b2 = await mk('11:00');
     await customerCancel(c.db, c.customerIds[0], b2.id);
-    assert.equal((await getBooking(c.db, b2.id))!.payment_status, 'CREDITED');
-    assert.equal((await c.db.one(`SELECT reason FROM session_credits WHERE source_booking_id=$1`, [b2.id])).reason, 'EARLY_CANCEL');
+    assert.equal((await getBooking(c.db, b2.id))!.payment_status, 'REFUND_PENDING');
+    assert.equal((await c.db.many('SELECT 1 FROM session_credits')).length, 0);
   } finally { resetNow(); }
 });
 

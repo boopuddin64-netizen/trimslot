@@ -79,11 +79,14 @@ test('admin refunds: a flagged payment can be retried (mock gateway) or marked r
   } finally { s.server.close(); resetNow(); }
 });
 
-test('cancellation decisions: CREDIT_PENDING converts to a same-barber credit or a refund exactly once', async () => {
+test('legacy cancellation decisions: CREDIT_PENDING converts to a same-barber credit or a refund exactly once', async () => {
   const s = await boot();
   try {
     const a = await paid(s, s.customerIds[0], '10:00'); const b = await paid(s, s.customerIds[1], '11:00');
     await customerCancel(s.db, s.customerIds[0], a.b.id); await customerCancel(s.db, s.customerIds[1], b.b.id);
+    // rows created before the refund flow existed: seed them in the legacy CREDIT_PENDING shape
+    await s.db.query(`UPDATE bookings SET payment_status='CREDIT_PENDING' WHERE id = ANY($1)`, [[a.b.id, b.b.id]]);
+    await s.db.query(`UPDATE payments SET refund_status=NULL, refund_due_at=NULL WHERE booking_id = ANY($1)`, [[a.b.id, b.b.id]]);
     const q = (await s.j('/api/admin/cancellations', { headers: s.A })).body; assert.equal(q.bookings.length, 2);
     assert.equal((await s.j('/api/admin/bookings/' + a.b.id + '/resolve', { method: 'POST', headers: s.A, body: { action: 'nonsense' } })).status, 400);
     const cr = await s.j(`/api/admin/bookings/${a.b.id}/resolve`, { method: 'POST', headers: s.A, body: { action: 'credit' } }); assert.equal(cr.status, 200); assert.ok(cr.body.credit.id);
@@ -129,7 +132,7 @@ test('ADMIN_KEY works for admin (not for cron), CRON_SECRET still works for both
 });
 
 async function newPendingBarber(s: any, tag = 'p') {
-  const r = await fetch(s.base + '/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'barber', name: 'New Barber', email: `nb-${tag}@x.test`, password: 'Barber123!', shop_name: 'New Shop ' + tag, location: 'Lekki' }) });
+  const r = await fetch(s.base + '/api/auth/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accept_terms: true, accept_barber_agreement: true, role: 'barber', name: 'New Barber', email: `nb-${tag}@x.test`, password: 'Barber123!', shop_name: 'New Shop ' + tag, location: 'Lekki' }) });
   const cookie = r.headers.get('set-cookie')!.split(';')[0];
   const row = await s.db.one(`SELECT b.id, b.user_id FROM barbers b JOIN users u ON u.id=b.user_id WHERE u.email=$1`, [`nb-${tag}@x.test`]);
   return { id: row.id as number, uid: row.user_id as number, cookie, me: async () => (await (await fetch(s.base + '/api/auth/me', { headers: { Cookie: cookie } })).json() as any).user };
