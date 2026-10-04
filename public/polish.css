@@ -1,0 +1,10 @@
+/* Polish: calm scrolling and short screen changes. Loaded after style.css. */
+
+/* iPhone-style bounce stays; Chrome's own pull-down reload is off (the app has its own refresh). */
+html{overscroll-behavior-y:contain}
+/* Sheets scroll on their own and never move the page behind them. */
+.scrim{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.sheet{max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+/* Fixed bars stay put; horizontal chip rows never pull the page sideways. */
+.tabs,.topbar{overscroll-behavior:none}
+.chips,.scroller,[data-hscroll]{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
