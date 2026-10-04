@@ -34,7 +34,7 @@ async function login(p, id, pw) {
 }
 const stub = (p, mode = 'ok') => p.evaluate((m) => {
   window.__rf = 0; window.__vib.length = 0;
-  window.refreshFromNetwork = async () => { window.__rf++; await new Promise((r) => setTimeout(r, 100)); if (m === 'fail') throw new Error('x'); };
+  window.refreshFromNetwork = async () => { window.__rf++; await new Promise((r) => setTimeout(r, 100)); if (m === 'fail') throw new Error('x'); return m === 'false' ? false : true; };
 }, mode);
 const pad = (p) => p.evaluate(() => { if (!document.getElementById('padfill')) document.getElementById('app').insertAdjacentHTML('beforeend', '<div id="padfill" style="height:1600px"></div>'); window.scrollTo(0, 0); });
 const st = (p) => p.evaluate(() => { const e = document.getElementById('ptr'); return e ? { state: e.dataset.state, on: e.classList.contains('ptr-on'), txt: e.querySelector('.ptr-txt').textContent, op: getComputedStyle(e).opacity, disp: getComputedStyle(e).display } : null; });
@@ -102,6 +102,23 @@ for (const w of [360, 390]) for (const dark of [false, true]) {
   await sleep(2300); s = await st(p); ok(!s || !s.on, tag + ' error clears by itself');
   ok(p.__errs.length === 0, tag + ' no page errors', p.__errs.join('|')); await ctx.close();
 }
+
+/* refreshFromNetwork() returning false: the spinner ends quietly, no error text, no error buzz, and route() is not called a second time */
+{ const { ctx, p } = await mk(390); await login(p, 'chidi@trimslot.demo', 'Customer123!'); await p.goto('/#/'); await p.waitForTimeout(800); await pad(p); await stub(p, 'false');
+  await p.evaluate(() => { window.__rt = 0; const o = window.route; window.route = function () { window.__rt++; return o.apply(this, arguments); }; });
+  await p.touch.pull(195, 150, 0, 230, { hold: 60 }); await sleep(250); let s = await st(p); ok(s && s.state === 'busy', 'false result: spinner shows first');
+  await sleep(1000); s = await st(p); ok(!s || (!s.on && s.state !== 'error'), 'false result: spinner ends quietly, no error', JSON.stringify(s));
+  ok(await p.evaluate(() => window.__rf === 1 && window.__rt === 0), 'false result: route() is not called by the pull code');
+  ok(await p.evaluate(() => !window.__vib.some((v) => Array.isArray(v) && v.length > 3)), 'false result: no error buzz');
+  // the real refreshFromNetwork (offline-cache.js): redraws once through route()
+  await p.evaluate(() => { delete window.refreshFromNetwork; });
+  await p.reload(); await p.waitForTimeout(900); await pad(p);
+  await p.evaluate(() => { window.__rt = 0; window.__vib = []; const o = window.route; window.route = function () { window.__rt++; return o.apply(this, arguments); }; });
+  const real = await p.evaluate(() => typeof window.refreshFromNetwork);
+  await p.touch.pull(195, 150, 0, 230, { hold: 60 }); await sleep(1300);
+  ok(real === 'function' && await p.evaluate(() => window.__rt) === 1, 'real refreshFromNetwork: screen redrawn exactly once', real + ' ' + await p.evaluate(() => window.__rt));
+  s = await st(p); ok(!s || !s.on, 'real refreshFromNetwork: indicator gone after');
+  await ctx.close(); }
 
 /* barber screens, ineligible screen, route() fallback, reduced motion */
 for (const w of [360, 390]) {

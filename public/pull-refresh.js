@@ -1,6 +1,6 @@
 /* TrimSlot pull-down to refresh (touch only). Works in iOS home-screen mode and in normal tabs.
    Starts only when the page is at the top, the finger moves clearly downward, and nothing else (sheet, crop screen, text box,
-   sideways scroller) is in the way. Refresh = window.refreshFromNetwork() if it exists, else re-run the current screen with route().
+   sideways scroller) is in the way. Refresh = window.refreshFromNetwork() if it exists (it redraws by itself: true = redrawn, false = did nothing, quietly), else route().
    It never adds overscroll rules itself (polish.css owns those); it only cancels a touchmove while its own pull is active. */
 'use strict';
 (function () {
@@ -93,14 +93,15 @@
   }
   async function run() {
     busy = true; pulling = false; clearTimeout(hideT);
-    var t0 = Date.now(), bad = false;
+    var t0 = Date.now(), bad = false, quiet = false;
     say('busy', 'Refreshing…'); place(THRESHOLD - 8, true);
     if (window.haptics) haptics.refresh();
     try {
       if (!navigator.onLine) throw new Error('offline');
-      if (typeof window.refreshFromNetwork === 'function') { var r = await window.refreshFromNetwork(); if (r === false) throw new Error('refresh failed'); }
+      // refreshFromNetwork() redraws the screen itself: true = redrawn, false = it chose to do nothing (booking or payment in progress, unsaved typing), reject = failed.
+      if (typeof window.refreshFromNetwork === 'function') { if (await window.refreshFromNetwork() === false) quiet = true; }
       else await route();
-      if (failed()) bad = true;
+      if (!quiet && failed()) bad = true;
     } catch (e) { bad = true; }
     var wait = MIN_SHOW - (Date.now() - t0); if (wait > 0) await new Promise(function (r) { setTimeout(r, wait); });
     if (bad) {
