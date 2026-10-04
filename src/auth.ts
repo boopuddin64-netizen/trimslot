@@ -38,7 +38,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     if (u) {
       const user: AuthUser = { id: u.id, role: u.role, name: u.name, email: u.email, phone: u.phone };
       if (u.role === 'barber') { user.barberId = u.barber_id ?? undefined; user.verified = !!u.verified; }
-      if (u.stale) await expireHolds(req.db, u.role === 'barber' ? (u.barber_id ? { barberId: u.barber_id } : {}) : { customerId: u.id });
+      if (u.stale) await expireHolds(req.db, u.role === 'barber' ? (u.barber_id ? { barberId: u.barber_id } : {}) : { customerId: u.id }, { budgetMs: 0 });   // no Paystack wait on an ordinary request: the sweeper and the booking page check with Paystack
       req.user = user;
     }
     next();

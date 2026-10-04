@@ -197,7 +197,7 @@ const LISTS = {
     pills: { param: 'status', count: true, items: [['OPEN', 'Open'], ['RESOLVED', 'Resolved'], ['DISMISSED', 'Dismissed'], ['', 'All']] },
     selects: [{ param: 'category', label: 'Category', options: [['', 'Any category'], ['NO_SHOW', 'No-show'], ['BEHAVIOUR', 'Behaviour'], ['PAYMENT', 'Payment'], ['QUALITY', 'Quality'], ['SAFETY', 'Safety'], ['OTHER', 'Other']] }],
     cols: [
-      ['Report', (x) => `<b>${esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>`], ['From', (x) => esc(x.reporter_name)], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a>` : '—'],
+      ['Report', (x) => `<b>${x.staff_alert ? 'Staff alert: unanswered help request' : esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>`], ['From', (x) => x.staff_alert ? 'TrimSlot system (customer ' + esc(x.reporter_name) + ' asked for help)' : esc(x.reporter_name)], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a>` : '—'],
       ['Booking', (x) => x.booking_id ? `<a href="#" data-b="${x.booking_id}">#${x.booking_id}</a>` : '—'], ['Filed', (x) => stamp(x.created_at)],
       ['', (x) => (x.status === 'OPEN' ? act('Resolve', '', 'data-act="res"') + act('Dismiss', 'sec', 'data-act="dis"') : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status)) + act('Delete', 'red', 'data-act="del"'), 'act'],
     ],
@@ -258,8 +258,8 @@ LISTS.bookings.row = (b) => ({ t: `<b>#${b.id}</b> ${esc(b.service_name)}`, p: b
 LISTS.payments.row = (p) => ({ t: esc(p.item || 'Payment'), p: payBadge(p.status) + (p.refund_status ? refundBadge(p.refund_status) : '') + (p.disputed ? bd('b-red', 'DISPUTED') : ''), m: esc(ell(stamp(p.verified_at || p.created_at), p.customer_name)), r: naira(p.amount_kobo) });
 LISTS.credits.row = (c) => ({ t: esc(c.customer_name), p: c.status === 'USED' ? bd('b-gray', 'USED') : c.status === 'REVOKED' ? bd('b-red', 'REVOKED') : c.live ? bd('b-purple', 'AVAILABLE') : bd('b-gray', 'EXPIRED'), m: esc(ell('exp ' + dnoy(c.expires_at), c.shop_name, { NO_SHOW: 'No-show', LATE_CANCEL: 'Late cancel', EARLY_CANCEL: 'Cancelled in time', LOYALTY: 'Loyalty' }[c.reason] || c.reason)), r: naira(c.value_kobo) });
 LISTS.credits.rowTitle = (c) => 'Credit #' + c.id + ' · ' + c.customer_name;
-LISTS.reports.row = (x) => ({ t: esc(x.category.replace('_', ' ')), p: bd(x.status === 'OPEN' ? 'b-amber' : x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), m: esc(ell(x.reporter_name + (x.target_name ? ' → ' + x.target_name : ''), x.message)), r: dshort(x.created_at).replace(/ \d{4}$/, '') });
-LISTS.reports.rowTitle = (x) => 'Report #' + x.id + ' · ' + x.category.replace('_', ' ');
+LISTS.reports.row = (x) => ({ t: x.staff_alert ? 'Staff alert: unanswered help' : esc(x.category.replace('_', ' ')), p: bd(x.status === 'OPEN' ? 'b-amber' : x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), m: esc(ell(x.staff_alert ? 'System alert' : x.reporter_name + (x.target_name ? ' → ' + x.target_name : ''), x.message)), r: dshort(x.created_at).replace(/ \d{4}$/, '') });
+LISTS.reports.rowTitle = (x) => (x.staff_alert ? 'Staff alert #' : 'Report #') + x.id + ' · ' + (x.staff_alert ? 'unanswered help request' : x.category.replace('_', ' '));
 LISTS.ledger.row = (b) => ({ t: esc(b.shop_name), p: '', m: esc(ell(b.open_entries + ' open entr' + (b.open_entries === 1 ? 'y' : 'ies'), b.oldest ? 'oldest ' + dshort(b.oldest) : '')), r: `<b style="color:var(--red)">${naira(b.owed_kobo)}</b>` });
 LISTS.reviews.row = (r) => ({ t: stars(r.rating) + ' ' + esc(r.customer_name), p: r.hidden ? bd('b-red', 'HIDDEN') : '', m: esc(ell(r.shop_name, r.comment || 'No comment')), r: dshort(r.created_at).replace(/ \d{4}$/, '') });
 LISTS.reviews.rowTitle = (r) => 'Review #' + r.id + ' · ' + r.customer_name;

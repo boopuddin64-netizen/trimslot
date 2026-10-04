@@ -81,6 +81,8 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
 export async function initializePayment(db: Db, bookingId: number, customerEmail: string | null) {
   const b = (await getBooking(db, bookingId))!;
   if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not waiting for an online payment.');
+  // A payment for this booking is still being sorted out (amount mismatch waiting for staff, or a refund on its way): a second payment would be a duplicate charge.
+  if (await db.maybeOne(`SELECT 1 FROM payments WHERE booking_id=$1 AND refund_status IN ('NEEDS_REFUND','REFUND_REQUESTED') LIMIT 1`, [b.id])) throw new AppError(409, 'PAYMENT_UNDER_REVIEW', 'We already received a payment for this booking and we are sorting it out. Please do not pay again. We will confirm the booking or send your money back.');
   // Double click / two tabs: reuse the open checkout for this booking instead of starting a second one (two live checkouts could both be paid and the second would be a duplicate).
   // Two requests at the same instant would both see "no open checkout": the first to claim this 10-second slot goes on, the other waits a moment for its checkout to appear and re-uses it.
   const sec = 10000, bucket = new Date(Math.floor(clock.now().getTime() / sec) * sec).toISOString();
@@ -262,9 +264,15 @@ export async function processReference(db: Db, reference: string, o: { force?: b
 }
 
 /** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
+/** The customer was told "our team is checking your payment"; once staff refund it, say so (the old text must not be the last word). */
+export async function notifyMismatchRefunded(db: Db | import('./db').Conn, bookingId: number) {
+  const b = await db.maybeOne<any>('SELECT id, customer_id, service_name FROM bookings WHERE id=$1', [bookingId]);
+  if (!b) return;
+  await notify(db, b.customer_id, 'PAYMENT_PROBLEM', 'We sent your payment back', `The payment for your ${b.service_name} booking did not fit the booking, so we did not confirm it. We have sent your money back. Your bank may take a few working days to show it. Booking number #${b.id}.`, b.id);
+}
 export async function requestRefund(db: Db, reference: string): Promise<'requested' | 'failed' | 'not_needed'> {
   // Claim first: two callers (the sweeper and an admin click, or two sweepers) can never both send the refund. Only the one whose UPDATE changes the row goes on.
-  const claim = await db.maybeOne<{ id: number }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id`, [reference, isoNow()]);
+  const claim = await db.maybeOne<{ id: number; booking_id: number | null; refund_reason: string | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, refund_reason`, [reference, isoNow()]);
   if (!claim) return 'not_needed';
   try {
     if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify({ transaction: reference }) });
@@ -278,6 +286,7 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
     return 'failed';
   }
   // The money is on its way. Giving back the commission the payment had settled must not undo that, so a failure here is logged, not turned into a second refund.
+  if (claim.refund_reason === MISMATCH_REASON && claim.booking_id) await notifyMismatchRefunded(db, claim.booking_id).catch(() => {});
   await db.tx((t) => reverseNettingForPayment(t, claim.id)).catch((e) => logger.warn('refund_netting_reverse_failed', { ref: reference, err: String(e?.message).slice(0, 120) }));
   return 'requested';
 }

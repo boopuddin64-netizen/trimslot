@@ -13,6 +13,8 @@ import { logger } from './logger';
 
 export const HELP_NOTE_MAX = 200;
 export const HELP_DAILY_MAX = 5;
+/** reports.reporter_id is NOT NULL (no migration), so the customer stays on the row; an alert is told apart by help_requests.report_id (admin lists: `staff_alert`) and this message start. */
+export const HELP_ALERT_PREFIX = 'Unanswered help request';
 
 /** Can this booking ask for help right now? (paid, upcoming, cancel window closed) */
 export function helpEligible(b: Pick<BookingRow, 'status' | 'payment_status' | 'scheduled_at'>, cutoffMin: number): boolean {
@@ -77,8 +79,8 @@ export async function escalateUnansweredHelp(db: Db, minutes = HELP_ESCALATE_MIN
         const h = await t.maybeOne<any>(`SELECT * FROM help_requests WHERE id=$1 AND status='OPEN' AND escalated_at IS NULL FOR UPDATE`, [d.id]);
         if (!h) return false;
         const b = await t.one<any>('SELECT k.*, bb.user_id AS barber_uid FROM bookings k JOIN barbers bb ON bb.id=k.barber_id WHERE k.id=$1', [h.booking_id]);
-        const msg = `URGENT: the customer asked the barber for help on a locked booking and nobody answered in ${minutes} minutes. Booking #${b.id}, ${b.service_name}, ${fmtWhen(b.date, b.start_min)}. Customer note: "${h.note}". Please contact them both.`;
-        const r = await t.one<{ id: number }>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,$2,$3,'OTHER',$4,$5) RETURNING id`, [h.customer_id, b.barber_uid, b.id, msg, isoNow()]);
+        const msg = `${HELP_ALERT_PREFIX} (staff alert, not a complaint about the barber). The customer asked the barber for help on a locked booking and nobody answered in ${minutes} minutes. Booking #${b.id}, ${b.service_name}, ${fmtWhen(b.date, b.start_min)}. Customer note: "${h.note}". Please contact them both.`;
+        const r = await t.one<{ id: number }>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,NULL,$2,'OTHER',$3,$4) RETURNING id`, [h.customer_id, b.id, msg, isoNow()]);   // no target: this is an alert for staff, never a report against the barber
         await t.query('UPDATE help_requests SET escalated_at=$1, report_id=$2 WHERE id=$3', [isoNow(), r.id, h.id]);
         await audit(t, b.id, { id: null, role: 'system' }, 'HELP_ESCALATED', { help_id: h.id, report_id: r.id, minutes });
         await notify(t, h.customer_id, 'HELP_ESCALATED', 'Our team is helping', 'Your barber has not answered yet. We told the TrimSlot team and they will help you.', b.id);

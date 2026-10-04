@@ -63,7 +63,18 @@ const publicUser = async (db: Db, u: any) => {
 /** Per-request memo so lists of bookings don't repeat the same barber/queue lookups (N+1). */
 type Memo = { barbers: Map<number, Promise<any>>; queues: Map<string, Promise<BookingRow[]>>; delays: Map<number, Promise<number>> };
 const newMemo = (): Memo => ({ barbers: new Map(), queues: new Map(), delays: new Map() });
-async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queue?: BookingRow[]; memo?: Memo } = {}) {
+/** Payment problems (slot taken / duplicate / late / amount mismatch) for a set of bookings in ONE query: the newest one per booking.
+ *  A refunded problem stays visible for a week (so the customer can read it again), then it is history; one still waiting stays until it is settled. */
+export async function paymentIssues(db: Db, ids: number[]): Promise<Map<number, { refund_reason: string; refund_status: string }>> {
+  const m = new Map<number, { refund_reason: string; refund_status: string }>();
+  if (!ids.length) return m;
+  const rows = await db.many<any>(`SELECT DISTINCT ON (booking_id) booking_id, refund_reason, refund_status FROM payments WHERE booking_id = ANY($1::int[]) AND refund_status IS NOT NULL
+      AND (refund_reason LIKE 'Slot was taken%' OR refund_reason LIKE 'Duplicate payment%' OR refund_reason LIKE 'Payment arrived after%' OR refund_reason = 'Amount mismatch')
+      AND (refund_status <> 'REFUNDED' OR COALESCE(refund_requested_at, verified_at, created_at) > $2) ORDER BY booking_id, id DESC`, [ids, new Date(clock.now().getTime() - 7 * 86400000).toISOString()]);
+  for (const r of rows) m.set(r.booking_id, r);
+  return m;
+}
+async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queue?: BookingRow[]; memo?: Memo; issues?: Map<number, { refund_reason: string; refund_status: string }> } = {}) {
   const memo = opts.memo;
   const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name, u.phone AS barber_phone FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
   let barberP: Promise<any>;
@@ -109,16 +120,16 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     const rf = await db.maybeOne<any>(`SELECT refund_status, refund_due_at FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1`, [b.id]);
     out.refund = { status: b.payment_status, gateway: rf?.refund_status ?? null, due_at: b.payment_status === 'REFUND_PENDING' ? rf?.refund_due_at ?? null : null };
   }
-  // Customer detail view only: what went wrong with a payment on this booking (so the page can always say the right thing, also after a reload or a poll).
-  if (!opts.forBarber && !memo && b.payment_option === 'ONLINE') {
-    // A refunded problem stays on the page for a week (so the customer can read it again), then it is history; one still waiting stays until it is settled.
-    const pi = await db.maybeOne<any>(`SELECT refund_reason, refund_status FROM payments WHERE booking_id=$1 AND refund_status IS NOT NULL
-        AND (refund_reason LIKE 'Slot was taken%' OR refund_reason LIKE 'Duplicate payment%' OR refund_reason LIKE 'Payment arrived after%' OR refund_reason = 'Amount mismatch')
-        AND (refund_status <> 'REFUNDED' OR COALESCE(refund_requested_at, verified_at, created_at) > $2) ORDER BY id DESC LIMIT 1`, [b.id, new Date(clock.now().getTime() - 7 * 86400000).toISOString()]);
+  // What went wrong with a payment on this booking (so the page can always say the right thing, also after a reload or a poll).
+  // The detail page and the list use the same lookup (list rows get it from one batched query), so a row never says "no payment" while the detail page shows a refund.
+  if (!opts.forBarber && b.payment_option === 'ONLINE') {
+    const pi = opts.issues ? opts.issues.get(b.id) : (await paymentIssues(db, [b.id])).get(b.id);
     if (pi) {
       const kind = /^Slot was taken/.test(pi.refund_reason) ? 'slot_taken' : /^Duplicate/.test(pi.refund_reason) ? 'duplicate' : /^Amount mismatch/.test(pi.refund_reason) ? 'mismatch' : 'late';
       out.payment_issue = { kind, refund: pi.refund_status === 'REFUNDED' ? 'sent' : pi.refund_status === 'REFUND_REQUESTED' ? 'coming' : kind === 'mismatch' ? 'none' : 'coming' };
       out.incomplete = false;       // there is a payment to talk about: the "no payment" badge and text would contradict the refund banner
+      // Money of this booking is still being sorted out (staff check or refund on its way): paying again would charge the customer twice.
+      if (b.status === 'PENDING_PAYMENT' && pi.refund_status !== 'REFUNDED') out.pay_blocked = true;
     }
   }
   if (b.date === lagosDate() || b.status === 'IN_SERVICE') {
@@ -431,7 +442,8 @@ export function createApp(db: Db) {
   api.get('/bookings', cust, wrap(async (req, res) => {
     const rows = await db.many<BookingRow>('SELECT * FROM bookings WHERE customer_id=$1 ORDER BY date DESC, start_min DESC, id DESC LIMIT 300', [req.user!.id]);
     const memo = newMemo();
-    res.json({ today: lagosDate(), bookings: await Promise.all(rows.map((b) => decorate(db, b, { memo }))) });
+    const issues = await paymentIssues(db, rows.filter((b) => b.payment_option === 'ONLINE').map((b) => b.id));
+    res.json({ today: lagosDate(), bookings: await Promise.all(rows.map((b) => decorate(db, b, { memo, issues }))) });
   }));
   const ownBooking = async (req: Request) => {
     const id = Number(req.params.id);
@@ -442,6 +454,8 @@ export function createApp(db: Db) {
   api.get('/bookings/:id', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await ownBooking(req)) })));
   api.post('/bookings/:id/pay', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
+    // Money for this booking is already being sorted out (amount did not fit / refund on its way): a second payment would charge the customer twice.
+    if (b.payment_option === 'ONLINE' && b.status === 'PENDING_PAYMENT') { const pi = (await paymentIssues(db, [b.id])).get(b.id); if (pi && pi.refund_status !== 'REFUNDED') throw conflict('PAYMENT_ON_HOLD', 'We already have a payment for this booking and we are sorting it out. Please do not pay again.'); }
     const u = await db.one('SELECT email FROM users WHERE id=$1', [req.user!.id]);
     res.json(await initializePayment(db, b.id, u.email));
   }));

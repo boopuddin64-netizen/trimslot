@@ -58,7 +58,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const payments = u.role === 'customer' ? await db.many(`SELECT p.reference, p.amount_kobo, p.status, p.refund_status, p.disputed, p.created_at FROM payments p LEFT JOIN bookings b ON b.id=p.booking_id LEFT JOIN plan_purchases pp ON pp.id=p.plan_purchase_id WHERE COALESCE(b.customer_id, pp.customer_id)=$1 ORDER BY p.id DESC LIMIT 20`, [id]) : [];
     const credits = u.role === 'customer' ? await db.many(`SELECT sc.id, sc.reason, sc.status, sc.value_kobo, sc.expires_at, b.shop_name FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id WHERE sc.customer_id=$1 ORDER BY sc.id DESC LIMIT 20`, [id]) : [];
     const plans = u.role === 'customer' ? await db.many(`SELECT pp.id, pp.plan_name, pp.sessions_total, pp.sessions_used, pp.status, pp.expires_at, b.shop_name FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status<>'PENDING' ORDER BY pp.id DESC LIMIT 20`, [id]) : [];
-    const reports = await db.many(`SELECT r.id, r.category, r.status, r.message, r.created_at, r.reporter_id, r.target_user_id FROM reports r WHERE r.reporter_id=$1 OR r.target_user_id=$1 ORDER BY r.id DESC LIMIT 20`, [id]);
+    const reports = await db.many(`SELECT r.id, r.category, r.status, r.message, r.created_at, r.reporter_id, r.target_user_id, EXISTS (SELECT 1 FROM help_requests hr WHERE hr.report_id=r.id) AS staff_alert FROM reports r WHERE r.reporter_id=$1 OR r.target_user_id=$1 ORDER BY r.id DESC LIMIT 20`, [id]);
     const history = await db.many(`SELECT id, action, details, created_at FROM audit_log WHERE booking_id IS NULL AND actor_role='admin' AND (details->>'user_id')=$1::text ORDER BY id DESC LIMIT 30`, [String(id)]);
     const balance = barber ? { owed_kobo: await outstandingKobo(db, barber.id) } : null;
     const consents = await consentHistory(db, id); const consent_missing = await consentRequired(db, u);
@@ -389,7 +389,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   get('/reports', async (req, res) => {
     const st = String(req.query.status || 'OPEN').toUpperCase();
     const rows = await db.many(`SELECT r.id, r.category, r.message, r.status, r.admin_note, r.created_at, r.resolved_at, r.booking_id, r.reporter_id, r.target_user_id,
-        ru.name AS reporter_name, ru.role AS reporter_role, tu.name AS target_name, tu.role AS target_role
+        ru.name AS reporter_name, ru.role AS reporter_role, tu.name AS target_name, tu.role AS target_role, EXISTS (SELECT 1 FROM help_requests hr WHERE hr.report_id=r.id) AS staff_alert
       FROM reports r JOIN users ru ON ru.id=r.reporter_id LEFT JOIN users tu ON tu.id=r.target_user_id ${['OPEN', 'RESOLVED', 'DISMISSED'].includes(st) ? `WHERE r.status='${st}'` : ''} ORDER BY r.id DESC LIMIT 200`);
     const c = await db.one<any>(`SELECT COUNT(*) FILTER (WHERE status='OPEN')::int open, COUNT(*) FILTER (WHERE status='RESOLVED')::int resolved, COUNT(*) FILTER (WHERE status='DISMISSED')::int dismissed FROM reports`);
     res.json({ reports: rows, counts: { OPEN: c.open, RESOLVED: c.resolved, DISMISSED: c.dismissed } });
@@ -401,7 +401,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
       if (r.status !== 'OPEN') throw conflict('ALREADY_RESOLVED', 'This report is already closed.');
       await t.query('UPDATE reports SET status=$2, admin_note=$3, resolved_at=$4 WHERE id=$1', [id, d.status, d.note, isoNow()]);
       await audit(t, r.booking_id, ADMIN, 'ADMIN_REPORT_' + d.status, { report_id: id, note: d.note, user_id: r.target_user_id });
-      if (d.notify_reporter !== false) await notify(t, r.reporter_id, 'REPORT_UPDATE', d.status === 'RESOLVED' ? 'Your report was resolved' : 'Your report was reviewed', d.note);
+      if (d.notify_reporter !== false && !(await t.maybeOne('SELECT 1 FROM help_requests WHERE report_id=$1', [id]))) await notify(t, r.reporter_id, 'REPORT_UPDATE', d.status === 'RESOLVED' ? 'Your report was resolved' : 'Your report was reviewed', d.note);
       return { status: d.status };
     }));
   });
