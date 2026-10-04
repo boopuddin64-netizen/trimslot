@@ -29,7 +29,7 @@ test('migration 012 on a database that already has live-like data: additive, lin
   await db.query('INSERT INTO favourites (customer_id, barber_id) VALUES ($1,$2)', [c3, b1]);
   const before = (await db.one<any>(`SELECT (SELECT count(*) FROM users) u, (SELECT count(*) FROM bookings) b, (SELECT count(*) FROM plans) p, (SELECT count(*) FROM plan_purchases) pp, (SELECT count(*) FROM services) s`));
 
-  assert.deepEqual(await migrate(db), ['012_fee_split_plan_fit_share_links.sql'], 'only 012 is applied');
+  assert.deepEqual(await migrate(db), ['012_fee_split_plan_fit_share_links.sql', '013_cron_heartbeat.sql'], 'only 012 (and the later 013) are applied');
 
   const after = (await db.one<any>(`SELECT (SELECT count(*) FROM users) u, (SELECT count(*) FROM bookings) b, (SELECT count(*) FROM plans) p, (SELECT count(*) FROM plan_purchases) pp, (SELECT count(*) FROM services) s`));
   assert.deepEqual(after, before, 'no existing row added or removed');

@@ -192,7 +192,16 @@ export function createApp(db: Db) {
     if (!config.cronSecret) return void res.status(503).json({ error: { code: 'CRON_DISABLED', message: 'CRON_SECRET is not configured' } });
     if (!cronAuth(req)) return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid cron credentials' } });
     if (req.method !== 'GET' && req.method !== 'POST') return void res.status(405).json({ error: { code: 'METHOD', message: 'Use GET or POST' } });
-    res.json({ ok: true, ...(await runSweep(db)) });
+    // Heartbeat first (so even a sweep that fails is visible to the admin), result after. Never let the heartbeat itself stop the sweep.
+    await db.query('UPDATE platform_settings SET cron_last_run_at=$1 WHERE id=1', [isoNow()]).catch(() => undefined);
+    try {
+      const out = await runSweep(db);
+      await db.query('UPDATE platform_settings SET cron_last_ok_at=$1, cron_last_error=NULL WHERE id=1', [isoNow()]).catch(() => undefined);
+      res.json({ ok: true, ...out });
+    } catch (e: any) {
+      await db.query('UPDATE platform_settings SET cron_last_error=$1 WHERE id=1', [String(e?.message || e).slice(0, 300)]).catch(() => undefined);
+      throw e;
+    }
   }));
 
   // Shop photo upload: raw image bytes (client-compressed JPEG, <= 300 KB). Mounted before the 50 KB JSON parser; auth is applied inline.
