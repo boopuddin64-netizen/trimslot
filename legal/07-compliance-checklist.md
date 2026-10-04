@@ -22,7 +22,7 @@
 | 11 | **Data Protection Officer** | Appoint a DPO (internal or outsourced) if required; publish contact. | Owner | ☐ |
 | 12 | Data audit / compliance returns | Annual compliance audit return to the NDPC if applicable; keep a record of processing activities. | DPO | ☐ |
 | 13 | **DPIA** | Do a data protection impact assessment for the reliability label, reviews/reports and push notifications. | DPO | ☐ |
-| 14 | Processor contracts | Data processing agreements with Supabase, Vercel and Paystack; transfer mechanism for data leaving Nigeria (UK/EU/US); list sub-processors. | Lawyer | ☐ |
+| 14 | Processor contracts | Data processing agreements with Supabase, Vercel, Paystack and Resend (e-mail provider, only if e-mail verification is on); transfer mechanism for data leaving Nigeria (UK/EU/US); list sub-processors. | Lawyer | ☐ |
 | 15 | Breach procedure | 72-hour NDPC notification plan; named incident owner; contact list. | DPO | ☐ |
 | 16 | Data-subject requests | Process for access / correction / deletion / export. Self-service JSON export and account deletion are built (Profile); decide timeline and logging for requests that arrive by e-mail, and for barber deletion requests (an admin alert is raised). | DPO | ☐ |
 | 17 | Retention schedule | Approve the retention periods in the Privacy Policy. Automatic clean-up is built (it runs from the scheduled sweep, at most hourly, but the sweep itself runs daily unless the external one-minute timer is on — see item 35) and the periods are admin settings; check the defaults match what you approve. | DPO + dev | ☐ |
