@@ -11,7 +11,7 @@ import { logger } from './logger';
 
 export interface RetentionResult {
   rate_limits: number; bad_payment_events: number; old_payment_events: number; notifications: number; stale_push: number; stale_admin_push: number; admin_alerts: number;
-  stale_plan_checkouts_skipped_for_gateway_check: number; deleted_users_erased: number; deleted_users_anonymised: number; deleted_plans: number; deleted_reviews: number; deleted_reports: number;
+  help_notes_removed: number; stale_email_codes: number; stale_plan_checkouts_skipped_for_gateway_check: number; deleted_users_erased: number; deleted_users_anonymised: number; deleted_plans: number; deleted_reviews: number; deleted_reports: number;
 }
 const ago = (days: number) => new Date(clock.now().getTime() - days * 86400000).toISOString();
 const agoH = (h: number) => new Date(clock.now().getTime() - h * 3600000).toISOString();
@@ -27,8 +27,13 @@ export async function runRetention(db: Db, s?: Settings): Promise<RetentionResul
     stale_push: await n(`DELETE FROM push_subscriptions WHERE COALESCE(last_ok_at, created_at) < $1`, [ago(set.retention_push_stale_days)]),
     stale_admin_push: await n(`DELETE FROM admin_push_subscriptions WHERE COALESCE(last_ok_at, created_at) < $1`, [ago(set.retention_push_stale_days)]),
     admin_alerts: await n(`DELETE FROM admin_notifications WHERE created_at < $1`, [ago(set.retention_admin_alerts_days)]),
+    // Emergency-help messages (free text) are blanked once the request is old; the staff report that repeated one is blanked with it. The row stays so booking history is intact.
+    help_notes_removed: 0, stale_email_codes: 0,
     stale_plan_checkouts_skipped_for_gateway_check: 0, deleted_users_erased: 0, deleted_users_anonymised: 0, deleted_plans: 0, deleted_reviews: 0, deleted_reports: 0,
   };
+  r.help_notes_removed = await n(`UPDATE reports SET message='Message removed (retention).' WHERE id IN (SELECT report_id FROM help_requests WHERE report_id IS NOT NULL AND note<>'Removed' AND created_at < $1)`, [ago(set.retention_notifications_days)]);
+  r.help_notes_removed += await n(`UPDATE help_requests SET note='Removed' WHERE note<>'Removed' AND created_at < $1`, [ago(set.retention_notifications_days)]);
+  r.stale_email_codes = await n(`UPDATE users SET otp_hash=NULL, otp_expires_at=NULL, otp_attempts=0 WHERE otp_hash IS NOT NULL AND otp_expires_at < $1`, [agoH(24)]);
   const cutoff = ago(set.retention_deleted_days);
   // Soft-deleted accounts past their restore window: erased completely when there is no money trail, otherwise anonymised in place (never deleted).
   const users = await db.many<{ id: number; role: string; paid: number; barber_id: number | null }>(

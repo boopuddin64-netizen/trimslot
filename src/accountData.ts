@@ -58,6 +58,10 @@ export async function anonymiseUser(t: Conn, userId: number, why: string) {
   await q('DELETE FROM broadcasts WHERE user_id=$1', userId);
   await q('UPDATE reviews SET comment=NULL WHERE customer_id=$1', userId);
   await q('UPDATE bookings SET note_to_barber=NULL WHERE customer_id=$1', userId);
+  // Emergency-help messages are free text the person wrote: blank them (the row stays so the booking history is intact), and the staff report that repeated one.
+  await q(`UPDATE reports SET message='Message removed (account deleted).' WHERE id IN (SELECT report_id FROM help_requests WHERE customer_id=$1 AND report_id IS NOT NULL)`, userId);
+  await q(`UPDATE help_requests SET note='Removed' WHERE customer_id=$1`, userId);
+  await q('UPDATE users SET otp_hash=NULL, otp_expires_at=NULL, otp_attempts=0, email_verified_at=NULL WHERE id=$1', userId);
   await q('UPDATE consent_log SET ip=NULL, user_agent=NULL WHERE user_id=$1', userId);
   if (u.role === 'barber') {
     const b = await t.maybeOne<{ id: number }>('SELECT id FROM barbers WHERE user_id=$1 FOR UPDATE', [userId]);
@@ -75,7 +79,7 @@ export async function anonymiseUser(t: Conn, userId: number, why: string) {
 
 /* ---------------- export ---------------- */
 export async function buildExport(db: Db, user: { id: number; role: string }) {
-  const u = await db.one<any>('SELECT id, role, name, email, phone, created_at, account_status, avatar_url FROM users WHERE id=$1', [user.id]);
+  const u = await db.one<any>('SELECT id, role, name, email, phone, created_at, account_status, avatar_url, email_verified_at FROM users WHERE id=$1', [user.id]);
   const out: any = { exported_at: isoNow(), note: 'Your TrimSlot data. It does not include passwords or security keys. It does not include private notes that barbers keep about you.', account: u };
   out.documents_accepted = await consentHistory(db, user.id);
   out.notifications = await db.many('SELECT type, title, body, created_at, is_read FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 1000', [user.id]);
@@ -91,6 +95,7 @@ export async function buildExport(db: Db, user: { id: number; role: string }) {
     out.reviews = await db.many('SELECT rating, comment, created_at FROM reviews WHERE customer_id=$1 AND deleted_at IS NULL ORDER BY id DESC', [user.id]);
     out.favourites = await db.many('SELECT b.shop_name FROM favourites f JOIN barbers b ON b.id=f.barber_id WHERE f.customer_id=$1', [user.id]);
     out.waitlist = await db.many('SELECT date, status, created_at FROM waitlist WHERE customer_id=$1 ORDER BY id DESC LIMIT 200', [user.id]);
+    out.help_requests = await db.many('SELECT booking_id, note, status, created_at, answered_at, escalated_at FROM help_requests WHERE customer_id=$1 ORDER BY id DESC LIMIT 200', [user.id]);
   } else {
     const b = await db.maybeOne<any>('SELECT * FROM barbers WHERE user_id=$1', [user.id]);
     if (b) {
@@ -102,6 +107,7 @@ export async function buildExport(db: Db, user: { id: number; role: string }) {
           FROM bookings k JOIN users u ON u.id=k.customer_id WHERE k.barber_id=$1 AND NOT (k.payment_option='ONLINE' AND k.paid_at IS NULL AND (k.status='PENDING_PAYMENT' OR (k.status='CANCELLED' AND k.payment_status='VOID'))) ORDER BY k.id DESC LIMIT 5000`, [b.id]);
       out.payments = await db.many('SELECT reference, amount_kobo, fee_kobo, debt_netted_kobo, status, refund_status, created_at FROM payments WHERE barber_id=$1 ORDER BY id DESC LIMIT 5000', [b.id]);
       out.commission_ledger = await db.many('SELECT amount_kobo, remaining_kobo, status, note, created_at FROM commission_ledger WHERE barber_id=$1 ORDER BY id DESC LIMIT 5000', [b.id]);
+      out.help_requests_received = await db.many(`SELECT h.booking_id, h.note, h.status, h.created_at, h.answered_at FROM help_requests h JOIN bookings k ON k.id=h.booking_id WHERE k.barber_id=$1 ORDER BY h.id DESC LIMIT 500`, [b.id]);
       out.your_notes_about_customers = await db.many('SELECT u.name AS customer_name, n.note, n.updated_at FROM barber_customer_notes n JOIN users u ON u.id=n.customer_id WHERE n.barber_id=$1', [b.id]);
       out.reviews_received = await db.many('SELECT rating, comment, reply, created_at FROM reviews WHERE barber_id=$1 AND deleted_at IS NULL AND NOT hidden ORDER BY id DESC LIMIT 1000', [b.id]);
     }
