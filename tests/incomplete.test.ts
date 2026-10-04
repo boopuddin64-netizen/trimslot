@@ -130,3 +130,15 @@ test('payment confirmed AFTER the try timed out: the booking is confirmed when t
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [c3.b.id])).status, 'CANCELLED');
   });
 });
+
+test('a second payment for an already-paid booking is flagged for refund AND the customer is told', async () => {
+  await withServer(async (_base, { db, barberId, customerIds, serviceIds }) => {
+    const b = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '10:00', payment_option: 'ONLINE' });
+    assert.equal(await db.tx((t) => applyVerifiedPayment(t, b.id, 'TEST')), 'confirmed');
+    const before = (await db.one(`SELECT COUNT(*)::int c FROM notifications WHERE user_id=$1`, [customerIds[0]])).c;
+    assert.equal(await db.tx((t) => applyVerifiedPayment(t, b.id, 'TEST', 'REF-DUP')), 'already_paid');
+    const n = await db.many(`SELECT title FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 1`, [customerIds[0]]);
+    assert.equal((await db.one(`SELECT COUNT(*)::int c FROM notifications WHERE user_id=$1`, [customerIds[0]])).c, before + 1);
+    assert.match(n[0].title, /second payment/i);
+  });
+});

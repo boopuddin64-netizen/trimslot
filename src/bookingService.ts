@@ -201,6 +201,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
   if (['PAID', 'CREDIT_PENDING', 'CREDITED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
     await flagRefund(t, b, reference, 'Duplicate payment for an already-paid booking');
     await audit(t, b.id, { id: null, role: 'system' }, 'DUPLICATE_PAYMENT', { via, note: 'extra successful payment on an already-paid booking - flagged NEEDS_REFUND' });
+    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'We got a second payment. Your refund is coming.', `We received a second payment for your ${b.service_name}. Your booking is already paid, so we are sending the extra ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} back to you.`, b.id);
     return 'already_paid';
   }
   // The attempt was closed only because time ran out (not cancelled by the customer, and not closed because a shop was removed). If the time is STILL free
