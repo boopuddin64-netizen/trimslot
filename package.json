@@ -22,7 +22,8 @@
     "contrast": "node scripts/contrast-check.mjs",
     "compact-ui": "node scripts/compact-ui.mjs",
     "rows": "node scripts/rows-per-screen.mjs",
-    "account-ui": "node scripts/account-ui.mjs"
+    "account-ui": "node scripts/account-ui.mjs",
+    "plans-ui": "node scripts/plans-ui.mjs"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

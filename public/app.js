@@ -339,7 +339,10 @@ async function bookWizard(barberId) {
   const { barber, services } = data;
   const plans = data.plans || [], my = data.my || { plans: [], credits: [] };
   const slotIso = () => `${w.date}T${w.time}:00+01:00`;
-  const planFor = () => (my.plans || []).find((p) => (p.service_ids || []).includes(w.service.id) && p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()));
+  /* A plan session only pays for a service the plan lists. Every plan that lists the chosen service is offered; one match is preselected. */
+  const plansFor = () => (my.plans || []).filter((p) => (p.service_ids || []).includes(w.service.id) && p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()));
+  const planFor = () => { const l = plansFor(); return l.find((p) => p.id === w.planId) || (l.length === 1 ? l[0] : null); };
+  const otherPlans = () => (my.plans || []).filter((p) => p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()) && !(p.service_ids || []).includes(w.service.id));
   const creditFor = () => (my.credits || []).find((c) => c.value_kobo >= w.service.price_kobo && new Date(c.expires_at) >= new Date(slotIso()));
   const notices = data.notices || [];
   const bk = data.booking || { paused: false, maintenance: false, pay_on_arrival: true };
@@ -356,9 +359,9 @@ async function bookWizard(barberId) {
     if (w.step === 1) {
       app.innerHTML = head + `<h2>Pick a service</h2>` + services.map((s) => `<button class="svc ${w.service?.id === s.id ? 'on' : ''}" data-s="${s.id}"><div><b>${esc(s.name)}</b><div class="muted small">${s.duration_min} min</div></div><b>${naira(s.price_kobo)}</b></button>`).join('')
         + (my.credits && my.credits.length ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have ${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} with this barber (valid until ${dateLabel(my.credits[0].expires_at.slice(0, 10))}). It is applied when you book.</div></div>` : '')
-        + (my.plans && my.plans.some((p) => p.sessions_left > 0) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have an active plan with this barber. You can use a plan session at the payment step.</div></div>` : '')
+        + (my.plans && my.plans.some((p) => p.sessions_left > 0) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Your plan <b>${esc(p.plan_name)}</b> covers ${esc(svcNames(p.service_ids, services))}.`).join(' ')} You can use a plan session at the payment step for those.</div></div>` : '')
         + `<div class="btns cta"><button class="btn" id="next" ${w.service ? '' : 'disabled'}>Continue</button></div>`;
-      document.querySelectorAll('[data-s]').forEach((el) => el.onclick = () => { w.service = services.find((s) => s.id === Number(el.dataset.s)); w.time = null; draw(); });
+      document.querySelectorAll('[data-s]').forEach((el) => el.onclick = () => { w.service = services.find((s) => s.id === Number(el.dataset.s)); w.time = null; w.planId = null; draw(); });
       $('#next').onclick = () => setStep(2);
     } else if (w.step === 2) {
       const today = state.cfg.today;
@@ -379,11 +382,12 @@ async function bookWizard(barberId) {
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
-      const cr = creditFor(), pl = planFor();
+      const cr = creditFor(), pls = plansFor(), pl = planFor();
       const onlineOk = bk.online_payments !== false;
-      const opts = (onlineOk ? ['ONLINE'] : []).concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pl ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
-      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : onlineOk ? 'ONLINE' : null;   // credit / plan session are auto-applied by default
+      const opts = (onlineOk ? ['ONLINE'] : []).concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pls.length ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
+      if (!w.payTouched) w.pay = cr ? 'CREDIT' : pls.length === 1 ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : onlineOk ? 'ONLINE' : null;   // credit / plan session are auto-applied by default
       if (!opts.includes(w.pay)) w.pay = opts[0];
+      if (w.pay === 'PLAN' && !pl) w.pay = opts.find((o) => o !== 'PLAN') || null;   // several plans match and none is picked yet: the customer chooses
       const free = w.pay === 'PLAN' || w.pay === 'CREDIT';
       const pn = w.service.pay_now || { booking_fee_kobo: 0, total_kobo: w.service.price_kobo };
       app.innerHTML = head + `<h2>Summary &amp; payment</h2>
@@ -392,7 +396,8 @@ async function bookWizard(barberId) {
           ${w.pay === 'ONLINE' && pn.booking_fee_kobo ? `<div class="money">${mrow('Price', naira(w.service.price_kobo))}${mrow('Booking fee <small class="muted">· helps cover card payment costs</small>', naira(pn.booking_fee_kobo))}${mrow('Total to pay', naira(pn.total_kobo), 'tot')}</div>` : ''}</div>
         <h3 style="margin-top:16px">How would you like to pay?</h3>
         ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · valid until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
-        ${pl ? `<button class="svc ${w.pay === 'PLAN' ? 'on' : ''}" data-p="PLAN"><div><b>Use plan session</b><div class="muted small">${esc(pl.plan_name)} · ${pl.sessions_left} left · ends ${dateLabel(pl.expires_at.slice(0, 10))}</div></div></button>` : ''}
+        ${pls.map((x) => `<button class="svc ${w.pay === 'PLAN' && pl && pl.id === x.id ? 'on' : ''}" data-p="PLAN" data-pid="${x.id}"><div><b>Use plan session</b><div class="muted small">${esc(x.plan_name)} · ${x.sessions_left} left · ends ${dateLabel(x.expires_at.slice(0, 10))}</div></div></button>`).join('')}
+        ${!pls.length && otherPlans().length ? `<div class="info small notice" id="plan-nofit">${ic('ticket', 'sm')}<div>${otherPlans().map((x) => `Your plan <b>${esc(x.plan_name)}</b> covers ${esc(svcNames(x.service_ids, services))} only.`).join(' ')} It does not cover ${esc(w.service.name)}, so choose another way to pay.</div></div>` : ''}
         ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}. A small booking fee is added: ${naira(pn.booking_fee_kobo)}.</div></div></button>`
           : `<div class="svc off" aria-disabled="true" id="online-off"><div><b>Pay now</b><div class="muted small">Not available: this barber hasn't set up online payments yet.</div></div></div>`}
         ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>${onlineOk ? "Pay on arrival isn't available for this booking right now. Please pay online." : "Neither online payment nor pay on arrival is available for this barber right now. Please pick another barber or try again later."}</div></div>`}
@@ -401,13 +406,13 @@ async function bookWizard(barberId) {
         <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before (a prepaid booking is then refunded to your card); after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
         ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="e.g. low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
         <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(pn.total_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
-      document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
+      document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; if (el.dataset.pid) w.planId = Number(el.dataset.pid); w.payTouched = true; draw(); });
       const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
       $('#back').onclick = () => stepBack(2);
       $('#confirm').onclick = async () => {
         $('#confirm').disabled = true;
         try {
-          const r = await api('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date, time: w.time, payment_option: w.pay, ...(w.note && w.note.trim() ? { note: w.note.trim() } : {}) } });
+          const r = await api('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date, time: w.time, payment_option: w.pay, ...(w.pay === 'PLAN' && planFor() ? { plan_purchase_id: planFor().id } : {}), ...(w.note && w.note.trim() ? { note: w.note.trim() } : {}) } });
           state.wiz = null;
           if (w.pay === 'ONLINE') {
             const p = await api(`/bookings/${r.booking.id}/pay`, { method: 'POST' });
@@ -613,7 +618,7 @@ async function wallet(planResult, ppId) {
     ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · services up to ${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">No credits right now.</p>'}
     <h2>My plans</h2>
     ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
-      <div class="muted small">${esc(p.shop_name)}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
+      <div class="muted small">${esc(p.shop_name)}</div><div class="small">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
       <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
       ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}</div>`).join('') || '<p class="muted small">No plans yet. Open a barber page to see the plans on offer.</p>'}
     ${past.length ? `<h2>Used / expired credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Expired ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
@@ -953,12 +958,12 @@ const planForm = (id, pl, services, limits) => `<form class="planf" ${id ? `data
   <div class="row wrap" style="gap:8px"><div style="flex:1 1 90px"><label>Price ₦</label><input name="price_naira" type="number" min="0" step="50" value="${pl ? pl.price_kobo / 100 : ''}" required></div>
   <div style="flex:1 1 80px"><label>Sessions</label><input name="sessions" type="number" min="1" max="${limits.max_sessions}" value="${pl ? pl.sessions : ''}" required></div>
   <div style="flex:1 1 80px"><label>Valid (days)</label><input name="validity_days" type="number" min="1" max="${limits.max_validity_days}" value="${pl ? pl.validity_days : ''}" required></div></div>
-  <label>Included services</label>${services.map((s) => `<label class="chk"><input type="checkbox" name="svc" value="${s.id}" ${pl && (pl.service_ids || []).includes(s.id) ? 'checked' : ''}> ${esc(s.name)} <span class="muted small">${naira(s.price_kobo)}</span></label>`).join('') || '<p class="small muted">Add a service first.</p>'}
+  <label>Included services</label><div class="small muted" style="margin:-2px 0 6px">A plan session can only book the services you tick here.</div>${services.map((s) => `<label class="chk"><input type="checkbox" name="svc" value="${s.id}" ${pl && (pl.service_ids || []).includes(s.id) ? 'checked' : ''}> ${esc(s.name)} <span class="muted small">${naira(s.price_kobo)}</span></label>`).join('') || '<p class="small muted">Add a service first.</p>'}
   <div class="btns" style="margin-top:10px"><button class="btn sm ${id ? '' : 'sec'}">${id ? 'Save plan' : ic('plus', 'sm') + ' Create plan'}</button></div></form>`;
 function plansBody(po, services) {
   const L = po.limits;
   const rules = `<div class="info small" style="margin:10px 0">Platform rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · valid up to ${L.max_validity_days} days. Missed paid sessions become a same-barber credit (${L.credit_expiry_days} days, not cashable).</div>`;
-  const list = po.plans.map((pl) => `<div class="svcline plnline" data-id="${pl.id}"><div><b>${esc(pl.name)}</b><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div><div class="small muted">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold</div></div>
+  const list = po.plans.map((pl) => `<div class="svcline plnline" data-id="${pl.id}"><div><b>${esc(pl.name)}</b><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div><div class="small muted">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div>${pl.needs_review ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}<div class="small muted">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold</div></div>
     <div class="row" style="gap:6px"><button class="mini ed" aria-label="Edit">${ic('pencil', 'sm')}</button><button class="mini red del" aria-label="Stop selling">${ic('trash', 'sm')}</button></div>
     <div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`).join('') || '<p class="muted small">No plans yet.</p>';
   const buyers = po.purchases.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)}</span><span class="${x.live ? '' : 'muted'}">${x.sessions_total - x.sessions_used}/${x.sessions_total} left${x.live ? '' : ' · ended'}</span></div>`).join('');

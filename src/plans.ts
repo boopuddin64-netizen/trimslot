@@ -148,6 +148,12 @@ export async function validatePlanInput(c: Conn, barberId: number, d: z.infer<ty
   const ids = [...new Set(d.service_ids)];
   const own = await c.many<{ id: number }>('SELECT id FROM services WHERE barber_id=$1 AND active AND id = ANY($2::int[])', [barberId, ids]);
   if (own.length !== ids.length) errs.push('Pick only your own active services.');
+  else {
+    // Secondary sanity check (the real rule is the explicit service list): one session must be worth at least the dearest included service.
+    const perSession = Math.floor(kobo / d.sessions);
+    const dear = await c.many<{ name: string; price_kobo: number }>('SELECT name, price_kobo FROM services WHERE id = ANY($1::int[]) AND price_kobo > $2 ORDER BY price_kobo DESC', [ids, perSession]);
+    if (dear.length) errs.push(`Each session is worth ${naira(perSession)} (plan price ÷ sessions), but ${dear.map((x) => `${x.name} costs ${naira(x.price_kobo)}`).join(', ')}. Raise the plan price, use fewer sessions, or leave that service out.`);
+  }
   if (errs.length) throw new AppError(400, 'PLAN_RULES', errs.join(' '), { limits: limitsOf(s) });
   return { kobo, ids, settings: s };
 }
@@ -156,7 +162,7 @@ export const limitsOf = (s: Settings) => ({
   credit_expiry_days: s.credit_expiry_days, refund_policy: s.plan_refund_policy,
 });
 
-const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active,
+const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.needs_review,
   COALESCE((SELECT array_agg(ps.service_id ORDER BY ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id), '{}') AS service_ids FROM plans p`;
 /** Active plans of one barber (one query: included service ids are aggregated). */
 export const publicPlans = (c: Conn, barberId: number) => c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active ORDER BY p.price_kobo, p.id`, [barberId]);
@@ -167,7 +173,7 @@ export async function savePlan(c: Conn, barberId: number, planId: number | null,
   if (id == null) id = (await c.one<{ id: number }>('INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [barberId, d.name, kobo, d.sessions, d.validity_days, isoNow()])).id;
   else {
     // Existing purchases keep their own snapshot: editing only affects future buyers.
-    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4 WHERE id=$5 AND barber_id=$6 AND active', [d.name, kobo, d.sessions, d.validity_days, id, barberId]);
+    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4, needs_review=FALSE WHERE id=$5 AND barber_id=$6 AND active', [d.name, kobo, d.sessions, d.validity_days, id, barberId]);
     if (!r.rowCount) throw notFound('We could not find that plan.');
     await c.query('DELETE FROM plan_services WHERE plan_id=$1', [id]);
   }
@@ -195,7 +201,8 @@ export async function customerWallet(c: Conn, customerId: number) {
   const now = isoNow();
   const s = await getSettings(c);
   const plans = await c.many(`SELECT pp.id, pp.barber_id, pp.plan_name, pp.sessions_total, pp.sessions_used, pp.paid_at, pp.expires_at, pp.service_ids,
-      (pp.sessions_total - pp.sessions_used) AS sessions_left, (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live, b.shop_name
+      (pp.sessions_total - pp.sessions_used) AS sessions_left, (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live, b.shop_name,
+      COALESCE((SELECT array_agg(sv.name ORDER BY sv.name) FROM services sv WHERE sv.id = ANY(pp.service_ids)), '{}') AS service_names
     FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status='ACTIVE' ORDER BY live DESC, pp.expires_at DESC LIMIT 50`, [customerId, now]);
   const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, b.shop_name,
       (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live
@@ -206,7 +213,7 @@ export async function customerWallet(c: Conn, customerId: number) {
 /** What this customer can spend at ONE barber right now (only unexpired). Used by the booking wizard. */
 export async function entitlementsFor(c: Conn, customerId: number, barberId: number) {
   const now = isoNow();
-  const plans = await c.many(`SELECT id, plan_name, sessions_total, sessions_used, (sessions_total - sessions_used) AS sessions_left, expires_at, service_ids FROM plan_purchases
+  const plans = await c.many(`SELECT id, plan_id, plan_name, sessions_total, sessions_used, (sessions_total - sessions_used) AS sessions_left, expires_at, service_ids FROM plan_purchases
       WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND expires_at > $3 AND sessions_used < sessions_total ORDER BY expires_at`, [customerId, barberId, now]);
   const credits = await c.many(`SELECT id, value_kobo, expires_at, reason FROM session_credits WHERE customer_id=$1 AND barber_id=$2 AND status='AVAILABLE' AND expires_at > $3 ORDER BY expires_at`, [customerId, barberId, now]);
   return { plans, credits };

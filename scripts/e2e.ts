@@ -171,6 +171,14 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
   const pb = await cust.call('POST', '/api/bookings', { barber_id: barber.id, service_id: detail.services[0].id, date: day3, time: ps[0].time, payment_option: 'PLAN' });
   check('plan booking: CONFIRMED + PAID via PLAN, no payment step', pb.status === 201 && pb.json.booking.status === 'CONFIRMED' && pb.json.booking.paid_via === 'PLAN', pb.json);
   check('plan session balance dropped to 2', (await cust.call('GET', '/api/me/wallet')).json.plans[0].sessions_left === 2);
+  const pid = (await cust.call('GET', '/api/me/wallet')).json.plans[0].id;
+  const other = detail.services.find((x: any) => x.id !== detail.services[0].id);
+  const notIncl = await cust.call('POST', '/api/bookings', { barber_id: barber.id, service_id: other.id, date: day3, time: ps[2].time, payment_option: 'PLAN', plan_purchase_id: pid });
+  check('a plan that does not include the service is rejected (409 NO_PLAN_SESSION), even when named', notIncl.status === 409 && notIncl.json.error.code === 'NO_PLAN_SESSION', notIncl.json);
+  const notIncl2 = await cust.call('POST', '/api/bookings', { barber_id: barber.id, service_id: other.id, date: day3, time: ps[2].time, payment_option: 'PLAN' });
+  check('and without naming the plan too', notIncl2.status === 409 && notIncl2.json.error.code === 'NO_PLAN_SESSION', notIncl2.json);
+  const cheap = await mike.call('POST', '/api/barber/plans', { ...planBody, name: 'Too cheap', price_naira: 1000, sessions: 30, service_ids: [detail.services[0].id] });
+  check('plan whose session is worth less than an included service is refused (sanity check)', cheap.status === 400 && /Each session is worth/.test(cheap.json.error?.message || ''), cheap.json);
   const bov = (await mike.call('GET', '/api/barber/plans')).json;
   check('barber sees the buyer and plan usage', bov.purchases.length === 1 && bov.purchases[0].sessions_used === 1, bov.purchases);
   const psAfter = (await cust2.call('GET', `/api/barbers/${barber.id}/slots?service_id=${detail.services[0].id}&date=${day3}`)).json.slots;

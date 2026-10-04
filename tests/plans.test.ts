@@ -40,8 +40,10 @@ test('platform rules: barbers cannot create plans outside min/max price, duratio
     const foreign = (await c.db.one(`INSERT INTO services (barber_id,name,price_kobo,duration_min) VALUES ($1,'X',100000,30) RETURNING id`, [b2])).id;
     await assert.rejects(save({ service_ids: [foreign] }), /your own active services/);
     await save({});                                                    // inside the rules: ok
+    await assert.rejects(save({ price_naira: 8000 }), (e: any) => e.code === 'PLAN_RULES' && /Each session is worth/.test(e.message) && /Regular Haircut/.test(e.message), 'sanity check: a session must be worth the dearest included service');
+    await save({ price_naira: 8000, sessions: 2 });                    // 4,000 per session covers a 3,000 service
     await c.db.tx((t) => updateSettings(t, { max_plan_validity_days: 400, min_plan_price_naira: 5 }));
-    await save({ validity_days: 400, price_naira: 10 });               // the admin loosened the rules
+    await save({ validity_days: 400 });                                // the admin loosened the rules
     await assert.rejects(c.db.tx((t) => updateSettings(t, { min_plan_price_naira: 900, max_plan_price_naira: 100 })), /cannot be more than the highest/);
     await assert.rejects(c.db.tx((t) => updateSettings(t, { credit_expiry_days: 0 })), /credit_expiry_days/);
     await assert.rejects(c.db.tx((t) => updateSettings(t, { bogus: 1 })));
@@ -107,6 +109,27 @@ test('plan sessions expire at plan end: cannot book for a time after expiry, or 
     await assert.rejects(book(c, c.customerIds[0], '15:00', 'PLAN', {}, 0, '2026-10-01'), (e: any) => e.code === 'NO_PLAN_SESSION', 'plan over');
     assert.equal((await customerWallet(c.db, c.customerIds[0])).plans[0].live, false);
     assert.ok(purchaseId);
+  } finally { resetNow(); }
+});
+
+test('plan fit: a plan session only books a service the plan includes (also when the purchase is named explicitly); two plans, each its own services', async () => {
+  const c = await setup();
+  try {
+    const A = await buy(c, c.customerIds[0], { name: 'Adult only', price_naira: 12000 }, [c.serviceIds[0]]);
+    const B = await buy(c, c.customerIds[0], { name: 'Kids only', price_naira: 12000 }, [c.serviceIds[2]]);
+    await assert.rejects(book(c, c.customerIds[0], '09:00', 'PLAN', { plan_purchase_id: B.purchaseId }, 0), (e: any) => e.code === 'NO_PLAN_SESSION', 'Kids plan cannot pay for the adult cut');
+    const ok = await book(c, c.customerIds[0], '09:00', 'PLAN', { plan_purchase_id: A.purchaseId }, 0);
+    assert.equal(ok.plan_purchase_id, A.purchaseId);
+    const kid = await book(c, c.customerIds[0], '11:00', 'PLAN', {}, 2);   // no id: picks the plan that includes the service
+    assert.equal(kid.plan_purchase_id, B.purchaseId);
+    const ent = await customerWallet(c.db, c.customerIds[0]);
+    assert.equal(ent.plans.find((p: any) => p.id === A.purchaseId).sessions_used, 1);
+    assert.equal(ent.plans.find((p: any) => p.id === B.purchaseId).sessions_used, 1);
+    // editing a flagged plan clears the review flag
+    await c.db.query('UPDATE plans SET needs_review=TRUE WHERE id=$1', [A.planId]);
+    assert.equal((await barberPlanOverview(c.db, c.barberId)).plans.find((p: any) => p.id === A.planId).needs_review, true);
+    await c.db.tx((t) => savePlan(t, c.barberId, A.planId, planInput([c.serviceIds[0]], { name: 'Adult only', price_naira: 12000 })));
+    assert.equal((await barberPlanOverview(c.db, c.barberId)).plans.find((p: any) => p.id === A.planId).needs_review, false);
   } finally { resetNow(); }
 });
 
