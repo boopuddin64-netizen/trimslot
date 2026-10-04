@@ -8,7 +8,7 @@
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f6f7fb",
-  "theme_color": "#3358d4",
+  "theme_color": "#f6f7fb",
   "categories": ["lifestyle", "business"],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

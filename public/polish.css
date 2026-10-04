@@ -8,3 +8,6 @@ html{overscroll-behavior-y:contain}
 /* Fixed bars stay put; horizontal chip rows never pull the page sideways. */
 .tabs,.topbar{overscroll-behavior:none}
 .chips,.scroller,[data-hscroll]{overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+
+/* Placeholders breathe softly instead of spinning. */
+.sk{animation-duration:1.4s}

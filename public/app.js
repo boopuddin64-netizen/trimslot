@@ -137,7 +137,7 @@ function toggleTheme() {
   const d = !isDark();
   if (d) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
   try { localStorage.setItem('trimslot_theme', d ? 'dark' : 'light'); } catch { /* ignore */ }
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#0b1220' : '#3358d4';
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#0b1220' : '#f6f7fb';
   chrome();
   const sw = $('#themesw'); if (sw) sw.setAttribute('aria-checked', String(d));
 }
