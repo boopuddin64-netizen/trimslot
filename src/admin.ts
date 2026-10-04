@@ -6,7 +6,7 @@ import { requirePin } from './adminPin';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
-import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefunded } from './paystack';
+import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund } from './paystack';
 import { isoNow, lagosDate } from './time';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
@@ -240,7 +240,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
       if (!p.refund_status) throw conflict('NOT_FLAGGED', 'This payment is not marked for a refund.');
       if (p.refund_status === 'REFUNDED') return { refund_status: 'REFUNDED' };
       await t.query(`UPDATE payments SET refund_status='REFUNDED', refund_error=NULL WHERE id=$1`, [p.id]);
-      if (p.refund_status === 'NEEDS_REFUND' && p.refund_reason === MISMATCH_REASON && p.booking_id) await notifyMismatchRefunded(t, p.booking_id);   // not when a refund was already requested (the customer was told then)
+      if (p.refund_reason === MISMATCH_REASON && (p.booking_id || p.plan_purchase_id)) await notifyMismatchRefund(t, p, 'sent');   // staff recorded the money as paid back; the customer was told "we asked" if it was requested earlier
       await audit(t, p.booking_id, ADMIN, 'ADMIN_MARKED_REFUNDED', { reference: ref, amount_kobo: p.amount_kobo, note: note || null });
       return { refund_status: 'REFUNDED' };
     });

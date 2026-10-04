@@ -278,15 +278,25 @@ export async function processReference(db: Db, reference: string, o: { force?: b
 }
 
 /** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
-/** The customer was told "our team is checking your payment"; once staff refund it, say so (the old text must not be the last word). */
-export async function notifyMismatchRefunded(db: Db | import('./db').Conn, bookingId: number) {
-  const b = await db.maybeOne<any>('SELECT id, customer_id, service_name FROM bookings WHERE id=$1', [bookingId]);
-  if (!b) return;
-  await notify(db, b.customer_id, 'PAYMENT_PROBLEM', 'We sent your payment back', `The payment for your ${b.service_name} booking did not fit the booking, so we did not confirm it. We have sent your money back. Your bank may take a few working days to show it. Booking number #${b.id}.`, b.id);
+/** The customer (booking or plan buyer) was told "our team is checking your payment"; say what happened next, so the old text is not the last word.
+ *  'asked' = we asked Paystack to send the money back (all we know); 'sent' = staff recorded that it was paid back. */
+export async function notifyMismatchRefund(db: Db | import('./db').Conn, pay: { booking_id: number | null; plan_purchase_id: number | null }, stage: 'asked' | 'sent') {
+  let customerId: number | undefined; let what = ''; let bookingId: number | undefined;
+  if (pay.booking_id) {
+    const b = await db.maybeOne<any>('SELECT id, customer_id, service_name FROM bookings WHERE id=$1', [pay.booking_id]);
+    if (b) { customerId = b.customer_id; what = `your ${b.service_name} booking`; bookingId = b.id; }
+  } else if (pay.plan_purchase_id) {
+    const pp = await db.maybeOne<any>('SELECT customer_id, plan_name FROM plan_purchases WHERE id=$1', [pay.plan_purchase_id]);
+    if (pp) { customerId = pp.customer_id; what = `your plan "${pp.plan_name}"`; }
+  }
+  if (!customerId) return;
+  const ref = bookingId ? ` Booking number #${bookingId}.` : '';
+  if (stage === 'asked') await notify(db, customerId, 'PAYMENT_PROBLEM', 'We asked for your money to be sent back', `The payment for ${what} did not fit, so we did not confirm it. We asked for your money to be sent back. Your bank may take a few working days to show it.${ref}`, bookingId);
+  else await notify(db, customerId, 'PAYMENT_PROBLEM', 'Your money has been sent back', `The payment for ${what} did not fit, so we did not confirm it. Your money has been sent back. Your bank may take a few working days to show it.${ref}`, bookingId);
 }
 export async function requestRefund(db: Db, reference: string): Promise<'requested' | 'failed' | 'not_needed'> {
   // Claim first: two callers (the sweeper and an admin click, or two sweepers) can never both send the refund. Only the one whose UPDATE changes the row goes on.
-  const claim = await db.maybeOne<{ id: number; booking_id: number | null; refund_reason: string | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, refund_reason`, [reference, isoNow()]);
+  const claim = await db.maybeOne<{ id: number; booking_id: number | null; plan_purchase_id: number | null; refund_reason: string | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, plan_purchase_id, refund_reason`, [reference, isoNow()]);
   if (!claim) return 'not_needed';
   try {
     if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify({ transaction: reference }) });
@@ -300,7 +310,7 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
     return 'failed';
   }
   // The money is on its way. Giving back the commission the payment had settled must not undo that, so a failure here is logged, not turned into a second refund.
-  if (claim.refund_reason === MISMATCH_REASON && claim.booking_id) await notifyMismatchRefunded(db, claim.booking_id).catch(() => {});
+  if (claim.refund_reason === MISMATCH_REASON && (claim.booking_id || claim.plan_purchase_id)) await notifyMismatchRefund(db, claim, 'asked').catch(() => {});
   await db.tx((t) => reverseNettingForPayment(t, claim.id)).catch((e) => logger.warn('refund_netting_reverse_failed', { ref: reference, err: String(e?.message).slice(0, 120) }));
   return 'requested';
 }

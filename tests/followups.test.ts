@@ -110,20 +110,21 @@ test('E: a booking held for a payment problem cannot be paid again (server flag,
   } finally { setGatewayVerifier(null); c.close(); }
 });
 
-test('F: once a mismatch is refunded the customer is told so (refund sent by us, or marked refunded by staff), and the page says "sent", not "checking"', async () => {
+test('F: once a mismatch refund is asked for the customer is told "we asked"; when staff mark it paid back they are told "has been sent back"; the page says "sent", not "checking"', async () => {
   const c = await bootApp();
   try {
     await adminOn(c);
     const a = await mismatchBooking(c, '10:00'); const b = await mismatchBooking(c, '11:00');
     const uid = c.customerIds[0];
-    assert.ok(!(await notifs(c.db, uid)).some((n: any) => /sent your payment back|sent your money back/i.test(n.title + n.body)));
+    assert.ok(!(await notifs(c.db, uid)).some((n: any) => /sent (your payment|your money|back)|has been sent back|asked for your money/i.test(n.title + n.body)));
     assert.equal(await requestRefund(c.db, a.p.reference), 'requested');
-    const n1 = (await notifs(c.db, uid)).filter((n: any) => n.title === 'We sent your payment back');
-    assert.equal(n1.length, 1); assert.match(n1[0].body, /sent your money back/); assert.doesNotMatch(n1[0].body, /checking|check it/i);
+    const n1 = (await notifs(c.db, uid)).filter((n: any) => n.title === 'We asked for your money to be sent back');
+    assert.equal(n1.length, 1); assert.match(n1[0].body, /We asked for your money to be sent back/); assert.doesNotMatch(n1[0].body, /checking|check it|has been sent back/i);
     // staff "mark refunded" on the other one
     const r = await fetch(c.base + `/api/admin/payments/${b.p.reference}/mark-refunded`, { method: 'POST', headers: ADMIN, body: JSON.stringify({}) });
     assert.equal(r.status, 200, await r.clone().text());
-    assert.equal((await notifs(c.db, uid)).filter((n: any) => n.title === 'We sent your payment back').length, 2);
+    const n2 = (await notifs(c.db, uid)).filter((n: any) => n.title === 'Your money has been sent back');
+    assert.equal(n2.length, 1); assert.match(n2[0].body, /has been sent back/);
     // the booking page data: refund is "coming" then "sent"
     assert.equal((await c.call('GET', `/api/bookings/${a.id}`, undefined, a.cc)).json.booking.payment_issue.refund, 'coming');
     await c.db.query(`UPDATE payments SET refund_status='REFUNDED' WHERE reference=$1`, [a.p.reference]);
