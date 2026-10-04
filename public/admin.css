@@ -221,3 +221,15 @@ body.adm{padding-bottom:16px}
   .lmeta{min-height:24px;margin:2px 0}
 }
 .bulkbar .btn.sec{border:1px solid rgba(255,255,255,.7)}
+
+/* Controls page: collapsible sections (the summary is a full-width 44px tap target) */
+details.sect{border-top:1px solid var(--line,#e5e7eb);margin:0}
+details.sect>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;padding:8px 2px;font-weight:700;font-size:16px}
+details.sect>summary::-webkit-details-marker{display:none}
+details.sect>summary::after{content:"";width:8px;height:8px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin-right:6px;transition:transform .15s;flex:none}
+details.sect[open]>summary::after{transform:rotate(-135deg)}
+details.sect>summary:focus-visible{outline:2px solid var(--brand,#0a7d5a);outline-offset:2px}
+details.sect[open]{padding-bottom:6px}
+@media (prefers-reduced-motion:reduce){details.sect>summary::after{transition:none}}
+
+@media (max-width:719px){.anav a{min-height:40px}}

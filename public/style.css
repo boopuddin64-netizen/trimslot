@@ -454,3 +454,14 @@ a.crow{text-decoration:none}
 .linkbox{background:var(--bg2);color:var(--ink);border:1px solid var(--line2);border-radius:8px;padding:6px 8px;overflow-wrap:anywhere;user-select:all}
 .mybarber{gap:10px;align-items:center}
 .mybarber .btn.sm{min-height:36px}
+
+/* Phones: bigger tap targets (towards 44px) for the buttons people hit most, without growing the compact list rows. */
+@media (max-width:719px){
+  .btn:not(.sm){min-height:44px}
+  .btn.sm{min-height:40px}
+  .crow .btn.sm,.clist .btn.sm,.tbl .btn.sm,.list .btn.sm,.acc .btn.sm{min-height:32px}
+  #so,#reload,#palbtn{min-height:44px}
+  .topbar #theme,.topbar .bell{min-width:44px;min-height:44px}
+  .topbar a.txt{display:inline-flex;align-items:center;min-height:44px;padding:0 8px}
+  .seg button{min-height:40px}
+}

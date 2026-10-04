@@ -191,11 +191,29 @@ async function addNumbersCard() {
   };
   $('#runret').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/retention/run', { method: 'POST', body: {} }); const t = Object.values(r.result).reduce((a, n) => a + (Number(n) || 0), 0); toast(`Clean-up done. ${t} item${t === 1 ? '' : 's'} removed.`); } catch (er) { toast(er.message, true); } e.target.disabled = false; };
 }
+/* The Controls page is long (the Published numbers card alone is ~4,000px tall on a phone), so each group is a collapsible section.
+   The open/closed state is kept in memory only, so saving a form (which redraws the page) does not close what you were editing. */
+const CTL_OPEN = new Set(['Platform']);
+function collapsify(form) {
+  if (!form) return;
+  const kids = [...form.children]; let cur = null, first = true;
+  const mk = (title, el) => { const d = document.createElement('details'); d.className = 'sect'; d.dataset.sect = title; d.open = CTL_OPEN.has(title); const sm = document.createElement('summary'); sm.textContent = title; d.appendChild(sm); d.addEventListener('toggle', () => { d.open ? CTL_OPEN.add(title) : CTL_OPEN.delete(title); }); form.insertBefore(d, el); return d; };
+  for (const el of kids) {
+    if (el.tagName === 'H2' && first && form.id === 'nf') { first = false; continue; }   // the card title stays a heading
+    if (el.tagName === 'H2') { first = false; cur = mk(el.textContent.trim(), el); el.remove(); continue; }
+    if (el.id === 'feeprev') { cur = mk('What the saved numbers mean in Naira (₦)', el); cur.appendChild(el); cur = null; continue; }
+    if (el.classList.contains('btns')) { cur = null; continue; }
+    if (cur) cur.appendChild(el);
+    else if (el.tagName === 'H2') first = false;
+  }
+  form.addEventListener('invalid', (e) => { const d = e.target.closest && e.target.closest('details'); if (d) { d.open = true; } }, true);   // a bad value in a closed section opens it
+}
 const _controls = ROUTES.controls;
 ROUTES.controls = async () => {
   await _controls();
   const lab = [...app.querySelectorAll('#cf label')].find((l) => /Commission factor/.test(l.textContent)); if (lab) lab.textContent = 'Commission factor (0–1; also editable below as a %)';
   try { await addNumbersCard(); } catch (e) { toast(e.message, true); }
+  collapsify(app.querySelector('#cf')); collapsify(app.querySelector('#nf'));
 };
 
 /* ---------- user + booking sheets: photo, acceptance history ---------- */
