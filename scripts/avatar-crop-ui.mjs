@@ -156,7 +156,7 @@ async function suite({ w, h, theme, touch }) {
 
   // ---- bad file: no dialog, message under the buttons
   await p.setInputFiles('#av-file', { name: 'x.png', mimeType: 'image/png', buffer: Buffer.from('this is not an image') });
-  await p.waitForFunction(() => /could not be read/i.test(document.querySelector('#av-msg').textContent), null, { timeout: 5000 });
+  await p.waitForFunction(() => /could not read that picture/i.test(document.querySelector('#av-msg').textContent), null, { timeout: 5000 });
   ok(await p.locator('.sheet.crop').count() === 0, tag + ' unreadable file: message, no dialog');
 
   // ---- Save a specific crop: zoom to max in the centre -> only the green band; check the stored picture
