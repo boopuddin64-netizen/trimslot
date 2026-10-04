@@ -69,7 +69,7 @@
       ]
     },
     {
-      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|favicon\\.svg|account\\.js|forms\\.js|cropmath\\.js|avatar-crop\\.js|legal-live\\.js|offline-cache\\.js|net-banner\\.js|avatars\\.css)",
+      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|favicon\\.svg|account\\.js|forms\\.js|cropmath\\.js|avatar-crop\\.js|legal-live\\.js|offline-cache\\.js|net-banner\\.js|imgdecode\\.js|haptics\\.js|avatars\\.css)",
       "headers": [
         {
           "key": "Cache-Control",

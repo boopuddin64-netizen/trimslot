@@ -812,7 +812,7 @@ export function createApp(db: Db) {
       const name = basename(file);
       if (name === 'sw.js') { res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate'); res.setHeader('Service-Worker-Allowed', '/'); }
       else if (name.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
-      else if (config.isProd && /^(?:app|notify|account|forms|cropmath|avatar-crop|legal-live|offline-cache|net-banner|theme)\.js$|^(?:style|avatars)\.css$|^favicon\.svg$/.test(name)) res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+      else if (config.isProd && (/^(?!admin|sw\.js$|mock-checkout).+\.(?:js|css)$/.test(name) || name === 'favicon.svg')) res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
     },
   }));
 
