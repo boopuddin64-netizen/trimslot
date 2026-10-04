@@ -473,3 +473,16 @@ a.crow{text-decoration:none}
   :is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *){transition:none}
   :is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *):active{transform:none;opacity:.8}
 }
+
+/* network banner (net-banner.js): slim strip under the top bar; in the page flow, so it never covers the top bar or the bottom tabs */
+.netbar{position:sticky;top:var(--netbar-top,57px);z-index:19;display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .22s ease,opacity .22s ease;pointer-events:none}
+.netbar.on{grid-template-rows:1fr;opacity:1}
+.netbar[hidden]{display:none}
+.nb-in{overflow:hidden;min-height:0;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 16px;font-size:13px;font-weight:600;line-height:1.3;background:var(--bg2);color:var(--ink);border-bottom:1px solid var(--line2)}
+.netbar.on .nb-in{padding:7px 16px}
+.nb-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.netbar[data-kind=slow] .nb-in{background:var(--accent-soft);color:var(--accent-ink);border-bottom-color:rgba(183,121,31,.25)}
+.netbar[data-kind=retry] .nb-in{background:var(--brand-soft);color:var(--ink)}
+.netbar[data-kind=retry] .nb-dot{background:var(--brand);animation:nbpulse 1.2s ease-in-out infinite}
+@keyframes nbpulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.netbar{transition:none}.nb-dot{animation:none!important}}

@@ -35,7 +35,7 @@ const ICONS = {
 };
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ''}</svg>`;
 const initials = (t) => esc(String(t || '?').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'TS');
-const avatar = (b, cls = '') => b.photo_url ? `<img class="avatar ${cls}" src="${esc(b.photo_url)}" alt="">` : `<div class="avatar ${cls}">${initials(b.shop_name || b.name)}</div>`;
+const avatar = (b, cls = '', eager = false) => b.photo_url ? `<img class="avatar ${cls}" src="${esc(b.photo_url)}" alt="" decoding="async"${eager ? '' : ' loading="lazy"'}>` : `<div class="avatar ${cls}">${initials(b.shop_name || b.name)}</div>`;
 
 /* customer avatar (round, initials fallback); implemented in account.js, safe if that file is missing */
 const cav = (c, cls = '') => (window.Account ? Account.av(c, cls) : '');
@@ -66,7 +66,9 @@ function apiRaw(path, opts = {}) {
   if (key) { inflight.set(key, p); const done = () => inflight.delete(key); p.then(done, done); }
   return p;
 }
-async function apiCall(path, opts = {}) {
+/* Offline-cache hook (offline-cache.js): saved read-only copies, instant first paint, offline fallback, stops writes while offline. Plain network call if that file is missing. */
+function apiCall(path, opts = {}) { return window.OfflineCache ? OfflineCache.call(path, opts, apiNet) : apiNet(path, opts); }
+async function apiNet(path, opts = {}) {
   const init = { method: opts.method || 'GET', headers: {}, credentials: 'same-origin' };
   if (opts.body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(opts.body); }
   else if (init.method !== 'GET') { init.headers['Content-Type'] = 'application/json'; init.body = '{}'; }
@@ -76,7 +78,7 @@ async function apiCall(path, opts = {}) {
     try { r = await fetch('/api' + path, init); }
     catch {
       const e = new Error(ac.signal.aborted ? 'This is taking too long. Check your internet and try again.' : navigator.onLine === false ? "You are offline. Go online and try again." : NET_MSG);
-      e.code = 'NETWORK'; throw e;
+      e.code = 'NETWORK'; e.timeout = ac.signal.aborted; throw e;
     }
     try { j = await r.json(); } catch { /* empty or HTML error page */ }
   } finally { clearTimeout(to); }
@@ -92,8 +94,7 @@ async function apiCall(path, opts = {}) {
   }
   return j;
 }
-window.addEventListener('offline', () => toast("You are offline. Your changes will not save until you go online.", true));
-window.addEventListener('online', () => toast('Back online'));
+/* offline / online messages: the network banner (net-banner.js) shows them */
 function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); if (bad && window.haptics) haptics.error();
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
@@ -175,7 +176,7 @@ function skeletonIfSlow() {
 }
 const SKELETON = '<div class="sk sk-h"></div><div class="sk sk-p"></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
 function stopPoll() { if (state.poll) { clearInterval(state.poll); state.poll = null; } }
-function startPoll(fn) { stopPoll(); state.poll = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, 10000); }
+function startPoll(fn) { stopPoll(); state.poll = setInterval(() => { if (!document.hidden && navigator.onLine !== false) fn().catch(() => {}); }, 10000); }   // offline: keep the saved screen, do not redraw it
 
 /* ---------- router ---------- */
 async function route() {
@@ -334,8 +335,8 @@ async function customerHome() {
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
     ${waitCard}
     <h2>My barbers</h2>
-    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b) => `<div class="card row mybarber" data-bid="${b.id}"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
-        ${avatar(b)}
+    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b, i) => `<div class="card row mybarber" data-bid="${b.id}"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
+        ${avatar(b, '', i < 4)}
         <div class="grow" style="min-width:0"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div></div></a>
         <div class="row" style="gap:6px"><a class="btn sm" href="#/book/${b.id}">Book</a>${b.share ? `<button class="mini" data-shb="${b.id}" aria-label="Share ${esc(b.shop_name)}">${ic('share', 'sm')}</button>` : ''}<button class="mini red" data-rmb="${b.id}" aria-label="Remove ${esc(b.shop_name)} from My barbers">${ic('trash', 'sm')}</button></div></div>`).join('')
       || '<div class="card center muted" id="nobarbers"><b>No barbers yet.</b><br><span class="small">Ask your barber for their TrimSlot link or QR code. Open it, then tap Add barber.</span></div>'}
@@ -398,7 +399,7 @@ async function bookWizard(barberId) {
   state.wizDraw = () => draw();
   const draw = async (err) => {
     const stepBar = `<div class="steps">${[1, 2, 3, 4].map((i) => `<i class="${i <= w.step ? 'on' : ''}"></i>`).join('')}</div>`;
-    const head = `<a href="#/barber/${barberId}" class="back">${ic('back', 'sm')} ${esc(barber.shop_name)}</a><div class="wiz-head">${avatar(barber, 'sm')}<div class="grow"><h1 class="ellip">Book a session</h1><div class="muted small ellip">${esc(barber.shop_name)}${barber.location ? ' · ' + esc(barber.location) : ''}</div></div></div>${noticeHtml}${stepBar}${err ? `<div class="err">${esc(err)}</div>` : ''}`;
+    const head = `<a href="#/barber/${barberId}" class="back">${ic('back', 'sm')} ${esc(barber.shop_name)}</a><div class="wiz-head">${avatar(barber, 'sm', true)}<div class="grow"><h1 class="ellip">Book a session</h1><div class="muted small ellip">${esc(barber.shop_name)}${barber.location ? ' · ' + esc(barber.location) : ''}</div></div></div>${noticeHtml}${stepBar}${err ? `<div class="err">${esc(err)}</div>` : ''}`;
     if (w.step === 1) {
       app.innerHTML = head + `<h2>Pick a service</h2>` + services.map((s) => `<button class="svc ${w.service?.id === s.id ? 'on' : ''}" data-s="${s.id}"><div><b>${esc(s.name)}</b><div class="muted small">${s.duration_min} min</div></div><b>${naira(s.price_kobo)}</b></button>`).join('')
         + (my.credits && my.credits.length ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have ${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} with this barber. ${my.credits.length === 1 ? 'It works' : 'They work'} until ${dateLabel(my.credits[0].expires_at.slice(0, 10))}. We use ${my.credits.length === 1 ? 'it' : 'one'} when you book.</div></div>` : '')
@@ -515,7 +516,7 @@ async function profile(editing) {
 /* ---------- sharing a private barber link (the barber's own, and a customer passing a barber on) ---------- */
 const canShare = () => typeof navigator.share === 'function';
 /** QR + link + Copy + Share. `ids` keeps the old element ids for the barber's own card. */
-const shareCardHtml = (o) => `<div class="card share" id="${o.id}"><div class="row" style="gap:14px;align-items:flex-start"><img class="qr" src="${esc(o.qr)}" alt="QR code for ${esc(o.name)}" width="132" height="132"><div class="grow" style="min-width:0"><b>${esc(o.title)}</b><p class="small muted" style="margin:4px 0 8px">${esc(o.hint)}</p><div class="linkbox small" data-linkbox>${esc(o.url)}</div></div></div>
+const shareCardHtml = (o) => `<div class="card share" id="${o.id}"><div class="row" style="gap:14px;align-items:flex-start"><img class="qr" src="${esc(o.qr)}" alt="QR code for ${esc(o.name)}" width="132" height="132" loading="lazy" decoding="async"><div class="grow" style="min-width:0"><b>${esc(o.title)}</b><p class="small muted" style="margin:4px 0 8px">${esc(o.hint)}</p><div class="linkbox small" data-linkbox>${esc(o.url)}</div></div></div>
   <div class="btns" style="margin-top:12px"><button class="btn sm" type="button" data-copy>${ic('copy', 'sm')} Copy link</button>${canShare() ? `<button class="btn sm sec" type="button" data-share>${ic('share', 'sm')} Share</button>` : ''}${o.extra || ''}</div></div>`;
 async function copyLink(url, box) {
   try { await navigator.clipboard.writeText(url); toast('Link copied'); }
@@ -543,7 +544,7 @@ async function barberProfile() {
   const [r, po] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null)]);
   const p = r.profile, u = state.user;
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
-  app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg', true)}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
     <h2>My shop</h2>
     <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Share your shop<span class="sub">Your link and QR code</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
@@ -647,7 +648,7 @@ async function barberPage(id, shareCode) {
   const shareInfo = isCustomer ? (data.share_link || (sh && sh.url ? { url: sh.url, qr_url: sh.qr_url } : null)) : null;   // a customer who can see this barber can pass the link on
   app.innerHTML = `${state.user ? `<a href="${state.user.role === 'barber' ? '#/profile' : '#/'}" class="back">${ic('back', 'sm')} ${state.user.role === 'barber' ? 'Profile' : 'My barbers'}</a>` : ''}
     ${sh && state.user?.role === 'barber' ? `<div class="info small notice">${ic('ticket', 'sm')}<div>This is how customers see your shop when they open your link.</div></div>` : ''}
-    <div class="row" style="align-items:flex-start">${avatar(barber, 'lg')}<div class="grow"><h1>${esc(barber.shop_name)}</h1>${data.rating ? `<div style="margin:2px 0">${ratingChip(data.rating) || '<span class="small muted">No reviews yet</span>'}</div>` : ''}<div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
+    <div class="row" style="align-items:flex-start">${avatar(barber, 'lg', true)}<div class="grow"><h1>${esc(barber.shop_name)}</h1>${data.rating ? `<div style="margin:2px 0">${ratingChip(data.rating) || '<span class="small muted">No reviews yet</span>'}</div>` : ''}<div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
     <div class="row small muted" style="margin:12px 0 0">${ic('clock', 'sm')}<span>${esc(queueTxt)}</span></div>
     ${sh && !state.user ? `<div class="card" id="guestbox"><b>Want to book ${esc(barber.shop_name)}?</b><p class="small muted" style="margin:4px 0 10px">Log in or create a free account. You will come straight back to this page.</p><div class="btns"><a class="btn" id="loginbtn" href="#/login">Log in</a><a class="btn sec" id="signupbtn" href="#/signup?role=customer">Sign up</a></div></div>` : ''}
     ${sh && isCustomer ? `<div class="btns" style="margin-top:12px"><button class="btn ${sh.added ? 'sec' : ''}" id="addbtn" ${sh.added ? 'disabled' : ''}>${sh.added ? ic('check', 'sm') + ' In My barbers' : ic('plus', 'sm') + ' Add barber'}</button></div>` : ''}
@@ -1088,7 +1089,7 @@ const scheduleRows = (sched) => sched.map((d) => `<div class="dayrow ${d.is_work
       <div class="times"><div><span class="small muted">Opens</span><input type="time" class="s" value="${d.start}"></div><div><span class="small muted">Closes</span><input type="time" class="e" value="${d.end}"></div>
       <div><span class="small muted">Break from</span><input type="time" class="bs" value="${d.break_start || ''}"></div><div><span class="small muted">Break to</span><input type="time" class="be" value="${d.break_end || ''}"></div></div></div>`).join('');
 const wireDayRows = (root) => root.querySelectorAll('.dayrow .w').forEach((c) => c.onchange = () => c.closest('.dayrow').classList.toggle('off', !c.checked));
-const photoBlock = (p) => `<div class="photo-up">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><div class="btns">
+const photoBlock = (p) => `<div class="photo-up">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg', true)}<div class="grow"><div class="btns">
     <label class="btn sec sm" style="margin:0;cursor:pointer">${ic('camera', 'sm')} Take photo<input id="ph-cam" type="file" accept="image/*" capture="environment"></label>
     <label class="btn sec sm" style="margin:0;cursor:pointer">${ic('image', 'sm')} Choose<input id="ph-file" type="file" accept="image/*"></label></div>
     <div class="small muted" style="margin-top:6px" id="ph-msg">${p.photo_url ? 'Tap to change your shop photo.' : 'Add a photo so customers know your shop.'}</div></div></div>`;
