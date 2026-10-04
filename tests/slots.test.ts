@@ -56,7 +56,7 @@ test('booking removes the slot and overlapping bookings are rejected (no double 
   assert.ok(!times.includes('10:00') && !times.includes('10:15') && !times.includes('10:30'));
   assert.ok(times.includes('09:30') && times.includes('10:45'));
   for (const t of ['10:00', '10:15', '10:30', '09:45']) {
-    await assert.rejects(mk(db, customerIds[1], barberId, serviceIds[0], WED, t), /no longer available/);
+    await assert.rejects(mk(db, customerIds[1], barberId, serviceIds[0], WED, t), /not free any more/);
   }
   assert.equal((await mk(db, customerIds[1], barberId, serviceIds[0], WED, '10:45')).start_min, 645);
 });
@@ -97,13 +97,13 @@ test('cannot book in the past, outside hours, in break, on a day off, or with an
   const { db, barberId, customerIds, serviceIds } = await freshDb();
   const t = (date: string, time: string) => mk(db, customerIds[0], barberId, serviceIds[0], date, time);
   await assert.rejects(t('2026-09-28', '10:00'), /past/);
-  await assert.rejects(t(WED, '08:00'), /no longer available/);
-  await assert.rejects(t(WED, '13:00'), /no longer available/);
-  await assert.rejects(t(WED, '17:45'), /no longer available/);
+  await assert.rejects(t(WED, '08:00'), /not free any more/);
+  await assert.rejects(t(WED, '13:00'), /not free any more/);
+  await assert.rejects(t(WED, '17:45'), /not free any more/);
   await db.query('INSERT INTO days_off (barber_id, date, reason) VALUES ($1,$2,$3)', [barberId, WED, 'Wedding']);
-  await assert.rejects(t(WED, '10:00'), /no longer available/);
+  await assert.rejects(t(WED, '10:00'), /not free any more/);
   await db.query('UPDATE barbers SET verified=FALSE WHERE id=$1', [barberId]);
-  await assert.rejects(t('2026-10-01', '10:00'), /not found/i);
+  await assert.rejects(t('2026-10-01', '10:00'), /could not find/i);
 });
 
 test('an unpaid pay-now attempt holds NOTHING; a complete (pay-on-arrival) booking blocks the slot until it is cancelled', async () => {

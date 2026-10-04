@@ -185,12 +185,12 @@ export function createApp(db: Db) {
   // Shop photo upload: raw image bytes (client-compressed JPEG, <= 300 KB). Mounted before the 50 KB JSON parser; auth is applied inline.
   app.put('/api/barber/photo', limits.api, cookieParser(), authenticate, requireRole('barber'), express.raw({ type: 'image/*', limit: '320kb' }), wrap(async (req, res) => {
     const buf: Buffer | undefined = Buffer.isBuffer(req.body) ? req.body : Buffer.isBuffer((req as any).rawBody) ? (req as any).rawBody : undefined;
-    if (!buf || !buf.length) throw badRequest('Send the image as the request body (Content-Type: image/jpeg, image/png or image/webp).');
-    if (buf.length > MAX_PHOTO_BYTES) throw new AppError(413, 'PHOTO_TOO_LARGE', `Photo is too large (max ${Math.round(MAX_PHOTO_BYTES / 1024)} KB after compression).`);
+    if (!buf || !buf.length) throw badRequest('Send the photo as a JPEG, PNG or WebP image.');
+    if (buf.length > MAX_PHOTO_BYTES) throw new AppError(413, 'PHOTO_TOO_LARGE', `That photo is too big. Keep it under ${Math.round(MAX_PHOTO_BYTES / 1024)} KB.`);
     const mime = sniffImage(buf);
-    if (!mime) throw badRequest('Only JPEG, PNG or WebP photos are allowed.');
+    if (!mime) throw badRequest('Use a JPEG, PNG or WebP photo.');
     const declared = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (declared !== mime) throw badRequest('Photo content does not match its declared type.');
+    if (declared !== mime) throw badRequest('We could not read that photo. Try a different one.');
     const id = req.user!.barberId!;
     await db.tx(async (t) => {
       await t.query(`INSERT INTO barber_photos (barber_id, mime, data, updated_at) VALUES ($1,$2,$3,$4)
@@ -208,8 +208,8 @@ export function createApp(db: Db) {
   app.use((req, _res, next) => {
     const raw = (req as any).rawBody;
     if (!(req as any)._body || !Buffer.isBuffer(raw) || !Buffer.isBuffer(req.body) || !req.is('application/json')) return next();
-    if (raw.length > 50 * 1024) return next(new AppError(413, 'PAYLOAD_TOO_LARGE', 'Request body too large'));
-    try { req.body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return next(new AppError(400, 'BAD_JSON', 'Invalid JSON body')); }
+    if (raw.length > 50 * 1024) return next(new AppError(413, 'PAYLOAD_TOO_LARGE', 'That request is too big. Send less.'));
+    try { req.body = raw.length ? JSON.parse(raw.toString('utf8')) : {}; } catch { return next(new AppError(400, 'BAD_JSON', 'We could not read that request. Try again.')); }
     next();
   });
   app.use(cookieParser());
@@ -218,7 +218,7 @@ export function createApp(db: Db) {
   // CSRF hardening: cookie is SameSite=Lax and every mutating API call must be application/json.
   app.use('/api', (req, _res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !req.is('application/json') && req.headers['content-length'] !== '0' && req.headers['content-length'] !== undefined) {
-      return next(new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json'));
+      return next(new AppError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Send the request as JSON.'));
     }
     next();
   });
@@ -230,11 +230,11 @@ export function createApp(db: Db) {
   /* ---------- admin: platform rules (Bearer ADMIN_KEY, or CRON_SECRET as fallback; never exposed to barbers/customers) ---------- */
   const adminGuard = async (req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Cache-Control', 'no-store');
-    if (!config.cronSecret && !config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not configured on the server' } });
+    if (!config.cronSecret && !config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not set up on the server yet.' } });
     const lockKey = 'admin:' + req.ip;
     const wait = await assertLoginNotLocked(db, lockKey);
-    if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong admin keys. Try again in a few minutes.' } });
-    if (!adminAuth(req)) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Invalid admin key' } }); }
+    if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong keys. Try again in a few minutes.' } });
+    if (!adminAuth(req)) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'That admin key is wrong.' } }); }
     next();
   };
   api.get('/admin/settings', adminGuard, wrap(async (_req, res) => res.json({ settings: settingsView(await getSettings(db)) })));
@@ -279,13 +279,13 @@ export function createApp(db: Db) {
         return uid;
       });
     } catch (e: any) {
-      if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'An account with that email or phone already exists. Try logging in.');
+      if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'That email or phone already has an account. Log in instead.');
       throw e;
     }
     if (d.role === 'barber') logger.info('barber_signup_pending', { uid: userId });
     const u = await db.one('SELECT * FROM users WHERE id=$1', [userId]);
     setAuthCookie(res, signToken(u));
-    res.status(201).json({ user: await publicUser(db, u), ...(d.role === 'barber' ? { note: 'Your shop is pending verification. You will appear to customers once approved.' } : {}) });
+    res.status(201).json({ user: await publicUser(db, u), ...(d.role === 'barber' ? { note: 'We are checking your shop. Customers can see it once we approve it.' } : {}) });
   }));
 
   api.post('/auth/login', limits.login, wrap(async (req, res) => {
@@ -296,9 +296,9 @@ export function createApp(db: Db) {
     const u = await db.maybeOne('SELECT * FROM users WHERE email=$1 OR phone=$1', [id]);
     if (!u || !bcrypt.compareSync(d.password, u.password_hash)) {
       await recordFailedLogin(db, id);
-      throw new AppError(401, 'BAD_CREDENTIALS', 'Incorrect email/phone or password.');
+      throw new AppError(401, 'BAD_CREDENTIALS', 'Your email, phone or password is wrong. Try again.');
     }
-    if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', u.account_status === 'DELETED' ? 'This account has been removed. Contact TrimSlot support if you think this is a mistake.' : `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. Contact support if you think this is a mistake.`);
+    if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', u.account_status === 'DELETED' ? 'This account was removed. If that is a mistake, contact TrimSlot support.' : `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. If that is a mistake, contact support.`);
     setAuthCookie(res, signToken(u));
     res.json({ user: await publicUser(db, u) });
   }));
@@ -318,11 +318,11 @@ export function createApp(db: Db) {
     const cur = await db.one<any>('SELECT * FROM users WHERE id=$1', [req.user!.id]);
     const email = d.email !== undefined ? (d.email || null) : cur.email;
     const phone = d.phone !== undefined ? (d.phone || null) : cur.phone;
-    if (!email && !phone) throw badRequest('Keep at least an email or a phone number on your account.');
+    if (!email && !phone) throw badRequest('Keep at least one email or phone number on your account.');
     try {
       await db.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
     } catch (e: any) {
-      if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'That email or phone is already used by another account.');
+      if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'Another account already uses that email or phone.');
       throw e;
     }
     res.json({ user: await publicUser(db, await db.one('SELECT * FROM users WHERE id=$1', [cur.id])) });
@@ -337,7 +337,7 @@ export function createApp(db: Db) {
   api.get('/barbers/:id', wrap(async (req, res) => {
     const id = Number(req.params.id);
     const b = Number.isInteger(id) ? await db.maybeOne('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 AND b.verified', [id]) : undefined;
-    if (!b) throw notFound('Barber not found');
+    if (!b) throw notFound('We could not find that barber.');
     const services = await db.many('SELECT id, name, price_kobo, duration_min FROM services WHERE barber_id=$1 AND active ORDER BY price_kobo, id', [b.id]);
     const schedule = await db.many('SELECT weekday, is_working, start_min, end_min, break_start_min, break_end_min FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [b.id]);
     const plans = await publicPlans(db, b.id);
@@ -358,7 +358,7 @@ export function createApp(db: Db) {
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
     const p = Number.isInteger(id) ? await db.maybeOne<{ mime: string; data: Buffer; updated_at: string }>('SELECT mime, data, updated_at FROM barber_photos WHERE barber_id=$1', [id]) : undefined;
-    if (!p) throw notFound('No photo');
+    if (!p) throw notFound('There is no photo.');
     res.setHeader('Content-Type', p.mime);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
@@ -366,7 +366,7 @@ export function createApp(db: Db) {
   }));
   api.get('/barbers/:id/slots', wrap(async (req, res) => {
     const serviceId = Number(req.query.service_id);
-    if (!serviceId) throw badRequest('service_id is required');
+    if (!serviceId) throw badRequest('Pick a service.');
     res.json(await getAvailableSlots(db, Number(req.params.id) || 0, serviceId, String(req.query.date || '')));
   }));
 
@@ -385,7 +385,7 @@ export function createApp(db: Db) {
   const ownBooking = async (req: Request) => {
     const id = Number(req.params.id);
     const b = Number.isInteger(id) ? await getBooking(db, id) : undefined;
-    if (!b || b.customer_id !== req.user!.id) throw notFound('Booking not found');
+    if (!b || b.customer_id !== req.user!.id) throw notFound('We could not find that booking.');
     return b;
   };
   api.get('/bookings/:id', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await ownBooking(req)) })));
@@ -415,7 +415,7 @@ export function createApp(db: Db) {
   api.post('/plan-purchases/:id/verify', limits.payment, cust, wrap(async (req, res) => {
     const id = Number(req.params.id) || 0;
     const own = await db.maybeOne('SELECT id FROM plan_purchases WHERE id=$1 AND customer_id=$2', [id, req.user!.id]);
-    if (!own) throw notFound('Plan purchase not found');
+    if (!own) throw notFound('We could not find that plan purchase.');
     let last: any = { result: 'no_payment' };
     for (const row of await db.many('SELECT reference FROM payments WHERE plan_purchase_id=$1 ORDER BY id DESC', [id])) { last = await processReference(db, row.reference); if (last.result === 'processed' || last.result === 'already_processed') break; }
     res.json({ result: last.result, purchase: await db.maybeOne('SELECT id, plan_name, status, sessions_total, sessions_used, expires_at FROM plan_purchases WHERE id=$1', [id]) });
@@ -437,7 +437,7 @@ export function createApp(db: Db) {
   api.get('/payments/mock/:reference', wrap(async (req, res) => {
     if (!config.mockMode) throw notFound();
     const p = await db.maybeOne('SELECT p.*, COALESCE(b.service_name, pp.plan_name) AS service_name FROM payments p LEFT JOIN bookings b ON b.id=p.booking_id LEFT JOIN plan_purchases pp ON pp.id=p.plan_purchase_id WHERE p.reference=$1', [req.params.reference]);
-    if (!p) throw notFound('Unknown reference');
+    if (!p) throw notFound('We do not know that payment reference.');
     res.json({ reference: p.reference, amount_kobo: p.amount_kobo, service_name: p.service_name, booking_id: p.booking_id, status: p.status });
   }));
   api.post('/payments/mock/:reference/complete', limits.payment, wrap(async (req, res) => {
@@ -447,19 +447,19 @@ export function createApp(db: Db) {
 
   /* ---------- reports / complaints (customers and barbers) ---------- */
   api.post('/reports', requireAuth, wrap(async (req, res) => {
-    const d = parse(z.object({ category: z.enum(['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER']), message: z.string().trim().min(5, 'Tell us a bit more (at least 5 characters)').max(1000), booking_id: z.coerce.number().int().positive().optional(), target_user_id: z.coerce.number().int().positive().optional() }), req.body);
+    const d = parse(z.object({ category: z.enum(['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER']), message: z.string().trim().min(5, 'Tell us a bit more. Write at least 5 letters.').max(1000), booking_id: z.coerce.number().int().positive().optional(), target_user_id: z.coerce.number().int().positive().optional() }), req.body);
     const me = req.user!; let target: number | null = d.target_user_id ?? null;
     if (d.booking_id) {
       const b = await db.maybeOne<any>('SELECT k.id, k.customer_id, bb.user_id AS barber_uid FROM bookings k JOIN barbers bb ON bb.id=k.barber_id WHERE k.id=$1', [d.booking_id]);
-      if (!b || (b.customer_id !== me.id && b.barber_uid !== me.id)) throw notFound('Booking not found');
+      if (!b || (b.customer_id !== me.id && b.barber_uid !== me.id)) throw notFound('We could not find that booking.');
       target = me.id === b.customer_id ? b.barber_uid : b.customer_id;      // report the other side of your own booking
     }
     if (target === me.id) throw badRequest('You cannot report yourself.');
-    if (target && !(await db.maybeOne('SELECT 1 FROM users WHERE id=$1', [target]))) throw notFound('User not found');
-    if ((await db.one<any>(`SELECT COUNT(*)::int c FROM reports WHERE reporter_id=$1 AND created_at > now() - interval '1 day'`, [me.id])).c >= 10) throw new AppError(429, 'RATE_LIMITED', 'You have sent a lot of reports today. Please wait before sending more.');
+    if (target && !(await db.maybeOne('SELECT 1 FROM users WHERE id=$1', [target]))) throw notFound('We could not find that user.');
+    if ((await db.one<any>(`SELECT COUNT(*)::int c FROM reports WHERE reporter_id=$1 AND created_at > now() - interval '1 day'`, [me.id])).c >= 10) throw new AppError(429, 'RATE_LIMITED', 'You sent many reports today. Please wait before you send more.');
     const r = await db.one<any>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [me.id, target, d.booking_id ?? null, d.category, d.message, isoNow()]);
     await audit(db, d.booking_id ?? null, { id: me.id, role: me.role }, 'REPORT_FILED', { report_id: r.id, category: d.category, target_user_id: target });
-    res.status(201).json({ id: r.id, message: 'Thanks - your report reached the TrimSlot team.' });
+    res.status(201).json({ id: r.id, message: 'Thank you. The TrimSlot team got your report.' });
   }));
 
   /* ---------- barber area ---------- */
@@ -478,9 +478,9 @@ export function createApp(db: Db) {
     const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
     const out = await db.tx(async (t) => {
       const b = await t.maybeOne<any>('SELECT id, shop_name, review_status FROM barbers WHERE id=$1 FOR UPDATE', [bid(req)]);
-      if (!b) throw notFound('Barber not found');
+      if (!b) throw notFound('We could not find that barber.');
       if (b.review_status === 'PENDING') return { review_status: 'PENDING', changed: false };
-      if (!['REJECTED', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('NOT_RESUBMITTABLE', b.review_status === 'SUSPENDED' ? 'A suspended shop cannot be resubmitted. Contact support.' : 'Your shop is already approved.');
+      if (!['REJECTED', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('NOT_RESUBMITTABLE', b.review_status === 'SUSPENDED' ? 'A suspended shop cannot send its details again. Contact support.' : 'Your shop is already approved.');
       await t.query(`UPDATE barbers SET review_status='PENDING', review_reason=NULL, resubmit_note=$2, resubmitted_at=$3 WHERE id=$1`, [b.id, note || null, isoNow()]);
       await audit(t, null, { id: req.user!.id, role: 'barber' }, 'BARBER_RESUBMITTED', { barber_id: b.id, from: b.review_status, note: note || null });
       return { review_status: 'PENDING', changed: true };
@@ -516,13 +516,13 @@ export function createApp(db: Db) {
     const m = new Map<number, Sched>(cur.schedule);
     for (const day of days) {
       const s = hhmmToMin(day.start), e = hhmmToMin(day.end);
-      if (day.is_working && e <= s) throw badRequest(`Closing time must be after opening time (weekday ${day.weekday})`);
+      if (day.is_working && e <= s) throw badRequest(`Closing time must be later than opening time (weekday ${day.weekday}).`);
       let bs: number | null = null, be: number | null = null;
       if (day.break_start && day.break_end) {
         bs = hhmmToMin(day.break_start); be = hhmmToMin(day.break_end);
-        if (be <= bs) throw badRequest('Break end must be after break start');
-        if (day.is_working && (bs < s || be > e)) throw badRequest('Break must be inside working hours');
-      } else if (day.break_start || day.break_end) throw badRequest('Provide both break start and end, or neither');
+        if (be <= bs) throw badRequest('Break end must be later than break start.');
+        if (day.is_working && (bs < s || be > e)) throw badRequest('The break must be inside your working hours.');
+      } else if (day.break_start || day.break_end) throw badRequest('Add both a break start and a break end, or leave both empty.');
       m.set(day.weekday, { is_working: day.is_working, start_min: s, end_min: e, break_start_min: bs, break_end_min: be });
     }
     return { schedule: m, offDates: cur.offDates };
@@ -554,13 +554,13 @@ export function createApp(db: Db) {
       }
       return { notified: affected.filter((a) => !a.incomplete).length };
     });
-    if ('conflict' in out && out.conflict) throw new AppError(409, 'AVAILABILITY_CONFLICT', `This change affects ${out.conflict.count} upcoming booking${out.conflict.count === 1 ? '' : 's'}. Those customers will be notified (nothing is cancelled). Confirm to continue.`, out.conflict);
+    if ('conflict' in out && out.conflict) throw new AppError(409, 'AVAILABILITY_CONFLICT', `This change affects ${out.conflict.count} upcoming booking${out.conflict.count === 1 ? '' : 's'}. We will tell those customers. Nothing is cancelled. Confirm to go on.`, out.conflict);
     res.json({ ok: true, notified_bookings: (out as any).notified ?? 0 }); // existing bookings are never touched by schedule edits
   }));
   barberR.post('/days-off', wrap(async (req, res) => {
     const d = parse(V.dayOffSchema, req.body);
-    if (!isValidDate(d.date)) throw badRequest('date must be YYYY-MM-DD');
-    if (d.date < lagosDate()) throw badRequest('Date is in the past');
+    if (!isValidDate(d.date)) throw badRequest('Write the date as YYYY-MM-DD.');
+    if (d.date < lagosDate()) throw badRequest('That date is in the past.');
     const out = await db.tx(async (t) => {
       await t.query('SELECT id FROM barbers WHERE id=$1 FOR UPDATE', [bid(req)]);
       const before = await loadAvailState(t, bid(req));
@@ -572,7 +572,7 @@ export function createApp(db: Db) {
       if (affected.length) await notifyAffected(t, await barberIdentity(t, req), affected, `closed on ${fmtDay(d.date)}${d.reason ? ` (${d.reason})` : ''}`);
       return { notified: affected.filter((a) => !a.incomplete).length };
     });
-    if ('conflict' in out && out.conflict) throw new AppError(409, 'AVAILABILITY_CONFLICT', `This day off affects ${out.conflict.count} upcoming booking${out.conflict.count === 1 ? '' : 's'}. Those customers will be notified (nothing is cancelled). Confirm to continue.`, out.conflict);
+    if ('conflict' in out && out.conflict) throw new AppError(409, 'AVAILABILITY_CONFLICT', `This day off affects ${out.conflict.count} upcoming booking${out.conflict.count === 1 ? '' : 's'}. We will tell those customers. Nothing is cancelled. Confirm to go on.`, out.conflict);
     res.status(201).json({ ok: true, existing_bookings_that_day: (out as any).notified ?? 0, notified_bookings: (out as any).notified ?? 0 });
   }));
   barberR.delete('/photo', wrap(async (req, res) => {
@@ -581,7 +581,7 @@ export function createApp(db: Db) {
   }));
   barberR.delete('/days-off/:id', wrap(async (req, res) => {
     const r = await db.query('DELETE FROM days_off WHERE id=$1 AND barber_id=$2', [Number(req.params.id) || 0, bid(req)]);
-    if (!r.rowCount) throw notFound('Day off not found');
+    if (!r.rowCount) throw notFound('We could not find that day off.');
     res.json({ ok: true });
   }));
   barberR.post('/services', wrap(async (req, res) => {
@@ -593,12 +593,12 @@ export function createApp(db: Db) {
     const d = parse(V.serviceSchema, req.body);
     // Only affects future bookings: existing bookings hold their own snapshot of name/price/duration.
     const r = await db.query('UPDATE services SET name=$1, price_kobo=$2, duration_min=$3 WHERE id=$4 AND barber_id=$5 AND active', [d.name, Math.round(d.price_naira * 100), d.duration_min, Number(req.params.id) || 0, bid(req)]);
-    if (!r.rowCount) throw notFound('Service not found');
+    if (!r.rowCount) throw notFound('We could not find that service.');
     res.json({ ok: true });
   }));
   barberR.delete('/services/:id', wrap(async (req, res) => {
     const r = await db.query('UPDATE services SET active=FALSE WHERE id=$1 AND barber_id=$2', [Number(req.params.id) || 0, bid(req)]); // soft delete keeps history
-    if (!r.rowCount) throw notFound('Service not found');
+    if (!r.rowCount) throw notFound('We could not find that service.');
     res.json({ ok: true });
   }));
 
@@ -614,7 +614,7 @@ export function createApp(db: Db) {
   barberR.delete('/plans/:id', wrap(async (req, res) => {
     // Stops NEW sales only; customers who already bought keep their sessions until the plan ends.
     const r = await db.query('UPDATE plans SET active=FALSE WHERE id=$1 AND barber_id=$2 AND active', [Number(req.params.id) || 0, bid(req)]);
-    if (!r.rowCount) throw notFound('Plan not found');
+    if (!r.rowCount) throw notFound('We could not find that plan.');
     res.json({ ok: true });
   }));
 
@@ -649,7 +649,7 @@ export function createApp(db: Db) {
   const ownedBarberBooking = async (req: Request) => {
     const id = Number(req.params.id);
     const b = Number.isInteger(id) ? await getBooking(db, id) : undefined;
-    if (!b || b.barber_id !== bid(req) || isIncomplete(b)) throw notFound('Booking not found');
+    if (!b || b.barber_id !== bid(req) || isIncomplete(b)) throw notFound('We could not find that booking.');
     return b;
   };
   barberR.get('/bookings/:id', wrap(async (req, res) => {
@@ -660,7 +660,7 @@ export function createApp(db: Db) {
   barberR.post('/bookings/:id/:action', wrap(async (req, res) => {
     const action = req.params.action as BarberAction;
     const allowed = ['mark-present', 'start', 'complete', 'record-payment', 'no-show', 'skip', 'wait', 'not-served'];
-    if (!allowed.includes(action)) throw notFound('Unknown action');
+    if (!allowed.includes(action)) throw notFound('We do not know that action.');
     const b = await barberAction(db, req.user!.id, bid(req), Number(req.params.id) || 0, action, req.body);
     res.json({ booking: await decorate(db, b, { forBarber: true }) });
   }));
@@ -681,7 +681,7 @@ export function createApp(db: Db) {
   barberR.get('/customers/:id', wrap(async (req, res) => {
     const cid = Number(req.params.id);
     const has = Number.isInteger(cid) ? await db.maybeOne(`SELECT 1 FROM bookings WHERE barber_id=$1 AND customer_id=$2 AND ${barberVisible()} LIMIT 1`, [bid(req), cid]) : undefined;
-    if (!has) throw notFound('Customer not found'); // barbers only see their own customers
+    if (!has) throw notFound('We could not find that customer.'); // barbers only see their own customers
     const u = await db.one('SELECT id, name, phone, email, avatar_url, created_at FROM users WHERE id=$1', [cid]);
     const hist = await db.many<BookingRow>(`SELECT * FROM bookings WHERE barber_id=$1 AND customer_id=$2 AND ${barberVisible()} ORDER BY date DESC, start_min DESC`, [bid(req), cid]);
     const completed = hist.filter((h) => h.status === 'COMPLETED');
@@ -695,15 +695,15 @@ export function createApp(db: Db) {
   api.use('/barber', barberR);
 
   app.use('/api', api);
-  app.use('/api', (_req, _res, next) => next(notFound('Unknown API route')));
+  app.use('/api', (_req, _res, next) => next(notFound('We could not find that page.')));
 
   // Static frontend: on Vercel the CDN serves /public directly (express.static is ignored there); locally / in Docker Express serves it.
   if (!config.isVercel) app.use(express.static(config.publicDir, { extensions: ['html'], maxAge: config.isProd ? '5m' : 0, index: 'index.html' }));
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof AppError) return res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
-    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'BAD_JSON', message: 'Malformed JSON body' } });
-    if (err?.type === 'entity.too.large') return res.status(413).json({ error: { code: 'TOO_LARGE', message: 'Request body too large' } });
+    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'BAD_JSON', message: 'We could not read that request. Try again.' } });
+    if (err?.type === 'entity.too.large') return res.status(413).json({ error: { code: 'TOO_LARGE', message: 'That request is too big. Send less.' } });
     logger.error('unhandled_error', { rid: (_req as any).rid, path: _req.path, err: String(err?.message || err), code: err?.code, stack: config.isProd ? undefined : String(err?.stack || '').split('\n').slice(0, 5).join(' | ') });
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong on our side. Please try again.' } });
   });

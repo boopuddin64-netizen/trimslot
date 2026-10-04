@@ -18,26 +18,26 @@ export const normPhone = (p: string) => {
   return s;
 };
 
-export const phoneSchema = z.string().trim().transform(normPhone).refine((s) => /^0[789][01]\d{8}$/.test(s) || /^\+?\d{8,15}$/.test(s), 'Enter a valid phone number (e.g. 0803 123 4567)');
-export const emailSchema = z.string().trim().toLowerCase().email('Enter a valid email address');
-const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)');
+export const phoneSchema = z.string().trim().transform(normPhone).refine((s) => /^0[789][01]\d{8}$/.test(s) || /^\+?\d{8,15}$/.test(s), 'Enter a real phone number, like 0803 123 4567.');
+export const emailSchema = z.string().trim().toLowerCase().email('Enter a real email address.');
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Write the time like 09:30 or 18:00.');
 
 export const signupSchema = z.object({
   role: z.enum(['customer', 'barber']),
-  name: z.string().trim().min(2, 'Name is too short').max(80),
+  name: z.string().trim().min(2, 'That name is too short.').max(80),
   email: emailSchema.optional().or(z.literal('').transform(() => undefined)),
   phone: phoneSchema.optional().or(z.literal('').transform(() => undefined)),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(100),
+  password: z.string().min(8, 'Your password must have at least 8 characters.').max(100),
   shop_name: z.string().trim().min(2).max(80).optional(),
   location: z.string().trim().max(160).optional(),
   accept_terms: z.boolean().optional(),               // Terms of Service + Privacy Policy (everyone)
   accept_barber_agreement: z.boolean().optional(),    // Barber Agreement (barbers)
-}).refine((d) => d.email || d.phone, { message: 'Provide an email or a phone number', path: ['email'] })
-  .refine((d) => d.accept_terms === true, { message: 'Please tick the box to accept the Terms of Service and Privacy Policy', path: ['accept_terms'] })
-  .refine((d) => d.role !== 'barber' || d.accept_barber_agreement === true, { message: 'Please tick the box to accept the Barber Agreement', path: ['accept_barber_agreement'] })
-  .refine((d) => d.role !== 'barber' || !!d.shop_name, { message: 'Shop name is required for barbers', path: ['shop_name'] });
+}).refine((d) => d.email || d.phone, { message: 'Enter an email or a phone number.', path: ['email'] })
+  .refine((d) => d.accept_terms === true, { message: 'Tick the box to accept the Terms of Service and Privacy Policy.', path: ['accept_terms'] })
+  .refine((d) => d.role !== 'barber' || d.accept_barber_agreement === true, { message: 'Tick the box to accept the Barber Agreement.', path: ['accept_barber_agreement'] })
+  .refine((d) => d.role !== 'barber' || !!d.shop_name, { message: 'Barbers must add a shop name.', path: ['shop_name'] });
 
-export const loginSchema = z.object({ identifier: z.string().trim().min(3, 'Enter your email or phone'), password: z.string().min(1, 'Enter your password') });
+export const loginSchema = z.object({ identifier: z.string().trim().min(3, 'Enter your email or phone.'), password: z.string().min(1, 'Enter your password') });
 
 export const createBookingSchema = z.object({
   barber_id: z.coerce.number().int().positive(),
@@ -51,7 +51,7 @@ export const createBookingSchema = z.object({
 }); // NOTE: zod strips unknown keys, so a client-sent "price" is ignored.
 
 export const meSchema = z.object({
-  name: z.string().trim().min(2, 'Name is too short').max(80).optional(),
+  name: z.string().trim().min(2, 'That name is too short.').max(80).optional(),
   email: emailSchema.or(z.literal('')).optional(),
   phone: phoneSchema.or(z.literal('')).optional(),
 }).strict();
@@ -59,7 +59,7 @@ export const meSchema = z.object({
 export const profileSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   shop_name: z.string().trim().min(2).max(80).optional(),
-  photo_url: z.string().trim().max(500).refine((s) => s === '' || /^https?:\/\//i.test(s) || /^\/api\/barbers\/\d+\/photo(\?v=[a-z0-9]+)?$/.test(s), 'Photo must be an http(s) URL').optional(),
+  photo_url: z.string().trim().max(500).refine((s) => s === '' || /^https?:\/\//i.test(s) || /^\/api\/barbers\/\d+\/photo(\?v=[a-z0-9]+)?$/.test(s), 'The photo link must start with http:// or https://').optional(),
   location: z.string().trim().max(160).optional(),
   about: z.string().trim().max(600).optional(),
 });
@@ -70,15 +70,15 @@ export const scheduleSchema = z.object({
     is_working: z.boolean(),
     start: hhmm, end: hhmm,
     break_start: hhmm.nullable().optional(), break_end: hhmm.nullable().optional(),
-  })).length(7, 'Provide all 7 days'),
+  })).length(7, 'Add all 7 days.'),
   confirm: z.boolean().optional(),
 });
 export type ScheduleInput = z.infer<typeof scheduleSchema>;
 
 export const serviceSchema = z.object({
-  name: z.string().trim().min(2, 'Name is too short').max(60),
-  price_naira: z.coerce.number().min(0, 'Price cannot be negative').max(10_000_000),
-  duration_min: z.coerce.number().int().min(5, 'Minimum 5 minutes').max(480),
+  name: z.string().trim().min(2, 'That name is too short.').max(60),
+  price_naira: z.coerce.number().min(0, 'The price cannot be below zero.').max(10_000_000),
+  duration_min: z.coerce.number().int().min(5, 'It must be at least 5 minutes.').max(480),
 });
 
 export const dayOffSchema = z.object({ date: z.string(), reason: z.string().trim().max(120).optional(), confirm: z.boolean().optional() });

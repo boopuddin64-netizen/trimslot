@@ -48,8 +48,8 @@ test('full happy path via services + enforcement of guards', async () => {
     assert.equal(done.payment_status, 'PAID');
     assert.equal(done.paid_via, 'CASH');
     assert.ok(done.service_complete);
-    await assert.rejects(barberAction(db, uid, barberId, b.id, 'no-show'), /Cannot/);
-    await assert.rejects(customerCheckIn(db, customerIds[0], b.id), /cannot be checked in/);
+    await assert.rejects(barberAction(db, uid, barberId, b.id, 'no-show'), /cannot mark/i);
+    await assert.rejects(customerCheckIn(db, customerIds[0], b.id), /cannot check in/);
     const actions = (await db.many('SELECT action FROM audit_log WHERE booking_id=$1 ORDER BY id', [b.id])).map((r) => r.action);
     assert.deepEqual(actions, ['BOOKED', 'CHECKED_IN', 'STARTED', 'PAYMENT_RECORDED', 'COMPLETED', 'COMMISSION_ACCRUED']);
   } finally { resetNow(); }
@@ -64,8 +64,8 @@ test('check-in only on the day; no-show only after scheduled time; other people 
     await assert.rejects(customerCheckIn(db, customerIds[0], future.id), (e: any) => e.code === 'NOT_TODAY');
     const today = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '11:00', payment_option: 'ON_ARRIVAL' });
     await assert.rejects(barberAction(db, uid, barberId, today.id, 'no-show'), (e: any) => e.code === 'TOO_EARLY');
-    await assert.rejects(customerCheckIn(db, customerIds[1], today.id), /not found/i);
-    await assert.rejects(barberAction(db, uid, barberId + 99, today.id, 'mark-present'), /not found/i);
+    await assert.rejects(customerCheckIn(db, customerIds[1], today.id), /could not find/i);
+    await assert.rejects(barberAction(db, uid, barberId + 99, today.id, 'mark-present'), /could not find/i);
     setNow(`${WED}T11:20:00+01:00`);
     await barberAction(db, uid, barberId, today.id, 'no-show');
     assert.equal((await getBooking(db, today.id))!.status, 'NO_SHOW');

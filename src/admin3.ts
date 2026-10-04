@@ -155,7 +155,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
 
   /* ---- generic paginated lists: GET /admin/l/:list?q&status&sort&dir&limit&cursor ---- */
   get('/l/:list', async (req, res) => {
-    const cfg = CFG[req.params.list]; if (!cfg) throw notFound('Unknown list');
+    const cfg = CFG[req.params.list]; if (!cfg) throw notFound('We do not know that list.');
     res.json(await pageOf(db, cfg, req.query));
   });
   /* tab counts for a list (cheap, index-backed) */
@@ -164,7 +164,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     if (w === 'barbers') { const r = await db.many<any>('SELECT b.review_status s, COUNT(*)::int n FROM barbers b JOIN users u ON u.id=b.user_id WHERE u.deleted_at IS NULL GROUP BY b.review_status'); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
     if (w === 'reports') { const r = await db.many<any>('SELECT status s, COUNT(*)::int n FROM reports WHERE deleted_at IS NULL GROUP BY status'); const o: any = {}; for (const x of r) o[x.s] = x.n; return void res.json(o); }
     if (w === 'customers') { const r = await db.many<any>(`SELECT account_status s, COUNT(*)::int n FROM users WHERE role='customer' AND deleted_at IS NULL GROUP BY account_status`); const o: any = { ALL: 0 }; for (const x of r) { o[x.s] = x.n; o.ALL += x.n; } return void res.json(o); }
-    throw notFound('Unknown counts');
+    throw notFound('We do not know that count.');
   });
 
   /* ---- home: a handful of numbers + things that need attention (cached for 10 s) ---- */
@@ -185,11 +185,11 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
         (SELECT COALESCE(SUM(remaining_kobo),0) FROM commission_ledger WHERE status='ACCRUED')::bigint AS ledger_owed_kobo,
         (SELECT maintenance_mode FROM platform_settings WHERE id=1) AS maintenance_mode`, [today]);
     const attention = [
-      { key: 'barbers', label: 'Shops awaiting review', n: r.barbers_pending, href: '#/barbers?status=PENDING', tone: 'amber' },
-      { key: 'refunds', label: 'Refunds to action', n: r.refunds_open, href: '#/payments?filter=needs_refund', tone: 'red' },
-      { key: 'decisions', label: 'Cancellations awaiting a decision', n: r.awaiting_decision, href: '#/decisions', tone: 'amber' },
+      { key: 'barbers', label: 'Shops waiting for review', n: r.barbers_pending, href: '#/barbers?status=PENDING', tone: 'amber' },
+      { key: 'refunds', label: 'Refunds that need action', n: r.refunds_open, href: '#/payments?filter=needs_refund', tone: 'red' },
+      { key: 'decisions', label: 'Cancellations that need a decision', n: r.awaiting_decision, href: '#/decisions', tone: 'amber' },
       { key: 'reports', label: 'Open reports', n: r.reports_open, href: '#/reports?status=OPEN', tone: 'red' },
-      { key: 'ledger', label: 'Barbers with overdue balances', n: r.ledger_overdue, href: '#/ledger?overdue=1', tone: 'amber', sub: Number(r.ledger_owed_kobo) },
+      { key: 'ledger', label: 'Barbers who are late paying', n: r.ledger_overdue, href: '#/ledger?overdue=1', tone: 'amber', sub: Number(r.ledger_owed_kobo) },
     ];
     const v = { today, numbers: { customers: r.customers, barbers_live: r.barbers_live, bookings_today: r.bookings_today, revenue_30d_kobo: Number(r.revenue_30d_kobo) }, attention, maintenance_mode: r.maintenance_mode, generated_at: isoNow() };
     homeCache = { at: Date.now(), v }; res.json(v);
@@ -214,7 +214,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     const p = await db.maybeOne<any>(`SELECT p.*, COALESCE(b.service_name, pp.plan_name) AS item, cu.name AS customer_name, cu.email AS customer_email, br.shop_name
         FROM payments p LEFT JOIN bookings b ON b.id=p.booking_id LEFT JOIN plan_purchases pp ON pp.id=p.plan_purchase_id LEFT JOIN users cu ON cu.id=COALESCE(b.customer_id, pp.customer_id)
         LEFT JOIN barbers br ON br.id=COALESCE(b.barber_id, pp.barber_id) WHERE p.reference=$1`, [req.params.reference]);
-    if (!p) throw notFound('Payment not found');
+    if (!p) throw notFound('We could not find that payment.');
     delete p.authorization_url;
     res.json({ payment: p });
   });
@@ -222,9 +222,9 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
   /* ---- reviews moderation ---- */
   post('/reviews/:id/hide', async (req, res) => {
     const id = intQ(req.params.id); if (!id) throw notFound();
-    const d = z.object({ hidden: z.boolean(), reason: z.string().trim().min(3).max(300) }).safeParse(req.body); if (!d.success) throw badRequest('Write a reason (at least 3 characters)');
+    const d = z.object({ hidden: z.boolean(), reason: z.string().trim().min(3).max(300) }).safeParse(req.body); if (!d.success) throw badRequest('Write a reason (at least 3 letters).');
     res.json(await db.tx(async (t) => {
-      const r = await t.query('UPDATE reviews SET hidden=$2 WHERE id=$1', [id, d.data.hidden]); if (!r.rowCount) throw notFound('Review not found');
+      const r = await t.query('UPDATE reviews SET hidden=$2 WHERE id=$1', [id, d.data.hidden]); if (!r.rowCount) throw notFound('We could not find that review.');
       await audit(t, null, ADMIN, d.data.hidden ? 'ADMIN_REVIEW_HIDDEN' : 'ADMIN_REVIEW_RESTORED', { review_id: id, reason: d.data.reason });
       return { hidden: d.data.hidden };
     }));
@@ -232,8 +232,8 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
 
   /* ---- bulk actions (max 200 ids, one audit row per batch, per-item outcome counts) ---- */
   const ids = z.array(z.coerce.number().int().positive()).min(1).max(200);
-  const reason = z.string().trim().min(3, 'Write a reason (at least 3 characters)').max(500);
-  const parse = <T extends z.ZodTypeAny>(s: T, b: unknown): z.infer<T> => { const r = s.safeParse(b ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Invalid request'); return r.data; };
+  const reason = z.string().trim().min(3, 'Write a reason (at least 3 letters).').max(500);
+  const parse = <T extends z.ZodTypeAny>(s: T, b: unknown): z.infer<T> => { const r = s.safeParse(b ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Please check what you typed and try again.'); return r.data; };
   post('/bulk/notify', async (req, res) => {
     const d = parse(z.object({ ids, title: z.string().trim().min(2).max(80), body: z.string().trim().min(3).max(500) }), req.body);
     res.json(await db.tx(async (t) => {
@@ -251,7 +251,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
       for (const u of users) {
         if (act === 'warn') { await t.query('UPDATE users SET warn_count=warn_count+1 WHERE id=$1', [u.id]); await notify(t, u.id, 'ACCOUNT_WARNING', 'Warning from TrimSlot', d.reason!); changed++; }
         else if (act === 'suspend' && u.account_status === 'ACTIVE') { await t.query(`UPDATE users SET account_status='SUSPENDED', status_reason=$2, status_at=$3 WHERE id=$1`, [u.id, d.reason, isoNow()]); await notify(t, u.id, 'ACCOUNT_SUSPENDED', 'Account suspended', `Your TrimSlot account is suspended: ${d.reason}`); changed++; }
-        else if (act === 'reinstate' && u.account_status !== 'ACTIVE') { await t.query(`UPDATE users SET account_status='ACTIVE', status_reason=NULL, status_at=$2 WHERE id=$1`, [u.id, isoNow()]); await notify(t, u.id, 'ACCOUNT_REINSTATED', 'Account restored', 'Your TrimSlot account is active again.'); changed++; }
+        else if (act === 'reinstate' && u.account_status !== 'ACTIVE') { await t.query(`UPDATE users SET account_status='ACTIVE', status_reason=NULL, status_at=$2 WHERE id=$1`, [u.id, isoNow()]); await notify(t, u.id, 'ACCOUNT_REINSTATED', 'Account restored', 'Your TrimSlot account works again.'); changed++; }
       }
       await audit(t, null, ADMIN, 'ADMIN_BULK_' + act.toUpperCase(), { requested: d.ids.length, changed, reason: d.reason ?? null, user_ids: users.map((u) => u.id).slice(0, 50) });
       return { changed, skipped: d.ids.length - changed };
@@ -263,7 +263,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
       const rows = await t.many<any>(`SELECT id, user_id, shop_name FROM barbers WHERE id = ANY($1::int[]) AND review_status IN ('PENDING','NEEDS_INFO','REJECTED') FOR UPDATE`, [d.ids]);
       for (const b of rows) {
         await t.query(`UPDATE barbers SET review_status='VERIFIED', review_reason=NULL, reviewed_at=$2, verified_at=COALESCE(verified_at,$2::timestamptz) WHERE id=$1`, [b.id, isoNow()]);
-        await notify(t, b.user_id, 'BARBER_VERIFIED', "You're live", `${b.shop_name} is now visible to customers and can take bookings.`);
+        await notify(t, b.user_id, 'BARBER_VERIFIED', 'Your shop is live', `${b.shop_name} is now visible to customers. It can take bookings.`);
       }
       await audit(t, null, ADMIN, 'ADMIN_BULK_APPROVE_BARBERS', { requested: d.ids.length, approved: rows.length, barber_ids: rows.map((b) => b.id) });
       return { changed: rows.length, skipped: d.ids.length - rows.length };

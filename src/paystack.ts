@@ -66,7 +66,7 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
       headers: { Authorization: `Bearer ${config.paystackKey}`, 'Content-Type': 'application/json', ...(init.headers || {}) },
     });
   } catch (e: any) {   // timeout / DNS / connection reset: say so (and let callers retry) instead of an opaque 500
-    throw new AppError(502, 'PAYSTACK_UNREACHABLE', 'Could not reach Paystack. Check your connection and try again.', { transient: true, gateway_message: String(e?.name || 'network') });
+    throw new AppError(502, 'PAYSTACK_UNREACHABLE', 'We could not reach Paystack. Check your internet and try again.', { transient: true, gateway_message: String(e?.name || 'network') });
   }
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', `Paystack error: ${json.message || res.statusText}`, { gateway_status: res.status, gateway_message: String(json.message || res.statusText || '').slice(0, 200), transient: res.status >= 500 || res.status === 429 });
@@ -77,7 +77,7 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
  *  The network call to Paystack happens OUTSIDE any DB transaction (a pooled connection is never held while waiting on the network). */
 export async function initializePayment(db: Db, bookingId: number, customerEmail: string | null) {
   const b = (await getBooking(db, bookingId))!;
-  if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not awaiting online payment.');
+  if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not waiting for an online payment.');
   const reference = makeReference(b.id);
   let bd = snapshotOf(b.price_kobo, b);
   if (!bd) {   // booking made before the fee model existed: compute the split now and store it, so the booking and the payment agree
@@ -133,12 +133,12 @@ async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; b
 export async function initializePlanPurchase(db: Db, customerId: number, planId: number, customerEmail: string | null) {
   { const st = await getSettings(db);
     if (st.maintenance_mode) throw new AppError(503, 'MAINTENANCE', st.maintenance_message);
-    if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are switched off right now.'); }
+    if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are off right now.'); }
   const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, b.fee_percent_override, b.fee_flat_kobo_override, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
     FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND b.verified`, [planId]);
-  if (!plan) throw notFound('Plan not found');
+  if (!plan) throw notFound('We could not find that plan.');
   assertPayoutReady(plan);
-  if (!plan.service_ids || !plan.service_ids.length) throw new AppError(409, 'PLAN_NO_SERVICES', 'This plan has no services linked yet, so it cannot be bought. Ask the barber to fix it.');
+  if (!plan.service_ids || !plan.service_ids.length) throw new AppError(409, 'PLAN_NO_SERVICES', 'This plan has no services yet, so you cannot buy it. Ask the barber to fix it.');
   const bd = await previewBreakdown(db, plan, plan.price_kobo);
   const purchase = await db.one<{ id: number }>(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, created_at, session_value_kobo,
       booking_fee_kobo, ps_fee_est_kobo, barber_fee_kobo, platform_charge_kobo, payout_kobo)
@@ -213,7 +213,7 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
   } catch (e: any) {
     await db.query(`UPDATE payments SET refund_error=$2 WHERE reference=$1`, [reference, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});
     // alert the admin once per payment per 12 h (the sweeper retries every minute; one alert is enough)
-    await adminEvent(db, 'REFUND_FAILED', 'Refund failed at Paystack', `The refund for payment ${reference} did not go through (${String(e?.message || 'unknown error').slice(0, 120)}). It stays queued and is retried automatically; check Payments if it keeps failing.`,
+    await adminEvent(db, 'REFUND_FAILED', 'Paystack could not send the refund', `The refund for payment ${reference} did not go through (${String(e?.message || 'unknown error').slice(0, 120)}). We will try again by ourselves. Check Payments if it keeps failing.`,
       { link: '/admin.html#/payments?filter=needs_refund', refKey: 'payment:' + reference, dedupeHours: 12 });
     await flushAdminPush(db).catch(() => {});
     return 'failed';
@@ -252,15 +252,15 @@ export async function handleWebhook(db: Db, rawBody: Buffer, signature: string |
     return { status: 200, body: { received: true, result: r.result } };
   } catch (e: any) {
     try { await log('error: ' + (e.message || 'unknown')); } catch { /* db down */ }
-    return { status: 500, body: { error: 'Processing failed, please retry' } }; // Paystack retries on non-200
+    return { status: 500, body: { error: 'That did not work. Please try again.' } }; // Paystack retries on non-200
   }
 }
 
 /** MOCK mode only: the fake checkout page marks the reference as paid, then (like the real flow) we still verify. */
 export async function mockMarkPaid(db: Db, reference: string) {
-  if (!config.mockMode) throw new AppError(404, 'NOT_FOUND', 'Mock checkout is disabled');
+  if (!config.mockMode) throw new AppError(404, 'NOT_FOUND', 'Test checkout is off.');
   const r = await db.query('UPDATE payments SET mock_paid=TRUE WHERE reference=$1', [reference]);
-  if (!r.rowCount) throw notFound('Unknown payment reference');
+  if (!r.rowCount) throw notFound('We do not know that payment reference.');
 }
 
 export { MOCK_SECRET };

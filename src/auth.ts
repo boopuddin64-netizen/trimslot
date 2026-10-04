@@ -46,14 +46,14 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 }
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
-  if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Please log in to continue.'));
+  if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Please log in to go on.'));
   next();
 }
 export function requireRole(role: 'customer' | 'barber') {
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Please log in to continue.'));
-    if (req.user.role !== role) return next(forbidden(`This action is for ${role}s only.`));
-    if (role === 'barber' && !req.user.barberId) return next(forbidden('Barber profile missing.'));
+    if (!req.user) return next(new AppError(401, 'UNAUTHENTICATED', 'Please log in to go on.'));
+    if (req.user.role !== role) return next(forbidden(`Only ${role}s can do this.`));
+    if (role === 'barber' && !req.user.barberId) return next(forbidden('We could not find your barber profile.'));
     next();
   };
 }

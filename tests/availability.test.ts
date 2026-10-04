@@ -50,7 +50,7 @@ test('weekly-hours change that strands a booking needs confirmation, then notifi
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [b.id])).status, 'CONFIRMED');
     // public barber page shows an "Availability updated" note
     const pub = await (await call(base, 'GET', `/api/barbers/${barberId}`)).json() as any;
-    assert.ok(pub.notices.some((x: any) => x.type === 'HOURS_UPDATED' && x.title === 'Availability updated'));
+    assert.ok(pub.notices.some((x: any) => x.type === 'HOURS_UPDATED' && x.title === 'Open times changed'));
     // a harmless edit (nothing stranded) saves without confirmation and notifies nobody
     const r3 = await call(base, 'PUT', '/api/barber/schedule', week({ 3: { end: '16:00' }, 4: { start: '08:00' } }), ck);
     assert.equal(r3.status, 200);

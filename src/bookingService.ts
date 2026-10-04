@@ -70,7 +70,7 @@ export async function expireHoldsIn(c: Conn, scope: HoldScope = {}): Promise<num
   for (const b of rows) {
     await audit(c, b.id, { id: null, role: 'system' }, 'HOLD_EXPIRED', { note: 'Payment not completed in time; slot released' });
     // Customer-only: an unpaid Pay-now hold never existed as far as the barber is concerned.
-    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not completed because payment wasn't finished, so the slot was released. You haven't been charged - just book again.`, b.id);
+    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished because the payment did not go through. We freed the time slot. You were not charged. Please book again.`, b.id);
   }
   return rows.length;
 }
@@ -90,32 +90,32 @@ export interface CreateInput { barber_id: number; service_id: number; date: stri
 
 /** Online payments need a barber payout (Paystack subaccount), otherwise the money has nowhere to go. */
 export function assertPayoutReady(b: { paystack_subaccount?: string | null }) {
-  if (config.requirePayout && !b.paystack_subaccount) throw new AppError(409, 'PAYOUT_NOT_SETUP', "This barber hasn't set up online payments yet. Choose Pay on arrival, or pick another barber.");
+  if (config.requirePayout && !b.paystack_subaccount) throw new AppError(409, 'PAYOUT_NOT_SETUP', "This barber cannot take online payments yet. Choose Pay on arrival, or pick another barber.");
 }
 
 export async function createBooking(db: Db, customerId: number, input: CreateInput): Promise<BookingRow> {
   validateBookableDate(input.date);
-  if (!/^\d{2}:\d{2}$/.test(input.time)) throw badRequest('time must be HH:MM');
+  if (!/^\d{2}:\d{2}$/.test(input.time)) throw badRequest('Write the time like 09:30.');
   const startMin = hhmmToMin(input.time);
   return db.tx(async (t) => {
     // 1) Serialise every booking attempt for this barber: whoever gets this row lock first books first; the other then sees the new row.
     const barber = await t.maybeOne('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
-    if (!barber) throw notFound('Barber not found');
+    if (!barber) throw notFound('We could not find that barber.');
     if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
     await assertBookable(t, input.barber_id, input.payment_option);
-    { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot make bookings${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
+    { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot book right now${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)
     // Price/duration ALWAYS come from the server-side service row - never from the client.
     const svc = await t.maybeOne('SELECT * FROM services WHERE id=$1 AND barber_id=$2 AND active', [input.service_id, input.barber_id]);
-    if (!svc) throw notFound('Service not found for this barber');
+    if (!svc) throw notFound('This barber does not offer that service.');
     const { schedule, dayOff } = await loadSchedule(t, input.barber_id, input.date);
     const isToday = input.date === lagosDate(clock.now());
     const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: svc.duration_min, busy: await busyIntervals(t, input.barber_id, input.date), nowMin: isToday ? lagosMinutes(clock.now()) : null });
-    if (!free.some((s) => s.start === startMin)) throw conflict('SLOT_UNAVAILABLE', 'That time is no longer available. Please pick another slot.');
+    if (!free.some((s) => s.start === startMin)) throw conflict('SLOT_UNAVAILABLE', 'That time is not free any more. Pick another time.');
     const endMin = startMin + svc.duration_min;
     // A customer cannot hold two overlapping appointments
     const mine = await t.many('SELECT start_min, end_min FROM bookings WHERE customer_id=$1 AND date=$2 AND status IN (\'CONFIRMED\',\'ARRIVED\',\'IN_SERVICE\')', [customerId, input.date]);
-    if (mine.some((m) => m.start_min < endMin && startMin < m.end_min)) throw conflict('CUSTOMER_OVERLAP', 'You already have a booking that overlaps this time.');
+    if (mine.some((m) => m.start_min < endMin && startMin < m.end_min)) throw conflict('CUSTOMER_OVERLAP', 'You already have a booking at this time.');
     const online = input.payment_option === 'ONLINE';
     const start = scheduledInstant(input.date, startMin);
     const holdUntil = online ? new Date(clock.now().getTime() + (await getSettings(t)).payment_hold_min * 60000).toISOString() : null;
@@ -140,7 +140,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
           bd?.booking_fee_kobo ?? 0, bd?.ps_fee_kobo ?? 0, bd?.barber_fee_kobo ?? 0, bd?.platform_charge_kobo ?? 0, online && bd ? bd.payout_kobo : null]);
     } catch (e: any) {
       // Backstop: the unique index / exclusion constraint fired (should be unreachable behind the barber lock, but the DB is the final judge).
-      if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'That time was just taken. Please pick another slot.');
+      if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'Someone just took that time. Pick another time.');
       throw e;
     }
     if (ent?.credit_id) await t.query('UPDATE session_credits SET used_booking_id=$1 WHERE id=$2', [b.id, ent.credit_id]);
@@ -153,7 +153,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
 
 async function announceConfirmed(c: Conn, b: BookingRow) {
   const when = fmtWhen(b.date, b.start_min);
-  await notify(c, b.customer_id, 'BOOKING_CONFIRMED', 'Booking confirmed', `${b.service_name} on ${when}. ${b.payment_option === 'ON_ARRIVAL' ? `Pay ${naira(b.price_kobo)} on arrival.` : b.payment_option === 'PLAN' ? 'Covered by your plan session.' : b.payment_option === 'CREDIT' ? 'Covered by your session credit.' : 'Payment received.'}`, b.id);
+  await notify(c, b.customer_id, 'BOOKING_CONFIRMED', 'Booking confirmed', `${b.service_name} on ${when}. ${b.payment_option === 'ON_ARRIVAL' ? `Pay ${naira(b.price_kobo)} on arrival.` : b.payment_option === 'PLAN' ? 'Your plan session pays for this.' : b.payment_option === 'CREDIT' ? 'Your session credit pays for this.' : 'We got your payment.'}`, b.id);
   await notify(c, await barberUserId(c, b.barber_id), 'NEW_BOOKING', 'New booking', `${await customerName(c, b.customer_id)} booked ${b.service_name} on ${when}${b.payment_option === 'PLAN' ? ' (plan session)' : b.payment_option === 'CREDIT' ? ' (session credit)' : ''}.`, b.id);
 }
 
@@ -175,10 +175,10 @@ export type PaymentOutcome = 'confirmed' | 'already_paid' | 'late_payment' | 'sl
 export async function applyVerifiedPayment(t: Conn, bookingId: number, via: string, reference?: string): Promise<PaymentOutcome> {
   // Lock order is always barber -> booking (same as createBooking), so a payment and a fresh booking for the same barber serialise instead of deadlocking.
   const pre = await t.maybeOne<{ barber_id: number }>('SELECT barber_id FROM bookings WHERE id=$1', [bookingId]);
-  if (!pre) throw notFound('Booking not found');
+  if (!pre) throw notFound('We could not find that booking.');
   await t.query('SELECT 1 FROM barbers WHERE id=$1 FOR UPDATE', [pre.barber_id]);
   const b = await getBookingForUpdate(t, bookingId);     // row lock: serialises with attempt-expiry, cancel and duplicate payments
-  if (!b) throw notFound('Booking not found');
+  if (!b) throw notFound('We could not find that booking.');
   const now = isoNow();
   if (b.status === 'PENDING_PAYMENT') {
     // The attempt reserved nothing, so the slot must be RE-CHECKED now, under the barber lock. If someone else took it: do not confirm.
@@ -187,14 +187,14 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
       await t.query(`UPDATE bookings SET status='CANCELLED', payment_status='VOID', cancelled_at=$1, cancelled_by='system', hold_expires_at=NULL WHERE id=$2`, [now, b.id]);
       await flagRefund(t, b, reference, 'Slot was taken before payment completed');
       await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_SLOT_TAKEN', { via, amount_kobo: b.price_kobo, note: 'slot no longer free at payment time - booking NOT confirmed; payment flagged NEEDS_REFUND' });
-      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} arrived after someone else booked that time, so your booking was not confirmed. We're refunding ${naira(b.price_kobo)} to your card - please book another time.`, b.id);
+      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} came in after someone else booked that time. Your booking is not confirmed. We are refunding ${naira(b.price_kobo)} to your card. Please book another time.`, b.id);
       return 'slot_taken';
     }
     assertTransition('PENDING_PAYMENT', 'CONFIRMED');
     await t.query(`UPDATE bookings SET status='CONFIRMED', payment_status='PAID', paid_via=$1, paid_at=$2, hold_expires_at=NULL WHERE id=$3`, [via, now, b.id]);
     await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_CONFIRMED', { via, amount_kobo: b.price_kobo });
     await announceConfirmed(t, (await getBooking(t, b.id))!);
-    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We received ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for your ${b.service_name}. Your slot is now secured.`, b.id);
+    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We got ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for your ${b.service_name}. Your time is saved.`, b.id);
     return 'confirmed';
   }
   if (['PAID', 'CREDIT_PENDING', 'CREDITED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
@@ -205,7 +205,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
   // Money arrived for an attempt that was already closed (expired / abandoned). The booking stays Incomplete (barber never sees it); the money is flagged for refund.
   await flagRefund(t, b, reference, 'Payment arrived after the attempt was closed');
   await audit(t, b.id, { id: null, role: 'system' }, 'LATE_PAYMENT', { via, status: b.status, note: 'payment received after the attempt was closed - booking NOT confirmed; payment flagged NEEDS_REFUND' });
-  await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment received - refund on its way', `We received ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} after your ${b.service_name} attempt had already closed, so no booking was made. It is being refunded to you.`, b.id);
+  await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'We got your payment. Your refund is coming.', `We received ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} after your ${b.service_name} try had closed, so we made no booking. We are sending the money back to you.`, b.id);
   return 'late_payment';
 }
 
@@ -231,10 +231,10 @@ export async function queueInfo(c: Conn, b: BookingRow, preloaded?: BookingRow[]
   const ahead = idx; // includes the customer currently in the chair
   const position = idx + 1;
   let state: QueueState; let message: string;
-  if (b.status === 'IN_SERVICE') { state = 'BEING_SERVED'; message = "You're being served now"; }
-  else if (ahead === 0) { state = 'READY'; message = b.status === 'ARRIVED' ? 'Your barber is ready for you' : 'Your barber is ready - tap "I\'m Here" when you arrive'; }
+  if (b.status === 'IN_SERVICE') { state = 'BEING_SERVED'; message = "You are in the chair now."; }
+  else if (ahead === 0) { state = 'READY'; message = b.status === 'ARRIVED' ? 'Your barber is ready for you.' : 'Your barber is ready. Tap "I\'m Here" when you get there.'; }
   else if (ahead === 1 && serving) { state = 'NEXT'; message = "You're next"; }
-  else { state = 'IN_LINE'; message = `You're #${position} in line - ${ahead} customer${ahead === 1 ? '' : 's'} ahead`; }
+  else { state = 'IN_LINE'; message = `You are number ${position} in line. ${ahead} customer${ahead === 1 ? ' is' : 's are'} ahead of you.`; }
   return { state, position, ahead, message, now_serving: serving, is_today: isToday, total_in_queue: q.length };
 }
 
@@ -251,9 +251,9 @@ export async function refreshQueueNotifications(c: Conn, barberId: number, date:
     await c.query('UPDATE bookings SET last_queue_pos=$1 WHERE id=$2', [key, b.id]);
     if (b.status !== 'ARRIVED') continue;
     const ahead = idx;
-    if (ahead === 0) await notify(c, b.customer_id, 'YOUR_TURN', 'Your barber is ready', 'Please head to the chair - your barber is ready for you.', b.id);
-    else if (ahead === 1 && serving) await notify(c, b.customer_id, 'YOURE_NEXT', "You're next", "You're next in line. Stay close!", b.id);
-    else await notify(c, b.customer_id, 'QUEUE_CHANGED', 'Queue update', `You're now #${pos} in line (${ahead} ahead).`, b.id);
+    if (ahead === 0) await notify(c, b.customer_id, 'YOUR_TURN', 'Your barber is ready', 'Please come to the chair. Your barber is ready.', b.id);
+    else if (ahead === 1 && serving) await notify(c, b.customer_id, 'YOURE_NEXT', "You're next", "You are next. Stay close!", b.id);
+    else await notify(c, b.customer_id, 'QUEUE_CHANGED', 'Queue update', `You are now number ${pos} in line. ${ahead} ahead of you.`, b.id);
   }
 }
 
@@ -263,20 +263,20 @@ async function setStatus(c: Conn, b: BookingRow, to: Status, sets: Record<string
   const cols = Object.keys(sets);   // column names come from code, never from user input
   const sql = `UPDATE bookings SET status=$1${cols.map((k, i) => `, ${k}=$${i + 2}`).join('')} WHERE id=$${cols.length + 2} AND status=$${cols.length + 3}`;
   const r = await c.query(sql, [to, ...cols.map((k) => sets[k]), b.id, b.status]);
-  if (r.rowCount !== 1) throw conflict('STALE_STATE', 'This booking was just changed by someone else. Refresh and try again.');
+  if (r.rowCount !== 1) throw conflict('STALE_STATE', 'This booking just changed. Refresh the page and try again.');
 }
 
 /* ---------------- customer actions ---------------- */
 export async function customerCancel(db: Db, customerId: number, bookingId: number) {
   return db.tx(async (t) => {
     const b = await getBookingForUpdate(t, bookingId);
-    if (!b || b.customer_id !== customerId) throw notFound('Booking not found');
+    if (!b || b.customer_id !== customerId) throw notFound('We could not find that booking.');
     if (!['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status)) {
-      throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking is ${b.status} and cannot be cancelled.`);
+      throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking is ${b.status}. You cannot cancel it.`);
     }
     const set = await getSettings(t);
     if (!canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min)) {
-      throw new AppError(403, 'CANCEL_LOCKED', `Cancellation closed ${set.cancel_cutoff_min} minutes before your appointment, so this time stays booked for you. If you don't make it, it counts as a missed session: no refund, but a paid session becomes one credit with this barber. Please contact your barber if something came up.`);
+      throw new AppError(403, 'CANCEL_LOCKED', `You can no longer cancel. The cut-off is ${set.cancel_cutoff_min} minutes before your visit, so this time stays yours. If you miss it, you get no refund. But if you paid, you get one credit with this barber. Contact your barber if something came up.`);
     }
     const now = isoNow();
     const abandoned = isIncomplete({ ...b, status: 'PENDING_PAYMENT' });   // walked away from an unpaid Pay-now attempt: barber never hears about it
@@ -286,30 +286,30 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     if (b.payment_status === 'PAID' && (b.plan_purchase_id || b.credit_id)) {
       // Cancelled in time: the plan session / credit simply goes back to the customer (same expiry rules still apply).
       await restoreEntitlement(t, b);
-      note = b.plan_purchase_id ? 'Your plan session has been returned.' : 'Your session credit has been returned.';
+      note = b.plan_purchase_id ? 'We gave your plan session back.' : 'We gave your session credit back.';
     } else if (b.payment_status === 'PAID' && b.payment_option === 'ONLINE') {
       // Prepaid and cancelled in time => a REFUND (never a credit). It waits for admin approval and auto-approves after the admin's hold time.
       refundDue = await openRefundRequest(t, b, 'customer cancelled in time');
       payStatus = 'REFUND_PENDING';
-      note = `Your ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} refund has been requested. It is approved within ${refundDue.hours} hour${refundDue.hours === 1 ? '' : 's'} and then sent back to your original payment method.`;
+      note = `We got your refund request for ${naira(b.price_kobo + (b.booking_fee_kobo || 0))}. We will approve it within ${refundDue.hours} hour${refundDue.hours === 1 ? '' : 's'}. Then we send the money back the way you paid.`;
     }
     await setStatus(t, b, 'CANCELLED', { payment_status: payStatus, cancelled_at: now, cancelled_by: 'customer', hold_expires_at: null });
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'CANCELLED', {
       payment_status: payStatus,
       ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : note ? { note } : {}),
     });
-    if (!abandoned) await notify(t, await barberUserId(t, b.barber_id), 'BOOKING_CANCELLED', 'Booking cancelled', `${await customerName(t, customerId)} cancelled ${b.service_name} on ${fmtWhen(b.date, b.start_min)}. The slot is open again.`, b.id);
-    await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left this booking before paying, so it was marked incomplete. You have not been charged.' : `Your booking was cancelled and the slot has been released. ${note}`.trim(), b.id);
+    if (!abandoned) await notify(t, await barberUserId(t, b.barber_id), 'BOOKING_CANCELLED', 'Booking cancelled', `${await customerName(t, customerId)} cancelled ${b.service_name} on ${fmtWhen(b.date, b.start_min)}. The time is free again.`, b.id);
+    await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left before you paid, so we marked this booking as not finished. You were not charged.' : `Your booking is cancelled. The time is free again. ${note}`.trim(), b.id);
     await refreshQueueNotifications(t, b.barber_id, b.date);
     return (await getBooking(t, b.id))!;
   });
 }
 
 async function markArrived(t: Conn, b: BookingRow, actor: Actor, source: 'CUSTOMER' | 'BARBER') {
-  if (b.date !== lagosDate()) throw new AppError(409, 'NOT_TODAY', 'Check-in is only available on the day of the booking.');
+  if (b.date !== lagosDate()) throw new AppError(409, 'NOT_TODAY', 'You can only check in on the day of your booking.');
   if (b.status !== 'CONFIRMED') {
-    if (b.status === 'PENDING_PAYMENT') throw new AppError(409, 'PAYMENT_PENDING', 'Payment is still pending for this booking.');
-    throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking is ${b.status}; it cannot be checked in.`);
+    if (b.status === 'PENDING_PAYMENT') throw new AppError(409, 'PAYMENT_PENDING', 'This booking is not paid yet.');
+    throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking is ${b.status}. You cannot check in.`);
   }
   const now = isoNow();
   await setStatus(t, b, 'ARRIVED', { arrival_time: now, arrival_source: source, barber_hold: false });
@@ -321,7 +321,7 @@ async function markArrived(t: Conn, b: BookingRow, actor: Actor, source: 'CUSTOM
 export async function customerCheckIn(db: Db, customerId: number, bookingId: number) {
   return db.tx(async (t) => {
     const b = await getBookingForUpdate(t, bookingId);
-    if (!b || b.customer_id !== customerId) throw notFound('Booking not found');
+    if (!b || b.customer_id !== customerId) throw notFound('We could not find that booking.');
     await markArrived(t, b, { id: customerId, role: 'customer' }, 'CUSTOMER');
     return (await getBooking(t, b.id))!;
   });
@@ -333,7 +333,7 @@ export type BarberAction = 'mark-present' | 'start' | 'complete' | 'record-payme
 export async function barberAction(db: Db, barberUid: number, barberId: number, bookingId: number, action: BarberAction, body: any = {}) {
   return db.tx(async (t) => {
     const b = await getBookingForUpdate(t, bookingId);
-    if (!b || b.barber_id !== barberId || isIncomplete(b)) throw notFound('Booking not found');
+    if (!b || b.barber_id !== barberId || isIncomplete(b)) throw notFound('We could not find that booking.');
     const actor: Actor = { id: barberUid, role: 'barber' };
     const now = isoNow();
     switch (action) {
@@ -341,17 +341,17 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         await markArrived(t, b, actor, 'BARBER');
         break;
       case 'start': {
-        if (b.date !== lagosDate()) throw new AppError(409, 'NOT_TODAY', "Only today's bookings can be started.");
+        if (b.date !== lagosDate()) throw new AppError(409, 'NOT_TODAY', "You can only start today's bookings.");
         if (b.status !== 'ARRIVED') {
           throw new AppError(409, b.status === 'CONFIRMED' ? 'NOT_ARRIVED' : 'ILLEGAL_TRANSITION',
-            b.status === 'CONFIRMED' ? 'Customer has not arrived yet. Tap "Mark Present" first.' : `Cannot start a booking that is ${b.status}.`);
+            b.status === 'CONFIRMED' ? 'The customer has not arrived yet. Tap "Mark Present" first.' : `You cannot start a booking that is ${b.status}.`);
         }
-        if (await t.maybeOne(`SELECT id FROM bookings WHERE barber_id=$1 AND status='IN_SERVICE'`, [barberId])) throw conflict('ALREADY_SERVING', 'You are already serving someone. Complete that haircut first.');
+        if (await t.maybeOne(`SELECT id FROM bookings WHERE barber_id=$1 AND status='IN_SERVICE'`, [barberId])) throw conflict('ALREADY_SERVING', 'You are already with a customer. Finish that haircut first.');
         try {
           // scheduled time is NEVER rewritten - early arrivals are simply served early.
           await setStatus(t, b, 'IN_SERVICE', { service_start: now });
         } catch (e: any) {
-          if (isUniqueViolation(e)) throw conflict('ALREADY_SERVING', 'You are already serving someone. Complete that haircut first.'); // uq_bookings_one_in_service
+          if (isUniqueViolation(e)) throw conflict('ALREADY_SERVING', 'You are already with a customer. Finish that haircut first.'); // uq_bookings_one_in_service
           throw e;
         }
         await audit(t, b.id, actor, 'STARTED', { scheduled_at: b.scheduled_at, arrival_time: b.arrival_time, service_start: now, early: new Date(now) < new Date(b.scheduled_at) });
@@ -359,18 +359,18 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
       }
       case 'record-payment': {
         const method = String(body?.method || '').toUpperCase();
-        if (!['CASH', 'TRANSFER'].includes(method)) throw badRequest('method must be "cash" or "transfer"');
-        if (b.payment_option !== 'ON_ARRIVAL') throw new AppError(409, 'NOT_PAY_ON_ARRIVAL', 'This booking is an online payment; nothing to record.');
-        if (b.payment_status !== 'PAYMENT_DUE') throw new AppError(409, 'ALREADY_PAID', `Payment status is ${b.payment_status}.`);
-        if (!['ARRIVED', 'IN_SERVICE'].includes(b.status)) throw new AppError(409, 'ILLEGAL_STATE', 'Payment can be recorded once the customer has arrived.');
+        if (!['CASH', 'TRANSFER'].includes(method)) throw badRequest('Choose "cash" or "transfer".');
+        if (b.payment_option !== 'ON_ARRIVAL') throw new AppError(409, 'NOT_PAY_ON_ARRIVAL', 'The customer paid online. There is nothing to record.');
+        if (b.payment_status !== 'PAYMENT_DUE') throw new AppError(409, 'ALREADY_PAID', `The payment status is ${b.payment_status}.`);
+        if (!['ARRIVED', 'IN_SERVICE'].includes(b.status)) throw new AppError(409, 'ILLEGAL_STATE', 'You can record the payment after the customer arrives.');
         await t.query(`UPDATE bookings SET payment_status='PAID', paid_via=$1, paid_at=$2 WHERE id=$3`, [method, now, b.id]);
         await audit(t, b.id, actor, 'PAYMENT_RECORDED', { method, amount_kobo: b.price_kobo });
         await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment recorded', `${naira(b.price_kobo)} received (${method.toLowerCase()}). Thank you!`, b.id);
         break;
       }
       case 'complete': {
-        if (b.status !== 'IN_SERVICE') throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot complete a booking that is ${b.status}.`);
-        if (b.payment_status === 'PAYMENT_DUE') throw new AppError(409, 'PAYMENT_REQUIRED', 'Record the cash/transfer payment before completing this pay-on-arrival booking.');
+        if (b.status !== 'IN_SERVICE') throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot complete a booking that is ${b.status}.`);
+        if (b.payment_status === 'PAYMENT_DUE') throw new AppError(409, 'PAYMENT_REQUIRED', 'Record the cash or transfer payment first. Then complete this pay-on-arrival booking.');
         await setStatus(t, b, 'COMPLETED', { service_complete: now });
         await audit(t, b.id, actor, 'COMPLETED', { service_start: b.service_start, service_complete: now });
         await afterComplete(t, b);
@@ -378,8 +378,8 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         break;
       }
       case 'no-show': {
-        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot mark a ${b.status} booking as no-show.`);
-        if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the scheduled time has passed.');
+        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
+        if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the booked time has passed.');
         await setStatus(t, b, 'NO_SHOW');
         if (b.payment_status === 'PENDING' || b.payment_status === 'PAYMENT_DUE') await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
         // Missed PAID session (online or plan session): no refund; ONE credit with the SAME barber. A session already paid by a credit is not re-credited (that credit was the make-good).
@@ -387,28 +387,28 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         const credit = b.payment_status === 'PAID' && b.payment_option !== 'CREDIT' && s.credit_on_missed_session ? await issueCredit(t, b, 'NO_SHOW', s) : null;
         if (credit) await t.query(`UPDATE bookings SET payment_status='CREDITED' WHERE id=$1`, [b.id]);
         await audit(t, b.id, actor, 'NO_SHOW', { credit_id: credit?.id ?? null, paid: b.payment_status === 'PAID', via: b.payment_option });
-        await notify(t, b.customer_id, 'NO_SHOW', 'Marked as no-show', `You were marked as a no-show for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ' No refund, but you have 1 session credit with this barber.' : ''}`, b.id);
+        await notify(t, b.customer_id, 'NO_SHOW', 'Marked as no-show', `You did not come for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}, so we marked a no-show.${credit ? ' You get no refund, but you now have 1 session credit with this barber.' : ''}`, b.id);
         break;
       }
       case 'not-served': {
-        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot mark a ${b.status} booking as not served.`);
+        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as not served.`);
         const entitlement = b.payment_status === 'PAID' && !!(b.plan_purchase_id || b.credit_id);   // the barber's fault: plan session / credit goes straight back
         const credit = b.payment_status === 'PAID' && !entitlement && b.payment_option === 'ONLINE';   // (name kept: "refund due")
         if (entitlement) await restoreEntitlement(t, b);
         const refundDue = credit ? await openRefundRequest(t, b, 'barber could not serve the booking') : null;
         await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'REFUND_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
         await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : entitlement ? { note: 'plan session / credit returned' } : {}) });
-        await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` Your ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} refund has been requested and is approved within ${refundDue!.hours} hour${refundDue!.hours === 1 ? '' : 's'}.` : entitlement ? ' Your session has been returned.' : ''}`, b.id);
+        await notify(t, b.customer_id, 'NOT_SERVED', "We could not serve you", `Sorry. Your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` We got your refund request for ${naira(b.price_kobo + (b.booking_fee_kobo || 0))}. We will approve it within ${refundDue!.hours} hour${refundDue!.hours === 1 ? '' : 's'}.` : entitlement ? ' We gave your session back.' : ''}`, b.id);
         break;
       }
       case 'skip': {
-        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot skip a ${b.status} booking.`);
+        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot skip a ${b.status} booking.`);
         await t.query('UPDATE bookings SET skipped_at=$1 WHERE id=$2', [now, b.id]);
         await audit(t, b.id, actor, 'SKIPPED', { note: 'moved to back of queue' });
         break;
       }
       case 'wait': {
-        if (b.status !== 'CONFIRMED') throw new AppError(409, 'ILLEGAL_STATE', 'Wait applies to customers who have not arrived yet.');
+        if (b.status !== 'CONFIRMED') throw new AppError(409, 'ILLEGAL_STATE', 'You can wait only for customers who have not arrived yet.');
         await t.query('UPDATE bookings SET barber_hold=TRUE WHERE id=$1', [b.id]);
         await audit(t, b.id, actor, 'WAITING_FOR_CUSTOMER', {});
         break;

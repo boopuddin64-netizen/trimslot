@@ -90,7 +90,7 @@ export async function applyNettingForPayment(t: Conn, paymentId: number): Promis
   if (applied < p.debt_netted_kobo) await audit(t, null, { id: null, role: 'system' }, 'LEDGER_OVERNETTED', { payment_id: paymentId, barber_id: p.barber_id, netted_kobo: p.debt_netted_kobo, applied_kobo: applied, note: 'debt was settled/waived while checkout was open; barber share was reduced by the difference - review' });
   if (applied > 0) {
     const bu = await t.maybeOne<any>('SELECT user_id FROM barbers WHERE id=$1', [p.barber_id]);
-    if (bu) await notify(t, bu.user_id, 'LEDGER_SETTLED', 'Platform balance updated', `${naira(applied)} of your platform commission was settled from an in-app payment. Remaining balance: ${naira(await outstandingKobo(t, p.barber_id))}.`);
+    if (bu) await notify(t, bu.user_id, 'LEDGER_SETTLED', 'Platform balance updated', `${naira(applied)} of your platform commission was paid from an in-app payment. Balance left: ${naira(await outstandingKobo(t, p.barber_id))}.`);
   }
   return applied;
 }
@@ -134,10 +134,10 @@ export async function assertBookable(c: Conn, barberId: number, paymentOption: s
   const s = await getSettings(c);
   if (s.maintenance_mode) throw new AppError(503, 'MAINTENANCE', s.maintenance_message);
   const b = await c.maybeOne<any>('SELECT booking_paused, pause_reason FROM barbers WHERE id=$1', [barberId]);
-  if (b?.booking_paused) throw new AppError(409, 'BARBER_PAUSED', 'This shop has paused new bookings for now. Please try again later.');
+  if (b?.booking_paused) throw new AppError(409, 'BARBER_PAUSED', 'This shop has paused new bookings. Please try again later.');
   if (paymentOption === 'ON_ARRIVAL') {
-    if (!s.feature_pay_on_arrival) throw new AppError(409, 'PAY_ON_ARRIVAL_OFF', 'Pay on arrival is not available right now. Please pay online.');
-    if ((await ledgerBlocked(c, barberId, s)).blocked) throw new AppError(409, 'PAY_ON_ARRIVAL_OFF', 'This shop only accepts online payment right now. Please pay online.');
+    if (!s.feature_pay_on_arrival) throw new AppError(409, 'PAY_ON_ARRIVAL_OFF', 'Pay on arrival is off right now. Please pay online.');
+    if ((await ledgerBlocked(c, barberId, s)).blocked) throw new AppError(409, 'PAY_ON_ARRIVAL_OFF', 'This shop takes online payment only right now. Please pay online.');
   }
 }
 
@@ -152,7 +152,7 @@ export async function sendLedgerReminders(t: Conn, onlyBarberId?: number, force 
     const old = clock.now().getTime() - new Date(r.oldest).getTime() > 7 * 86400000;
     if (!force && !blocked.blocked && !old) continue;
     if (!force && await t.maybeOne(`SELECT 1 FROM notifications WHERE user_id=$1 AND type='LEDGER_REMINDER' AND created_at > ($2::timestamptz - interval '3 days')`, [r.user_id, isoNow()])) continue;
-    await notify(t, r.user_id, 'LEDGER_REMINDER', 'Platform balance owed', `${r.shop_name} owes ${naira(Number(r.owed))} in platform commission for bookings paid outside the app. It is deducted automatically from your next online payments.${blocked.blocked ? ' Pay on arrival is paused for your shop until this is settled.' : ''}`);
+    await notify(t, r.user_id, 'LEDGER_REMINDER', 'Platform balance owed', `${r.shop_name} owes ${naira(Number(r.owed))} in platform commission for bookings paid outside the app. We take it out of your next online payments.${blocked.blocked ? ' Pay on arrival is paused for your shop until you pay this.' : ''}`);
     n++;
   }
   return n;

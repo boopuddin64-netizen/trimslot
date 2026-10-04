@@ -112,7 +112,7 @@ test('barber onboarding: new barber is hidden + unbookable until verified; exist
     assert.equal(svc.status, 201);
     const svcId = (await svc.json() as any).id;
     assert.equal((await j(base, `/api/barbers/${newId}/slots?service_id=${svcId}&date=2026-09-30`)).status, 404);
-    await assert.rejects(createBooking(db, customerIds[0], { barber_id: newId, service_id: svcId, date: '2026-09-30', time: '10:00', payment_option: 'ON_ARRIVAL' }), /not found/i);
+    await assert.rejects(createBooking(db, customerIds[0], { barber_id: newId, service_id: svcId, date: '2026-09-30', time: '10:00', payment_option: 'ON_ARRIVAL' }), /could not find/i);
     // barber can still see own dashboard
     assert.equal((await j(base, '/api/barber/today', undefined, cookie)).status, 200);
     // admin verify (same statements as the CLI)

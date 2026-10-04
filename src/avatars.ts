@@ -21,13 +21,13 @@ const urlFor = (id: number) => `/api/avatars/${id}?v=${Date.now().toString(36)}`
 export function avatarUploadHandler(db: Db) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (req.user!.role !== 'customer') throw new AppError(403, 'FORBIDDEN', 'Profile pictures are for customer accounts. Barbers add a shop photo in Settings.');
+      if (req.user!.role !== 'customer') throw new AppError(403, 'FORBIDDEN', 'Only customers add a profile picture. Barbers add a shop photo in Settings.');
       const buf: Buffer | undefined = Buffer.isBuffer(req.body) ? req.body : Buffer.isBuffer((req as any).rawBody) ? (req as any).rawBody : undefined;
-      if (!buf || !buf.length) throw badRequest('Send the image as the request body (Content-Type: image/jpeg, image/png or image/webp).');
-      if (buf.length > MAX_AVATAR_BYTES) throw new AppError(413, 'PHOTO_TOO_LARGE', `Picture is too large (max ${Math.round(MAX_AVATAR_BYTES / 1024)} KB after compression).`);
+      if (!buf || !buf.length) throw badRequest('Send the picture as a JPEG, PNG or WebP image.');
+      if (buf.length > MAX_AVATAR_BYTES) throw new AppError(413, 'PHOTO_TOO_LARGE', `That picture is too big. Keep it under ${Math.round(MAX_AVATAR_BYTES / 1024)} KB.`);
       const mime = sniffImage(buf);
-      if (!mime) throw badRequest('Only JPEG, PNG or WebP pictures are allowed.');
-      if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== mime) throw badRequest('Picture content does not match its declared type.');
+      if (!mime) throw badRequest('Use a JPEG, PNG or WebP picture.');
+      if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== mime) throw badRequest('We could not read that picture. Try a different one.');
       const id = req.user!.id; const url = urlFor(id);
       await db.tx(async (t) => {
         await t.query(`INSERT INTO user_avatars (user_id, mime, data, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (user_id) DO UPDATE SET mime=EXCLUDED.mime, data=EXCLUDED.data, updated_at=EXCLUDED.updated_at`, [id, mime, buf, isoNow()]);
@@ -44,14 +44,14 @@ export function registerAvatars(api: Router, db: Db, wrap: (fn: H) => any, requi
     res.setHeader('Content-Type', p.mime); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cache-Control', cache); res.send(p.data);
   };
   api.get('/avatars/:id', requireAuth, wrap(async (req, res) => {
-    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('No picture');
+    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('There is no picture.');
     const me = req.user!;
     let ok = me.id === id;
     if (!ok && me.role === 'barber' && me.barberId) {
       ok = !!(await db.maybeOne(`SELECT 1 AS x FROM bookings WHERE barber_id=$1 AND customer_id=$2 UNION ALL SELECT 1 FROM waitlist WHERE barber_id=$1 AND customer_id=$2 LIMIT 1`, [me.barberId, id]));
     }
     const p = ok ? await db.maybeOne<{ mime: string; data: Buffer }>('SELECT mime, data FROM user_avatars WHERE user_id=$1', [id]) : undefined;
-    if (!p) throw notFound('No picture');
+    if (!p) throw notFound('There is no picture.');
     send(res, p, req.query.v ? 'private, max-age=31536000, immutable' : 'private, max-age=60');
   }));
   api.delete('/me/avatar', requireAuth, wrap(async (req, res) => {
@@ -60,24 +60,24 @@ export function registerAvatars(api: Router, db: Db, wrap: (fn: H) => any, requi
   }));
   /* ---------- admin ---------- */
   api.get('/admin/avatars/:id', adminGuard, wrap(async (req, res) => {
-    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('No picture');
+    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('There is no picture.');
     const p = await db.maybeOne<{ mime: string; data: Buffer }>('SELECT mime, data FROM user_avatars WHERE user_id=$1', [id]);
-    if (!p) throw notFound('No picture');
+    if (!p) throw notFound('There is no picture.');
     send(res, p, 'private, no-store');
   }));
   /** Moderation: remove a customer's picture (the reason is shown to the customer). */
   api.post('/admin/users/:id/avatar/remove', adminGuard, wrap(async (req, res) => {
-    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('User not found');
-    const d = z.object({ reason: z.string().trim().min(3, 'Write a short reason').max(200) }).safeParse(req.body ?? {});
-    if (!d.success) throw badRequest(d.error.issues[0]?.message || 'Write a short reason');
+    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('We could not find that user.');
+    const d = z.object({ reason: z.string().trim().min(3, 'Write a short reason.').max(200) }).safeParse(req.body ?? {});
+    if (!d.success) throw badRequest(d.error.issues[0]?.message || 'Write a short reason.');
     res.json(await db.tx(async (t) => {
       const u = await t.maybeOne<any>(`SELECT id, avatar_url FROM users WHERE id=$1 AND role='customer' FOR UPDATE`, [id]);
-      if (!u) throw notFound('Customer not found');
+      if (!u) throw notFound('We could not find that customer.');
       if (!u.avatar_url) return { removed: false };
       await t.query('DELETE FROM user_avatars WHERE user_id=$1', [id]);
       await t.query('UPDATE users SET avatar_url=NULL, avatar_removed_at=$2 WHERE id=$1', [id, isoNow()]);
       await audit(t, null, ADMIN, 'ADMIN_AVATAR_REMOVED', { user_id: id, reason: d.data.reason });
-      await notify(t, id, 'AVATAR_REMOVED', 'Profile picture removed', `Your profile picture was removed by TrimSlot: ${d.data.reason}. You can upload a different one.`);
+      await notify(t, id, 'AVATAR_REMOVED', 'Profile picture removed', `TrimSlot removed your profile picture: ${d.data.reason}. You can add a different one.`);
       return { removed: true };
     }));
   }));

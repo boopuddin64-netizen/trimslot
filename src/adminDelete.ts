@@ -18,8 +18,8 @@ export const RESTORE_DAYS = 30;
 const TYPES = ['customer', 'barber', 'plan', 'review', 'report', 'booking'] as const;
 type T = (typeof TYPES)[number];
 const idOf = (v: unknown) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw notFound(); return n; };
-const typeOf = (v: unknown): T => { if (!(TYPES as readonly string[]).includes(String(v))) throw notFound('Unknown type'); return v as T; };
-const reasonOf = (body: unknown) => { const r = z.object({ reason: z.string().trim().min(3, 'Write a reason (at least 3 characters)').max(300), cancel_bookings: z.boolean().optional() }).safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Invalid request'); return r.data; };
+const typeOf = (v: unknown): T => { if (!(TYPES as readonly string[]).includes(String(v))) throw notFound('We do not know that type.'); return v as T; };
+const reasonOf = (body: unknown) => { const r = z.object({ reason: z.string().trim().min(3, 'Write a reason (at least 3 letters).').max(300), cancel_bookings: z.boolean().optional() }).safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Please check what you typed and try again.'); return r.data; };
 const cutoff = () => new Date(clock.now().getTime() - RESTORE_DAYS * 86400000).toISOString();
 const daysLeft = (d: Date | string) => Math.max(0, Math.ceil((new Date(d).getTime() + RESTORE_DAYS * 86400000 - clock.now().getTime()) / 86400000));
 
@@ -33,17 +33,17 @@ async function cancelUpcoming(t: Conn, where: string, params: unknown[], who: 'c
   for (const k of rows) {
     let pay = 'VOID'; let note = '';
     if (k.payment_status === 'PAID') {
-      if (k.plan_purchase_id || k.credit_id) { await restoreEntitlement(t, k); note = ' Your plan session / credit has been returned.'; }
+      if (k.plan_purchase_id || k.credit_id) { await restoreEntitlement(t, k); note = ' We gave your plan session or credit back.'; }
       else {
         const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [k.id]);
         if (p && !p.refund_status) { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [p.reference, `${what}: booking cancelled`]); refs.push(p.reference); }
-        note = ' Your payment is being refunded to your original payment method.';
+        note = ' We are sending your money back the way you paid.';
       }
     }
     await t.query(`UPDATE bookings SET status='CANCELLED', payment_status=$2, cancelled_at=$3, cancelled_by='admin', hold_expires_at=NULL WHERE id=$1`, [k.id, pay, isoNow()]);
     await audit(t, k.id, ADMIN, 'ADMIN_BOOKING_CANCELLED_DELETE', { reason: what });
-    if (who === 'barber') await notify(t, k.customer_id, 'BOOKING_CANCELLED', 'Booking cancelled', `${k.shop_name} is no longer available, so your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} was cancelled.${note}`.trim(), k.id);
-    else await notify(t, k.barber_user_id, 'BOOKING_CANCELLED', 'Booking cancelled', `A customer account was removed, so the ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} was cancelled.`, k.id);
+    if (who === 'barber') await notify(t, k.customer_id, 'BOOKING_CANCELLED', 'Booking cancelled', `${k.shop_name} is not available any more, so we cancelled your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)}.${note}`.trim(), k.id);
+    else await notify(t, k.barber_user_id, 'BOOKING_CANCELLED', 'Booking cancelled', `A customer account was removed, so the ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} is cancelled.`, k.id);
   }
   return { cancelled: rows.length, refs };
 }
@@ -56,7 +56,7 @@ export async function purgeCore(t: Conn, o: { users?: number[]; barbers?: number
   const ppIds = (await t.many<{ id: number }>(`SELECT id FROM plan_purchases WHERE plan_id = ANY($1::int[]) OR customer_id = ANY($2::int[]) OR barber_id = ANY($3::int[])`, [planIds, U, B])).map((r) => r.id);
   const pays = await t.many<{ id: number; reference: string; status: string }>(`SELECT id, reference, status FROM payments WHERE booking_id = ANY($1::int[]) OR plan_purchase_id = ANY($2::int[]) OR barber_id = ANY($3::int[])`, [bookingIds, ppIds, B]);
   const paid = pays.filter((p) => p.status === 'SUCCESS').length;
-  if (paid && !allowPaid) throw conflict('HAS_PAYMENTS', `This has ${paid} successful payment${paid === 1 ? '' : 's'} on record, so it cannot be deleted forever (financial records are kept). Soft-deleting hides it everywhere.`);
+  if (paid && !allowPaid) throw conflict('HAS_PAYMENTS', `This has ${paid} paid payment${paid === 1 ? '' : 's'} on record, so you cannot delete it forever. We keep money records. A normal delete hides it everywhere.`);
   const payIds = pays.map((p) => p.id), refs = pays.map((p) => p.reference);
   const ledgerIds = (await t.many<{ id: number }>(`SELECT id FROM commission_ledger WHERE barber_id = ANY($1::int[]) OR booking_id = ANY($2::int[])`, [B, bookingIds])).map((r) => r.id);
   const creditIds = (await t.many<{ id: number }>(`SELECT id FROM session_credits WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[]) OR source_booking_id = ANY($3::int[])`, [U, B, bookingIds])).map((r) => r.id);
@@ -112,8 +112,8 @@ export function registerAdminDelete(api: Router, db: Db, guard: any, wrap: (fn: 
     const out = await db.tx(async (t) => {
       const now = isoNow();
       if (type === 'booking') {   // bookings have no soft state: hard delete, only when nothing was paid
-        const k = await t.maybeOne<any>('SELECT id, status, customer_id FROM bookings WHERE id=$1 FOR UPDATE', [id]); if (!k) throw notFound('Booking not found');
-        if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(k.status)) throw conflict('BOOKING_LIVE', 'This booking is still live. Cancel it first (so the customer is told and refunded), then delete it.');
+        const k = await t.maybeOne<any>('SELECT id, status, customer_id FROM bookings WHERE id=$1 FOR UPDATE', [id]); if (!k) throw notFound('We could not find that booking.');
+        if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(k.status)) throw conflict('BOOKING_LIVE', 'This booking is still live. Cancel it first. Then the customer is told and gets a refund. After that, delete it.');
         const r = await purgeCore(t, { bookings: [id] }, false);
         await audit(t, null, ADMIN, 'ADMIN_BOOKING_DELETED', { booking_id: id, status: k.status, reason: d.reason, ...r });
         return { deleted: true, hard: true };
@@ -122,11 +122,11 @@ export function registerAdminDelete(api: Router, db: Db, guard: any, wrap: (fn: 
         const row = type === 'customer'
           ? await t.maybeOne<any>(`SELECT u.id AS user_id, u.name, u.account_status, u.deleted_at, NULL::int AS barber_id FROM users u WHERE u.id=$1 AND u.role='customer' FOR UPDATE OF u`, [id])
           : await t.maybeOne<any>(`SELECT u.id AS user_id, b.shop_name AS name, u.account_status, u.deleted_at, b.id AS barber_id, b.review_status FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 FOR UPDATE OF u, b`, [id]);
-        if (!row) throw notFound(type === 'customer' ? 'Customer not found' : 'Barber not found');
+        if (!row) throw notFound(type === 'customer' ? 'We could not find that customer.' : 'We could not find that barber.');
         if (row.deleted_at) return { deleted: true, changed: false };
         const where = type === 'customer' ? 'k.customer_id=$1' : 'k.barber_id=$1';
         const live = await t.one<any>(`SELECT COUNT(*)::int n FROM bookings k WHERE ${where} AND k.date>=$2 AND k.status IN ('PENDING_PAYMENT','CONFIRMED','ARRIVED')`, [id, lagosDate()]);
-        if (live.n && !d.cancel_bookings) throw new AppError(409, 'FUTURE_BOOKINGS', `${row.name} has ${live.n} upcoming booking${live.n === 1 ? '' : 's'}. Tick “cancel their upcoming bookings” to delete anyway (customers are told, paid ones refunded).`, { count: live.n });
+        if (live.n && !d.cancel_bookings) throw new AppError(409, 'FUTURE_BOOKINGS', `${row.name} has ${live.n} upcoming booking${live.n === 1 ? '' : 's'}. To delete anyway, tick “cancel their upcoming bookings”. Customers are told, and paid ones get a refund.`, { count: live.n });
         let cancelled = 0;
         if (live.n) { const c = await cancelUpcoming(t, where, [id], type === 'barber' ? 'barber' : 'customer', `${type} deleted by admin`); cancelled = c.cancelled; refunds = c.refs; }
         await t.query(`UPDATE users SET deleted_at=$2, deleted_prev_status=account_status, delete_reason=$3, account_status='DELETED', status_at=$2 WHERE id=$1`, [row.user_id, now, d.reason]);
@@ -149,7 +149,7 @@ export function registerAdminDelete(api: Router, db: Db, guard: any, wrap: (fn: 
   /* ---------- restore (reversible, so no PIN) ---------- */
   post('/restore/:type/:id', async (req, res) => {
     const type = typeOf(req.params.type), id = idOf(req.params.id);
-    if (type === 'booking') throw conflict('NOT_RESTORABLE', 'Deleted bookings cannot be restored.');
+    if (type === 'booking') throw conflict('NOT_RESTORABLE', 'You cannot bring back a deleted booking.');
     res.json(await db.tx(async (t) => {
       const tbl = { customer: 'users', barber: 'barbers', plan: 'plans', review: 'reviews', report: 'reports' }[type];
       const row = type === 'barber'
@@ -157,7 +157,7 @@ export function registerAdminDelete(api: Router, db: Db, guard: any, wrap: (fn: 
         : await t.maybeOne<any>(`SELECT * FROM ${tbl} WHERE id=$1 ${type === 'customer' ? `AND role='customer'` : ''} FOR UPDATE`, [id]);
       if (!row) throw notFound('Not found');
       if (!row.deleted_at) return { restored: false, changed: false };
-      if (new Date(row.deleted_at).toISOString() < cutoff()) throw conflict('RESTORE_EXPIRED', `The ${RESTORE_DAYS}-day restore window has ended. Only “Delete forever” is left.`);
+      if (new Date(row.deleted_at).toISOString() < cutoff()) throw conflict('RESTORE_EXPIRED', `The ${RESTORE_DAYS} days to bring it back are over. You can only “Delete forever” now.`);
       if (type === 'customer') await t.query(`UPDATE users SET account_status=COALESCE(deleted_prev_status,'ACTIVE'), deleted_at=NULL, deleted_prev_status=NULL, delete_reason=NULL, status_at=$2 WHERE id=$1`, [id, isoNow()]);
       else if (type === 'barber') {
         await t.query(`UPDATE users SET account_status=COALESCE(deleted_prev_status,'ACTIVE'), deleted_at=NULL, deleted_prev_status=NULL, delete_reason=NULL, status_at=$2 WHERE id=$1`, [row.user_id, isoNow()]);
@@ -177,20 +177,20 @@ export function registerAdminDelete(api: Router, db: Db, guard: any, wrap: (fn: 
     await requirePin(db, req);
     res.json(await db.tx(async (t) => {
       let r: any;
-      if (type === 'booking') { const k = await t.maybeOne<any>('SELECT status FROM bookings WHERE id=$1 FOR UPDATE', [id]); if (!k) throw notFound('Booking not found'); if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(k.status)) throw conflict('BOOKING_LIVE', 'This booking is still live. Cancel it first, then delete it.'); r = await purgeCore(t, { bookings: [id] }, false); }
+      if (type === 'booking') { const k = await t.maybeOne<any>('SELECT status FROM bookings WHERE id=$1 FOR UPDATE', [id]); if (!k) throw notFound('We could not find that booking.'); if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(k.status)) throw conflict('BOOKING_LIVE', 'This booking is still live. Cancel it first. Then delete it.'); r = await purgeCore(t, { bookings: [id] }, false); }
       else if (type === 'customer') {
-        const u = await t.maybeOne<any>(`SELECT id, deleted_at FROM users WHERE id=$1 AND role='customer' FOR UPDATE`, [id]); if (!u) throw notFound('Customer not found');
-        if (!u.deleted_at) throw conflict('DELETE_FIRST', 'Delete the customer first (it can be restored for 30 days), then delete forever.');
+        const u = await t.maybeOne<any>(`SELECT id, deleted_at FROM users WHERE id=$1 AND role='customer' FOR UPDATE`, [id]); if (!u) throw notFound('We could not find that customer.');
+        if (!u.deleted_at) throw conflict('DELETE_FIRST', 'Delete the customer first. You can bring them back for 30 days. Then delete forever.');
         r = await purgeCore(t, { users: [id] }, false);
       } else if (type === 'barber') {
-        const b = await t.maybeOne<any>(`SELECT b.id, b.user_id, u.deleted_at FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 FOR UPDATE OF b, u`, [id]); if (!b) throw notFound('Barber not found');
-        if (!b.deleted_at) throw conflict('DELETE_FIRST', 'Delete the barber first (it can be restored for 30 days), then delete forever.');
+        const b = await t.maybeOne<any>(`SELECT b.id, b.user_id, u.deleted_at FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 FOR UPDATE OF b, u`, [id]); if (!b) throw notFound('We could not find that barber.');
+        if (!b.deleted_at) throw conflict('DELETE_FIRST', 'Delete the barber first. You can bring them back for 30 days. Then delete forever.');
         r = await purgeCore(t, { users: [b.user_id], barbers: [id] }, false);
       } else {
         const tbl = { plan: 'plans', review: 'reviews', report: 'reports' }[type]!;
         const row = await t.maybeOne<any>(`SELECT id, deleted_at FROM ${tbl} WHERE id=$1 FOR UPDATE`, [id]); if (!row) throw notFound('Not found');
-        if (!row.deleted_at) throw conflict('DELETE_FIRST', 'Delete it first (it can be restored for 30 days), then delete forever.');
-        if (type === 'plan') { const pp = await t.one<any>(`SELECT COUNT(*) FILTER (WHERE status<>'PENDING')::int n FROM plan_purchases WHERE plan_id=$1`, [id]); if (pp.n) throw conflict('HAS_PAYMENTS', `This plan has ${pp.n} purchase${pp.n === 1 ? '' : 's'} on record, so it is kept (hidden) for the financial history.`); r = await purgeCore(t, { plans: [id] }, false); }
+        if (!row.deleted_at) throw conflict('DELETE_FIRST', 'Delete it first. You can bring it back for 30 days. Then delete forever.');
+        if (type === 'plan') { const pp = await t.one<any>(`SELECT COUNT(*) FILTER (WHERE status<>'PENDING')::int n FROM plan_purchases WHERE plan_id=$1`, [id]); if (pp.n) throw conflict('HAS_PAYMENTS', `This plan has ${pp.n} purchase${pp.n === 1 ? '' : 's'} on record, so we keep it (hidden) for money records.`); r = await purgeCore(t, { plans: [id] }, false); }
         else { await t.query(`DELETE FROM ${tbl} WHERE id=$1`, [id]); r = {}; }
       }
       await audit(t, null, ADMIN, 'ADMIN_PURGED', { type, id, reason: d.reason, ...r });

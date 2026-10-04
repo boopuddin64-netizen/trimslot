@@ -68,7 +68,7 @@ test('data export is a JSON download of my own data only, with no password hash'
     const r = await s.j('/api/me/export', { headers: H });
     assert.equal(r.status, 200); assert.match(r.headers.get('content-disposition')!, /attachment; filename="trimslot-my-data-/);
     assert.equal(r.body.account.email, 'chidi@trimslot.demo'); assert.ok(Array.isArray(r.body.bookings));
-    assert.ok(!/password|\$2[aby]\$/i.test(JSON.stringify(r.body).replace(/Passwords and security keys/, '')));
+    assert.ok(!/password|\$2[aby]\$/i.test(JSON.stringify(r.body).replace(/It does not include passwords or security keys/, '')));
     assert.equal((await s.j('/api/me/export')).status, 401);
   } finally { s.server.close(); resetNow(); }
 });

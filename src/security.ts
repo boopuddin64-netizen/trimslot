@@ -50,7 +50,7 @@ export async function recordFailedLogin(db: Db, identifier: string) {
     await db.query(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1`, [acctKey(identifier), acctWindow()]);
   } catch (e: any) { logger.warn('rate_limiter_failed_open', { name: 'login_fail', err: e.message }); }
 }
-export const LOGIN_LOCK_MESSAGE = 'Too many failed logins for this account. Please wait 15 minutes and try again.';
+export const LOGIN_LOCK_MESSAGE = 'Too many wrong log-in tries on this account. Wait 15 minutes, then try again.';
 
 /** Cheap IN-MEMORY limiter for low-value, high-volume routes (general API, webhook). LIMITATION: counters are per serverless instance
  *  and reset on cold start, so this is only a coarse flood brake - the security-relevant limits above are DB-backed. */
@@ -66,12 +66,12 @@ function memLimiter(opts: Partial<Options> & { windowMs: number; limit: number; 
 
 export function makeLimits(db: Db) {
   return {
-    signup: dbLimiter(db, { name: 'signup', windowMs: 15 * 60_000, limit: 10, message: 'Too many sign-ups from this network. Please try again in a few minutes.' }),
-    login: dbLimiter(db, { name: 'login', windowMs: 15 * 60_000, limit: 40, message: 'Too many login attempts. Please wait a few minutes and try again.' }),
-    payment: dbLimiter(db, { name: 'payment', windowMs: 60_000, limit: 20, message: 'Too many payment requests. Please slow down.' }),
-    paymentCallback: memLimiter({ windowMs: 60_000, limit: 60, message: 'Too many requests.' }),
+    signup: dbLimiter(db, { name: 'signup', windowMs: 15 * 60_000, limit: 10, message: 'Too many sign-ups from this network. Try again in a few minutes.' }),
+    login: dbLimiter(db, { name: 'login', windowMs: 15 * 60_000, limit: 40, message: 'Too many log-in tries. Wait a few minutes, then try again.' }),
+    payment: dbLimiter(db, { name: 'payment', windowMs: 60_000, limit: 20, message: 'Too many payment tries. Please slow down.' }),
+    paymentCallback: memLimiter({ windowMs: 60_000, limit: 60, message: 'Too many tries. Please slow down.' }),
     webhook: memLimiter({ windowMs: 60_000, limit: 600, message: 'Too many webhook calls.' }),
-    api: memLimiter({ windowMs: 60_000, limit: 300, message: 'Too many requests. Please slow down.' }),
+    api: memLimiter({ windowMs: 60_000, limit: 300, message: 'Too many tries. Please slow down.' }),
   };
 }
 
@@ -99,7 +99,7 @@ export function corsAndOriginGuard(req: Request, res: Response, next: NextFuncti
     let baseHost = '';
     try { baseHost = new URL(config.appBaseUrl).host; } catch { /* ignore */ }
     if (!host || (host !== req.headers.host && host !== baseHost)) {
-      return void res.status(403).json({ error: { code: 'BAD_ORIGIN', message: 'Cross-site request blocked.' } });
+      return void res.status(403).json({ error: { code: 'BAD_ORIGIN', message: 'We blocked this request. It came from another site.' } });
     }
   }
   next();

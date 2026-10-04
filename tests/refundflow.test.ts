@@ -140,7 +140,7 @@ test('admin alerts: in-app list, mark read, per-event preferences, quiet hours, 
     await customerCancel(s.db, s.customerIds[0], b.id);
     const list = (await s.j('/api/admin/alerts', { headers: s.A })).body; assert.equal(list.unread, 1); assert.equal(list.items[0].event, 'REFUND_WAITING');
     await runSweep(s.db);
-    assert.equal(sent.length, 1, 'pushed once'); assert.match(sent[0], /Refund waiting/);
+    assert.equal(sent.length, 1, 'pushed once'); assert.match(sent[0], /Refund needs a decision/);
     await runSweep(s.db); assert.equal(sent.length, 1, 'not re-sent');
     assert.equal((await s.j('/api/admin/alerts/read', { method: 'POST', headers: s.A, body: { all: true } })).status, 200);
     assert.equal((await s.j('/api/admin/alerts/unread', { headers: s.A })).body.unread, 0);

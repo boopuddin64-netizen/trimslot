@@ -70,18 +70,18 @@ export async function busyIntervals(c: Conn, barberId: number, date: string): Pr
 }
 
 export function validateBookableDate(date: string) {
-  if (!isValidDate(date)) throw badRequest('date must be a valid YYYY-MM-DD date');
+  if (!isValidDate(date)) throw badRequest('Write the date as YYYY-MM-DD.');
   const today = lagosDate(clock.now());
-  if (date < today) throw badRequest('You cannot book a date in the past');
-  if (date > addDays(today, MAX_ADVANCE_DAYS)) throw badRequest(`You can only book up to ${MAX_ADVANCE_DAYS} days ahead`);
+  if (date < today) throw badRequest('You cannot book a date in the past.');
+  if (date > addDays(today, MAX_ADVANCE_DAYS)) throw badRequest(`You can book up to ${MAX_ADVANCE_DAYS} days ahead.`);
 }
 
 /** Free slots for a barber/service/date (verified barbers only). Unpaid attempts never block (see busyIntervals). */
 export async function getAvailableSlots(c: Conn, barberId: number, serviceId: number, date: string) {
   validateBookableDate(date);
-  if (!(await c.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified', [barberId]))) throw notFound('Barber not found');
+  if (!(await c.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified', [barberId]))) throw notFound('We could not find that barber.');
   const svc = await c.maybeOne('SELECT * FROM services WHERE id=$1 AND barber_id=$2 AND active', [serviceId, barberId]);
-  if (!svc) throw notFound('Service not found for this barber');
+  if (!svc) throw notFound('This barber does not offer that service.');
   const { schedule, dayOff } = await loadSchedule(c, barberId, date);
   const isToday = date === lagosDate(clock.now());
   const slots = generateSlots({
@@ -89,8 +89,8 @@ export async function getAvailableSlots(c: Conn, barberId: number, serviceId: nu
     busy: await busyIntervals(c, barberId, date), nowMin: isToday ? lagosMinutes(clock.now()) : null,
   });
   let closed_reason: string | null = null;
-  if (dayOff) closed_reason = dayOff.reason ? `Day off: ${dayOff.reason}` : 'Barber is off on this day';
-  else if (!schedule || !schedule.is_working) closed_reason = 'Barber does not work on this day';
+  if (dayOff) closed_reason = dayOff.reason ? `Day off: ${dayOff.reason}` : 'The barber is off on this day.';
+  else if (!schedule || !schedule.is_working) closed_reason = 'The barber does not work on this day.';
   return {
     date, service: { id: svc.id, name: svc.name, price_kobo: svc.price_kobo, duration_min: svc.duration_min },
     closed_reason,

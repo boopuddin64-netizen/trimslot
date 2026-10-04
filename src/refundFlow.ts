@@ -24,7 +24,7 @@ export async function openRefundRequest(t: Conn, b: { id: number; customer_id: n
   const due = new Date(clock.now().getTime() + s.refund_auto_approve_hours * 3600000).toISOString();
   const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [b.id]);
   if (p && !p.refund_status) await t.query(`UPDATE payments SET refund_status='PENDING_APPROVAL', refund_reason=$2, refund_due_at=$3 WHERE reference=$1`, [p.reference, reason.slice(0, 200), due]);
-  await adminEvent(t, 'REFUND_WAITING', 'Refund waiting for approval', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} (${reason}). It auto-approves in ${s.refund_auto_approve_hours} h if nobody decides.`,
+  await adminEvent(t, 'REFUND_WAITING', 'Refund needs a decision', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} (${reason}). If nobody decides, we approve it in ${s.refund_auto_approve_hours} h.`,
     { link: '/admin.html#/decisions', refKey: 'booking:' + b.id });
   return { reference: p?.reference ?? null, due_at: due, hours: s.refund_auto_approve_hours };
 }
@@ -36,27 +36,27 @@ export async function decideRefund(db: Db, bookingId: number, action: 'approve' 
   let ref: string | null = null;
   const out = await db.tx(async (t) => {
     const b = await t.maybeOne<any>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [bookingId]);
-    if (!b) throw notFound('Booking not found');
-    if (b.payment_status !== 'REFUND_PENDING') throw conflict('ALREADY_DECIDED', 'This refund is not waiting for a decision.');
+    if (!b) throw notFound('We could not find that booking.');
+    if (b.payment_status !== 'REFUND_PENDING') throw conflict('ALREADY_DECIDED', 'This refund does not need a decision.');
     const actor = by === 'admin' ? ADMIN : SYSTEM;
     const now = isoNow();
     const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [bookingId]);
     if (action === 'approve') {
-      if (await t.maybeOne('SELECT 1 FROM session_credits WHERE source_booking_id=$1', [bookingId])) throw conflict('CREDIT_EXISTS', 'A credit was already issued for this booking, so it cannot also be refunded.');
+      if (await t.maybeOne('SELECT 1 FROM session_credits WHERE source_booking_id=$1', [bookingId])) throw conflict('CREDIT_EXISTS', 'This booking already got a credit, so it cannot get a refund too.');
       if (p && p.refund_status === 'PENDING_APPROVAL') { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_decided_at=$2, refund_decided_by=$3 WHERE reference=$1`, [p.reference, now, by]); ref = p.reference; }
       await t.query(`UPDATE bookings SET payment_status='REFUNDED' WHERE id=$1`, [bookingId]);
       await audit(t, bookingId, actor, by === 'auto' ? 'REFUND_AUTO_APPROVED' : 'REFUND_APPROVED', { reference: p?.reference ?? null, amount_kobo: b.price_kobo });
-      await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is being refunded to your original payment method. Your bank can take a few working days to show it.`, bookingId);
-      if (by === 'auto') await adminEvent(t, 'REFUND_AUTO_APPROVED', 'Refund auto-approved', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was approved automatically because nobody decided in time. The refund was sent to Paystack.`,
+      await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is on its way back to the way you paid. Your bank may take a few working days to show it.`, bookingId);
+      if (by === 'auto') await adminEvent(t, 'REFUND_AUTO_APPROVED', 'Refund auto-approved', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was approved by itself because nobody decided in time. We sent the refund to Paystack.`,
         { link: '/admin.html#/payments?filter=refunds', refKey: 'booking:' + bookingId });
       return { result: 'approved' as const };
     }
     const why = String(reason || '').trim();
-    if (why.length < 3) throw badRequest('Write a reason (at least 3 characters) - the customer will see it.');
+    if (why.length < 3) throw badRequest('Write a reason (at least 3 letters). The customer will see it.');
     if (p && p.refund_status === 'PENDING_APPROVAL') await t.query(`UPDATE payments SET refund_status='REJECTED', refund_decided_at=$2, refund_decided_by=$3, refund_error=NULL WHERE reference=$1`, [p.reference, now, by]);
     await t.query(`UPDATE bookings SET payment_status='REFUND_DECLINED' WHERE id=$1`, [bookingId]);
     await audit(t, bookingId, actor, 'REFUND_REJECTED', { reference: p?.reference ?? null, reason: why.slice(0, 300) });
-    await notify(t, b.customer_id, 'REFUND_REJECTED', 'Refund not approved', `We could not approve a refund for your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)}: ${why.slice(0, 200)}. Contact support if you disagree.`, bookingId);
+    await notify(t, b.customer_id, 'REFUND_REJECTED', 'Refund not approved', `We could not approve a refund for your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)}: ${why.slice(0, 200)}. Contact support if you do not agree.`, bookingId);
     return { result: 'rejected' as const };
   });
   if (ref) {
@@ -92,9 +92,9 @@ export function registerRefundAdmin(api: Router, db: Db, guard: any, wrap: (fn: 
     res.json({ pending, legacy, auto_approve_hours: s.refund_auto_approve_hours, credit_expiry_days: s.credit_expiry_days });
   }));
   api.post('/admin/bookings/:id/refund-decision', guard, wrap(async (req, res) => {
-    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('Booking not found');
+    const id = Number(req.params.id); if (!Number.isInteger(id) || id < 1) throw notFound('We could not find that booking.');
     const d = z.object({ action: z.enum(['approve', 'reject']), reason: z.string().trim().max(300).optional() }).safeParse(req.body);
-    if (!d.success) throw badRequest("action must be 'approve' or 'reject'");
+    if (!d.success) throw badRequest("Choose approve or reject.");
     if (d.data.action === 'approve') await requirePin(db, req);    // sends money back: irreversible
     res.json({ ok: true, ...(await decideRefund(db, id, d.data.action, 'admin', d.data.reason)) });
   }));

@@ -13,10 +13,10 @@ import { logger } from './logger';
 
 type H = (req: Request, res: Response) => Promise<any>;
 export const ADMIN_EVENTS = {
-  REFUND_WAITING: { label: 'A refund is waiting for approval', defaults: { in_app: true, push: true } },
-  REFUND_AUTO_APPROVED: { label: 'A refund was auto-approved (nobody decided in time)', defaults: { in_app: true, push: true } },
-  REFUND_FAILED: { label: 'A refund failed at Paystack', defaults: { in_app: true, push: true } },
-  DELETION_REQUEST: { label: 'A user asked for their account to be deleted (needs admin)', defaults: { in_app: true, push: false } },
+  REFUND_WAITING: { label: 'A refund needs your decision', defaults: { in_app: true, push: true } },
+  REFUND_AUTO_APPROVED: { label: 'A refund was approved by itself (nobody decided in time)', defaults: { in_app: true, push: true } },
+  REFUND_FAILED: { label: 'Paystack could not send a refund', defaults: { in_app: true, push: true } },
+  DELETION_REQUEST: { label: 'A user wants to delete their account (an admin must check)', defaults: { in_app: true, push: false } },
 } as const;
 export type AdminEvent = keyof typeof ADMIN_EVENTS;
 const isEvent = (e: string): e is AdminEvent => e in ADMIN_EVENTS;
@@ -95,7 +95,7 @@ export function registerAdminAlerts(api: Router, db: Db, guard: any, wrap: (fn: 
     const id = Number(req.body?.id);
     if (req.body?.all) await db.query('UPDATE admin_notifications SET read_at=$1 WHERE read_at IS NULL', [isoNow()]);
     else if (Number.isInteger(id)) await db.query('UPDATE admin_notifications SET read_at=$2 WHERE id=$1 AND read_at IS NULL', [id, isoNow()]);
-    else throw badRequest('id or all is required');
+    else throw badRequest('Choose one alert, or choose all.');
     res.json({ ok: true });
   }));
   api.get('/admin/alerts/prefs', guard, wrap(async (_req, res) => {
@@ -104,14 +104,14 @@ export function registerAdminAlerts(api: Router, db: Db, guard: any, wrap: (fn: 
       push: { available: pushAvailable(), vapid_public_key: vapidPublicKey(), devices: (await db.one<{ c: number }>('SELECT COUNT(*)::int c FROM admin_push_subscriptions')).c } });
   }));
   api.put('/admin/alerts/prefs', guard, wrap(async (req, res) => {
-    const r = prefsSchema.safeParse(req.body); if (!r.success) throw badRequest('Invalid preferences');
+    const r = prefsSchema.safeParse(req.body); if (!r.success) throw badRequest('Please check your settings and try again.');
     await db.tx(async (t) => {
       for (const [ev, v] of Object.entries(r.data.prefs ?? {})) {
-        if (!isEvent(ev)) throw badRequest('Unknown event ' + ev);
+        if (!isEvent(ev)) throw badRequest('We do not know that alert: ' + ev);
         await t.query(`INSERT INTO admin_notification_prefs (event, in_app, push) VALUES ($1,$2,$3) ON CONFLICT (event) DO UPDATE SET in_app=EXCLUDED.in_app, push=EXCLUDED.push`, [ev, v.in_app, v.push]);
       }
       if (r.data.quiet) {
-        if (!okTime(r.data.quiet.start) || !okTime(r.data.quiet.end)) throw badRequest('Quiet hours must be HH:MM');
+        if (!okTime(r.data.quiet.start) || !okTime(r.data.quiet.end)) throw badRequest('Write quiet hours like 22:00.');
         await t.query('UPDATE admin_notification_settings SET quiet_enabled=$1, quiet_start_min=$2, quiet_end_min=$3 WHERE id=1', [r.data.quiet.enabled, hhmmToMin(r.data.quiet.start), hhmmToMin(r.data.quiet.end)]);
       }
       await audit(t, null, ADMIN, 'ADMIN_ALERT_PREFS_UPDATED', { prefs: r.data.prefs ?? null, quiet: r.data.quiet ?? null });
@@ -119,7 +119,7 @@ export function registerAdminAlerts(api: Router, db: Db, guard: any, wrap: (fn: 
     res.json({ ok: true });
   }));
   api.post('/admin/alerts/subscribe', guard, wrap(async (req, res) => {
-    const r = subscribeSchema.safeParse(req.body); if (!r.success) throw badRequest('Invalid push subscription');
+    const r = subscribeSchema.safeParse(req.body); if (!r.success) throw badRequest('We could not turn on push alerts. Try again.');
     const n = (await db.one<{ c: number }>('SELECT COUNT(*)::int c FROM admin_push_subscriptions')).c;
     if (n >= 10) await db.query('DELETE FROM admin_push_subscriptions WHERE id IN (SELECT id FROM admin_push_subscriptions ORDER BY id LIMIT $1)', [n - 9]);
     await db.query(`INSERT INTO admin_push_subscriptions (endpoint, p256dh, auth, user_agent, created_at) VALUES ($1,$2,$3,$4,$5)
@@ -129,13 +129,13 @@ export function registerAdminAlerts(api: Router, db: Db, guard: any, wrap: (fn: 
   }));
   api.post('/admin/alerts/unsubscribe', guard, wrap(async (req, res) => {
     const ep = typeof req.body?.endpoint === 'string' ? req.body.endpoint : '';
-    if (!ep) throw badRequest('endpoint is required');
+    if (!ep) throw badRequest('The push address is missing.');
     await db.query('DELETE FROM admin_push_subscriptions WHERE endpoint=$1', [ep]);
     res.json({ ok: true });
   }));
   api.post('/admin/alerts/test', guard, wrap(async (_req, res) => {
-    const id = await adminEvent(db, 'REFUND_WAITING', 'Test alert', 'This is a test alert from TrimSlot admin. If you see it, alerts are working.', { link: '/admin.html#/alerts' });
-    if (id == null) throw notFound('Alerts for "refund waiting" are switched off in your preferences.');
+    const id = await adminEvent(db, 'REFUND_WAITING', 'Test alert', 'This is a test alert from TrimSlot admin. If you see it, your alerts work.', { link: '/admin.html#/alerts' });
+    if (id == null) throw notFound('Alerts for "refund waiting" are off in your settings.');
     res.json({ ok: true, flush: await flushAdminPush(db) });
   }));
 }

@@ -59,9 +59,9 @@ export function conflictDetails(all: AffectedBooking[]) {
 export async function notifyAffected(t: Conn, barber: { userId: number; shop_name: string; name: string }, list: AffectedBooking[], reason: string) {
   const CANCEL_CUTOFF_MIN = (await getSettingsCached(t)).cancel_cutoff_min;
   for (const b of list) {
-    const body = `${barber.shop_name} (${barber.name}) updated availability: ${reason}. Your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)} is affected. `
-      + `Nothing was cancelled - please check with the shop, or cancel it from My bookings (free cancellation applies until ${CANCEL_CUTOFF_MIN} minutes before the appointment).`;
-    await notify(t, b.customer_id, 'AVAILABILITY_CHANGED', 'Availability updated', body, b.id);
+    const body = `${barber.shop_name} (${barber.name}) changed their open times: ${reason}. This may affect your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)}. `
+      + `Your booking is not cancelled. Please check with the shop. Or cancel it in My bookings. You can cancel free until ${CANCEL_CUTOFF_MIN} minutes before your visit.`;
+    await notify(t, b.customer_id, 'AVAILABILITY_CHANGED', 'Open times changed', body, b.id);
     await audit(t, b.id, { id: barber.userId, role: 'barber' }, 'AVAILABILITY_CHANGED', { note: reason });
   }
 }
@@ -79,7 +79,7 @@ export function scheduleDiff(before: AvailState, after: AvailState): { days: num
     const b = after.schedule.get(wd);
     return `${DAYS[wd]} ${!b || !b.is_working ? 'closed' : `${fmtTime12(b.start_min)}-${fmtTime12(b.end_min)}`}`;
   });
-  return { days, summary: `Opening hours updated (${parts.join(', ')})` };
+  return { days, summary: `Opening hours changed (${parts.join(', ')})` };
 }
 
 /** Notes shown on the public barber page. */
@@ -89,7 +89,7 @@ export async function publicNotices(c: Conn, barberId: number) {
   const since = new Date(Date.now() - 14 * 86400_000).toISOString();
   const ch = await c.many('SELECT note, created_at FROM availability_changes WHERE barber_id=$1 AND created_at > $2 ORDER BY id DESC LIMIT 1', [barberId, since]);
   return [
-    ...ch.map((r) => ({ type: 'HOURS_UPDATED', title: 'Availability updated', text: r.note as string, at: r.created_at as string })),
+    ...ch.map((r) => ({ type: 'HOURS_UPDATED', title: 'Open times changed', text: r.note as string, at: r.created_at as string })),
     ...off.map((r) => ({ type: 'CLOSED', title: `Closed on ${fmtDay(r.date)}`, date: r.date as string, reason: (r.reason as string | null) ?? null, text: r.reason ? `Closed on ${fmtDay(r.date)} - ${r.reason}` : `Closed on ${fmtDay(r.date)}` })),
   ];
 }

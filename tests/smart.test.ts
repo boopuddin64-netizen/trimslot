@@ -24,14 +24,14 @@ test('feature toggles: every smart feature refuses when switched off', async () 
     const { db, barberId, customerIds, serviceIds } = await freshDb();
     await on(db, { feature_favourites: false, feature_rebook: false, feature_waitlist: false, feature_reviews: false, feature_barber_notes: false, feature_quick_actions: false, feature_daily_summary: false });
     const uid = await userIdOfBarber(db, barberId);
-    await assert.rejects(S.setFavourite(db, customerIds[0], barberId, true), /switched off/);
-    await assert.rejects(S.rebookSuggestion(db, customerIds[0]), /switched off/);
-    await assert.rejects(S.joinWaitlist(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED }), /switched off/);
-    await assert.rejects(S.addReview(db, customerIds[0], 1, { rating: 5 }), /switched off/);
-    await assert.rejects(S.saveCustomerNote(db, barberId, customerIds[0], 'x'), /switched off/);
-    await assert.rejects(S.broadcastToQueue(db, uid, barberId, 'LATE_10'), /switched off/);
-    await assert.rejects(S.delayQueue(db, uid, barberId, 10), /switched off/);
-    await assert.rejects(S.dailySummary(db, barberId), /switched off/);
+    await assert.rejects(S.setFavourite(db, customerIds[0], barberId, true), /is off right now/);
+    await assert.rejects(S.rebookSuggestion(db, customerIds[0]), /is off right now/);
+    await assert.rejects(S.joinWaitlist(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED }), /is off right now/);
+    await assert.rejects(S.addReview(db, customerIds[0], 1, { rating: 5 }), /is off right now/);
+    await assert.rejects(S.saveCustomerNote(db, barberId, customerIds[0], 'x'), /is off right now/);
+    await assert.rejects(S.broadcastToQueue(db, uid, barberId, 'LATE_10'), /is off right now/);
+    await assert.rejects(S.delayQueue(db, uid, barberId, 10), /is off right now/);
+    await assert.rejects(S.dailySummary(db, barberId), /is off right now/);
   } finally { resetNow(); }
 });
 
@@ -40,10 +40,10 @@ test('reviews: only completed visits, once per booking, barber can reply, averag
   try {
     const { db, barberId, customerIds, serviceIds } = await freshDb(); const uid = await userIdOfBarber(db, barberId);
     const b = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '09:30', payment_option: 'ON_ARRIVAL' });
-    await assert.rejects(S.addReview(db, customerIds[0], b.id, { rating: 5 }), /completed/);
+    await assert.rejects(S.addReview(db, customerIds[0], b.id, { rating: 5 }), /after it is done/);
     await complete(db, uid, barberId, b.id);
     assert.equal(await notes(db, customerIds[0], 'REVIEW_PROMPT'), 1);
-    await assert.rejects(S.addReview(db, customerIds[1], b.id, { rating: 5 }), /not found/i, 'someone else cannot review it');
+    await assert.rejects(S.addReview(db, customerIds[1], b.id, { rating: 5 }), /could not find/i, 'someone else cannot review it');
     await assert.rejects(S.addReview(db, customerIds[0], b.id, { rating: 6 }));
     const r = await S.addReview(db, customerIds[0], b.id, { rating: 4, comment: '  Sharp fade  ' });
     assert.equal(r.comment, 'Sharp fade');
@@ -52,7 +52,7 @@ test('reviews: only completed visits, once per booking, barber can reply, averag
     assert.deepEqual(await S.ratingSummary(db, barberId), { count: 1, average: 4 });
     await S.barberReply(db, barberId, r.id, 'Thanks!');
     assert.equal(await notes(db, customerIds[0], 'REVIEW_REPLY'), 1);
-    await assert.rejects(S.barberReply(db, barberId + 99, r.id, 'nope'), /not found/i);
+    await assert.rejects(S.barberReply(db, barberId + 99, r.id, 'nope'), /could not find/i);
     await db.query('UPDATE reviews SET hidden=TRUE'); assert.equal((await S.ratingSummary(db, barberId)).count, 0);
     assert.equal((await S.listReviews(db, barberId)).length, 0);
   } finally { resetNow(); }
@@ -62,7 +62,7 @@ test('notes are private to the barber; usual service; reliability badge', async 
   setNow(at('09:00'));
   try {
     const { db, barberId, customerIds, serviceIds } = await freshDb(); const uid = await userIdOfBarber(db, barberId);
-    await assert.rejects(S.saveCustomerNote(db, barberId, customerIds[0], 'allergic'), /not found/i, 'no relationship yet');
+    await assert.rejects(S.saveCustomerNote(db, barberId, customerIds[0], 'allergic'), /could not find/i, 'no relationship yet');
     const b = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '09:30', payment_option: 'ON_ARRIVAL', note: 'Low fade please' });
     assert.equal((await getBooking(db, b.id))!.note_to_barber, 'Low fade please');
     await S.saveCustomerNote(db, barberId, customerIds[0], 'Sensitive scalp - no clippers guard 1');
@@ -128,7 +128,7 @@ test('quick actions: message template + delay reach only today\'s waiting custom
     await createBooking(db, customerIds[1], { barber_id: barberId, service_id: serviceIds[0], date: '2026-10-01', time: '09:30', payment_option: 'ON_ARRIVAL' });
     assert.deepEqual(await S.broadcastToQueue(db, uid, barberId, 'LATE_10'), { sent: 1 });
     assert.equal(await notes(db, customerIds[1], 'BARBER_MESSAGE'), 0, 'tomorrow\'s customer is not messaged');
-    await assert.rejects(S.broadcastToQueue(db, uid, barberId, 'EVIL'), /template/i);
+    await assert.rejects(S.broadcastToQueue(db, uid, barberId, 'EVIL'), /know that message/i);
     await assert.rejects(S.delayQueue(db, uid, barberId, 7), /Choose/);
     assert.equal((await S.delayQueue(db, uid, barberId, 10)).delay_min, 10);
     assert.equal((await S.delayQueue(db, uid, barberId, 15)).delay_min, 25, 'delays accumulate');
@@ -216,7 +216,7 @@ test('push: every notification is sent once to all devices; 410/404 subscription
   try {
     const { db, barberId, customerIds, serviceIds } = await freshDb(); const uid = await userIdOfBarber(db, barberId);
     const keys = { p256dh: 'BPx'.padEnd(80, 'x'), auth: 'a'.padEnd(20, 'b') };
-    await assert.rejects(saveSubscription(db, customerIds[0], { endpoint: 'http://insecure', keys }, 'ua'), /Invalid/);
+    await assert.rejects(saveSubscription(db, customerIds[0], { endpoint: 'http://insecure', keys }, 'ua'), /could not turn on push/);
     await saveSubscription(db, customerIds[0], { endpoint: 'https://push.example/ok1', keys }, 'ua');
     await saveSubscription(db, customerIds[0], { endpoint: 'https://push.example/ok2', keys }, 'ua');
     await saveSubscription(db, customerIds[0], { endpoint: 'https://push.example/gone1', keys }, 'ua');

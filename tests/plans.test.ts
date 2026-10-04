@@ -42,7 +42,7 @@ test('platform rules: barbers cannot create plans outside min/max price, duratio
     await save({});                                                    // inside the rules: ok
     await c.db.tx((t) => updateSettings(t, { max_plan_validity_days: 400, min_plan_price_naira: 5 }));
     await save({ validity_days: 400, price_naira: 10 });               // the admin loosened the rules
-    await assert.rejects(c.db.tx((t) => updateSettings(t, { min_plan_price_naira: 900, max_plan_price_naira: 100 })), /cannot be above/);
+    await assert.rejects(c.db.tx((t) => updateSettings(t, { min_plan_price_naira: 900, max_plan_price_naira: 100 })), /cannot be more than the highest/);
     await assert.rejects(c.db.tx((t) => updateSettings(t, { credit_expiry_days: 0 })), /credit_expiry_days/);
     await assert.rejects(c.db.tx((t) => updateSettings(t, { bogus: 1 })));
     assert.equal((await getSettings(c.db)).credit_expiry_days, 30, 'default credit expiry is 30 days');

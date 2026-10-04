@@ -76,7 +76,7 @@ export async function anonymiseUser(t: Conn, userId: number, why: string) {
 /* ---------------- export ---------------- */
 export async function buildExport(db: Db, user: { id: number; role: string }) {
   const u = await db.one<any>('SELECT id, role, name, email, phone, created_at, account_status, avatar_url FROM users WHERE id=$1', [user.id]);
-  const out: any = { exported_at: isoNow(), note: 'Your TrimSlot data. Passwords and security keys are never included. Notes that barbers keep privately about you are not included.', account: u };
+  const out: any = { exported_at: isoNow(), note: 'Your TrimSlot data. It does not include passwords or security keys. It does not include private notes that barbers keep about you.', account: u };
   out.documents_accepted = await consentHistory(db, user.id);
   out.notifications = await db.many('SELECT type, title, body, created_at, is_read FROM notifications WHERE user_id=$1 ORDER BY id DESC LIMIT 1000', [user.id]);
   out.push_devices = (await db.one<{ c: number }>('SELECT COUNT(*)::int c FROM push_subscriptions WHERE user_id=$1', [user.id])).c;
@@ -114,16 +114,16 @@ async function blockers(c: Conn, u: { id: number; role: string }) {
   const out: { code: string; message: string; count?: number }[] = [];
   if (u.role === 'customer') {
     const n = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM bookings WHERE customer_id=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND date >= $2`, [u.id, lagosDate()])).n;
-    if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `You have ${n} upcoming booking${n === 1 ? '' : 's'}. Cancel ${n === 1 ? 'it' : 'them'} first (refund and credit rules apply as normal), then delete your account.` });
+    if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `You have ${n} upcoming booking${n === 1 ? '' : 's'}. Cancel ${n === 1 ? 'it' : 'them'} first. The usual refund and credit rules apply. Then delete your account.` });
   } else {
     const b = await c.maybeOne<{ id: number }>('SELECT id FROM barbers WHERE user_id=$1', [u.id]);
     if (b) {
       const n = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM bookings WHERE barber_id=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND date >= $2`, [b.id, lagosDate()])).n;
-      if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `${n} customer booking${n === 1 ? ' is' : 's are'} still upcoming.` });
+      if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `${n} customer booking${n === 1 ? ' is' : 's are'} still to come.` });
       const owed = await outstandingKobo(c, b.id);
-      if (owed > 0) out.push({ code: 'BALANCE_OWED', message: 'A cash-commission balance is still owed to TrimSlot.' });
+      if (owed > 0) out.push({ code: 'BALANCE_OWED', message: 'You still owe TrimSlot a commission balance.' });
       const pl = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM plan_purchases WHERE barber_id=$1 AND status='ACTIVE' AND sessions_used < sessions_total AND expires_at > $2`, [b.id, isoNow()])).n;
-      if (pl) out.push({ code: 'PLANS_ACTIVE', count: pl, message: `${pl} customer plan${pl === 1 ? ' still has' : 's still have'} unused sessions you must honour.` });
+      if (pl) out.push({ code: 'PLANS_ACTIVE', count: pl, message: `${pl} customer plan${pl === 1 ? ' still has' : 's still have'} unused sessions. You must give those sessions.` });
     }
   }
   return out;
@@ -157,7 +157,7 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
     const d = deleteSchema.safeParse(req.body);
     if (!d.success) throw badRequest('Enter your password and type DELETE to confirm.');
     const me = await db.one<any>('SELECT id, role, password_hash FROM users WHERE id=$1', [req.user!.id]);
-    if (!bcrypt.compareSync(d.data.password, me.password_hash)) throw new AppError(403, 'BAD_PASSWORD', 'That password is not correct.');
+    if (!bcrypt.compareSync(d.data.password, me.password_hash)) throw new AppError(403, 'BAD_PASSWORD', 'That password is wrong.');
     const outcome = await db.tx(async (t) => {
       const bl = await blockers(t, me);
       if (me.role === 'customer') {
@@ -165,7 +165,7 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
         const lost = await t.one<{ plans: number; credits: number }>(`SELECT
             (SELECT COUNT(*) FROM plan_purchases WHERE customer_id=$1 AND status='ACTIVE' AND sessions_used < sessions_total AND expires_at > $2)::int AS plans,
             (SELECT COUNT(*) FROM session_credits WHERE customer_id=$1 AND status='AVAILABLE' AND expires_at > $2)::int AS credits`, [me.id, isoNow()]);
-        if ((lost.plans || lost.credits) && !d.data.acknowledge_forfeit) throw new AppError(409, 'FORFEIT_NEEDS_OK', `You still have ${lost.plans} plan${lost.plans === 1 ? '' : 's'} with unused sessions and ${lost.credits} credit${lost.credits === 1 ? '' : 's'}. They have no cash value and are lost when the account is deleted. Tick the box to continue.`, lost);
+        if ((lost.plans || lost.credits) && !d.data.acknowledge_forfeit) throw new AppError(409, 'FORFEIT_NEEDS_OK', `You still have ${lost.plans} plan${lost.plans === 1 ? '' : 's'} with unused sessions and ${lost.credits} credit${lost.credits === 1 ? '' : 's'}. They have no cash value. You lose them when you delete your account. Tick the box to go on.`, lost);
         await anonymiseUser(t, me.id, 'self-service');
         await audit(t, null, { id: me.id, role: 'customer' }, 'ACCOUNT_SELF_DELETED', { forfeited: lost });
         return { deleted: true as const };
@@ -173,7 +173,7 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
       if (bl.length) {
         await t.query('UPDATE users SET deletion_requested_at=$2, deletion_request_note=$3 WHERE id=$1', [me.id, isoNow(), bl.map((b) => b.message).join(' ').slice(0, 500)]);
         await audit(t, null, { id: me.id, role: 'barber' }, 'ACCOUNT_DELETION_REQUESTED', { blockers: bl.map((b) => b.code) });
-        await adminEvent(t, 'DELETION_REQUEST', 'Barber asked to delete their account', `A barber asked to delete their account but ${bl.map((b) => b.message).join(' ')} Review it in Barbers.`, { link: '/admin.html#/barbers', refKey: 'user:' + me.id });
+        await adminEvent(t, 'DELETION_REQUEST', 'Barber asked to delete their account', `A barber asked to delete their account, but ${bl.map((b) => b.message).join(' ')} Look at it in Barbers.`, { link: '/admin.html#/barbers', refKey: 'user:' + me.id });
         return { deleted: false as const, requested: true as const, blockers: bl };
       }
       await anonymiseUser(t, me.id, 'self-service');

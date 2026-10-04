@@ -30,7 +30,7 @@ export function canTransition(from: Status, to: Status): boolean {
 
 export function assertTransition(from: Status, to: Status): void {
   if (!canTransition(from, to)) {
-    throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot change a booking from ${from} to ${to}.`);
+    throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking cannot go from ${from} to ${to}.`);
   }
 }
 

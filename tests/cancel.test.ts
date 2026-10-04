@@ -18,7 +18,7 @@ test('customer cancel before cutoff frees slot immediately; after cutoff is lock
   try {
     const b = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '10:00', payment_option: 'ON_ARRIVAL' });
     assert.ok(!(await getAvailableSlots(db, barberId, serviceIds[0], WED)).slots.some((s) => s.time === '10:00'));
-    await assert.rejects(customerCancel(db, customerIds[1], b.id), /not found/i);
+    await assert.rejects(customerCancel(db, customerIds[1], b.id), /could not find/i);
     await customerCancel(db, customerIds[0], b.id);
     assert.equal((await getBooking(db, b.id))!.status, 'CANCELLED');
     assert.equal((await getBooking(db, b.id))!.payment_status, 'VOID');

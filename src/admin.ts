@@ -61,7 +61,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   api.get('/admin/barbers/:id', guard, wrap(async (req, res) => {
     const id = Number(req.params.id);
     const b = Number.isInteger(id) ? await db.maybeOne<any>(`${BARBER_SQL} WHERE b.id=$2`, [lagosDate(), id]) : undefined;
-    if (!b) throw notFound('Barber not found');
+    if (!b) throw notFound('We could not find that barber.');
     const extra = await db.one<any>('SELECT about, photo_url FROM barbers WHERE id=$1', [id]);
     const services = await db.many('SELECT id, name, price_kobo, duration_min, active FROM services WHERE barber_id=$1 ORDER BY active DESC, price_kobo, id', [id]);
     const schedule = await db.many('SELECT weekday, is_working, start_min, end_min, break_start_min, break_end_min FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [id]);
@@ -71,11 +71,11 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     res.json({ barber: { ...barberRow(b), about: extra.about, has_photo: !!extra.photo_url }, services, schedule, history, plans: (await db.one<any>('SELECT COUNT(*)::int c FROM plans WHERE barber_id=$1 AND active', [id])).c });
   }));
 
-  const reasonSchema = (what: string) => z.object({ reason: z.string().trim().min(3, `Write a ${what} (at least 3 characters)`).max(500, 'Keep it under 500 characters') });
-  const parseBody = <T extends z.ZodTypeAny>(sch: T, body: unknown): z.infer<T> => { const r = sch.safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Invalid request'); return r.data; };
+  const reasonSchema = (what: string) => z.object({ reason: z.string().trim().min(3, `Write a ${what} (at least 3 letters).`).max(500, 'Keep it under 500 characters.') });
+  const parseBody = <T extends z.ZodTypeAny>(sch: T, body: unknown): z.infer<T> => { const r = sch.safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Please check what you typed and try again.'); return r.data; };
   const lockBarber = async (t: any, id: number) => {
     const b = Number.isInteger(id) ? await t.maybeOne('SELECT b.id, b.shop_name, b.review_status, b.review_reason, b.user_id FROM barbers b WHERE b.id=$1 FOR UPDATE', [id]) : undefined;
-    if (!b) throw notFound('Barber not found');
+    if (!b) throw notFound('We could not find that barber.');
     return b;
   };
   const setReview = async (t: any, b: any, to: string, reason: string | null) => {
@@ -90,11 +90,11 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
       if (b.review_status === 'VERIFIED') return out(b, 'VERIFIED', false);
       const was = b.review_status;
       if (kind === 'approve' && was === 'SUSPENDED') throw conflict('USE_REINSTATE', 'This shop is suspended. Use Reinstate.');
-      if (kind === 'reinstate' && was !== 'SUSPENDED') throw conflict('NOT_SUSPENDED', 'Only a suspended shop can be reinstated.');
+      if (kind === 'reinstate' && was !== 'SUSPENDED') throw conflict('NOT_SUSPENDED', 'You can only reinstate a suspended shop.');
       await setReview(t, b, 'VERIFIED', null);
       const reinstated = was === 'SUSPENDED';
       await audit(t, null, ADMIN, reinstated ? 'ADMIN_BARBER_REINSTATED' : 'ADMIN_BARBER_VERIFIED', { barber_id: id, shop: b.shop_name, from: was });
-      await notify(t, b.user_id, reinstated ? 'BARBER_REINSTATED' : 'BARBER_VERIFIED', reinstated ? 'Your shop is live again' : "You're live", `${b.shop_name} is ${reinstated ? 'visible to customers again' : 'now visible to customers'} and can take bookings.`);
+      await notify(t, b.user_id, reinstated ? 'BARBER_REINSTATED' : 'BARBER_VERIFIED', reinstated ? 'Your shop is back' : 'Your shop is live', `${b.shop_name} is ${reinstated ? 'visible to customers again' : 'now visible to customers'}. It can take bookings.`);
       return out(b, 'VERIFIED', true, { from: was });
     }));
   };
@@ -103,26 +103,26 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   api.post('/admin/barbers/:id/reinstate', guard, wrap(approve('reinstate')));
 
   api.post('/admin/barbers/:id/reject', guard, wrap(async (req, res) => {
-    const id = Number(req.params.id); const { reason } = parseBody(reasonSchema('reason for the rejection'), req.body);
+    const id = Number(req.params.id); const { reason } = parseBody(reasonSchema('reason for saying no'), req.body);
     res.json(await db.tx(async (t) => {
       const b = await lockBarber(t, id);
       if (b.review_status === 'REJECTED') return out(b, 'REJECTED', false);
-      if (!['PENDING', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('BAD_STATE', b.review_status === 'VERIFIED' ? 'This shop is live. Suspend it instead.' : 'Only a shop awaiting review can be rejected.');
+      if (!['PENDING', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('BAD_STATE', b.review_status === 'VERIFIED' ? 'This shop is live. Suspend it instead.' : 'You can only reject a shop that is waiting for review.');
       await setReview(t, b, 'REJECTED', reason);
       await audit(t, null, ADMIN, 'ADMIN_BARBER_REJECTED', { barber_id: id, shop: b.shop_name, reason });
-      await notify(t, b.user_id, 'BARBER_REJECTED', 'Shop not approved', `${b.shop_name} was not approved: ${reason} You can fix this and resubmit from your app.`);
+      await notify(t, b.user_id, 'BARBER_REJECTED', 'Shop not approved', `${b.shop_name} was not approved: ${reason} Fix this, then send your details again in your app.`);
       return out(b, 'REJECTED', true);
     }));
   }));
   api.post('/admin/barbers/:id/request-info', guard, wrap(async (req, res) => {
-    const id = Number(req.params.id); const { message } = parseBody(z.object({ message: z.string().trim().min(3, 'Write the message for the barber (at least 3 characters)').max(500, 'Keep it under 500 characters') }), req.body);
+    const id = Number(req.params.id); const { message } = parseBody(z.object({ message: z.string().trim().min(3, 'Write a message for the barber (at least 3 letters).').max(500, 'Keep it under 500 characters.') }), req.body);
     res.json(await db.tx(async (t) => {
       const b = await lockBarber(t, id);
-      if (!['PENDING', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('BAD_STATE', 'Only a shop awaiting review can be asked for more information.');
+      if (!['PENDING', 'NEEDS_INFO'].includes(b.review_status)) throw conflict('BAD_STATE', 'You can only ask for more information from a shop that is waiting for review.');
       const again = b.review_status === 'NEEDS_INFO';
       await setReview(t, b, 'NEEDS_INFO', message);
       await audit(t, null, ADMIN, 'ADMIN_BARBER_INFO_REQUESTED', { barber_id: id, shop: b.shop_name, message, again });
-      await notify(t, b.user_id, 'BARBER_NEEDS_INFO', 'We need a bit more information', `About ${b.shop_name}: ${message} Update your details and resubmit from your app.`);
+      await notify(t, b.user_id, 'BARBER_NEEDS_INFO', 'We need a little more information', `About ${b.shop_name}: ${message} Update your details, then send them again in your app.`);
       return out(b, 'NEEDS_INFO', true);
     }));
   }));
@@ -130,12 +130,12 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   /** Suspend a live shop. If it has upcoming bookings the admin must choose: keep them (customers are told) or cancel them (customers are told and paid ones refunded). No choice => 409 with the count. */
   api.post('/admin/barbers/:id/suspend', guard, wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const d = parseBody(z.object({ reason: z.string().trim().min(3, 'Write a reason for the suspension (at least 3 characters)').max(500, 'Keep it under 500 characters'), bookings: z.enum(['keep', 'cancel']).optional() }), req.body);
+    const d = parseBody(z.object({ reason: z.string().trim().min(3, 'Write a reason for the suspension (at least 3 letters).').max(500, 'Keep it under 500 characters.'), bookings: z.enum(['keep', 'cancel']).optional() }), req.body);
     const refs: string[] = [];
     const result = await db.tx(async (t) => {
       const b = await lockBarber(t, id);
       if (b.review_status === 'SUSPENDED') return out(b, 'SUSPENDED', false);
-      if (b.review_status !== 'VERIFIED') throw conflict('BAD_STATE', 'Only a live shop can be suspended. Use Reject for a shop still under review.');
+      if (b.review_status !== 'VERIFIED') throw conflict('BAD_STATE', 'You can only suspend a live shop. To stop a shop that is still in review, use Reject.');
       const future = await t.many<any>(`SELECT * FROM bookings WHERE barber_id=$1 AND date>=$2 AND status IN ('CONFIRMED','ARRIVED') ORDER BY date, start_min FOR UPDATE`, [id, lagosDate()]);
       if (future.length && !d.bookings) {
         throw new AppError(409, 'FUTURE_BOOKINGS', `${b.shop_name} has ${future.length} upcoming booking${future.length === 1 ? '' : 's'}. Choose to keep them or cancel them.`, { count: future.length, bookings: future.slice(0, 20).map((k: any) => ({ id: k.id, when: fmtWhen(k.date, k.start_min), service_name: k.service_name, paid: k.payment_status === 'PAID' })) });
@@ -148,23 +148,23 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
         if (d.bookings === 'cancel') {
           let pay = 'VOID'; let note = '';
           if (k.payment_status === 'PAID') {
-            if (k.plan_purchase_id || k.credit_id) { await restoreEntitlement(t, k); note = ' Your plan session / credit has been returned.'; }
+            if (k.plan_purchase_id || k.credit_id) { await restoreEntitlement(t, k); note = ' We gave your plan session or credit back.'; }
             else {
               const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [k.id]);
               if (p && !p.refund_status) { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [p.reference, 'shop suspended by admin: booking cancelled']); refs.push(p.reference); }
-              note = ' Your payment is being refunded to your original payment method.';
+              note = ' We are sending your money back the way you paid.';
             }
           }
           await t.query(`UPDATE bookings SET status='CANCELLED', payment_status=$2, cancelled_at=$3, cancelled_by='admin', hold_expires_at=NULL WHERE id=$1 AND status IN ('CONFIRMED','ARRIVED')`, [k.id, pay, isoNow()]);
           await audit(t, k.id, ADMIN, 'ADMIN_BOOKING_CANCELLED_SUSPENSION', { barber_id: id, payment_status: pay });
-          await notify(t, k.customer_id, 'BOOKING_CANCELLED', 'Booking cancelled', `${b.shop_name} is temporarily unavailable, so your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} was cancelled.${note}`.trim(), k.id);
+          await notify(t, k.customer_id, 'BOOKING_CANCELLED', 'Booking cancelled', `${b.shop_name} is not available for now, so we cancelled your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)}.${note}`.trim(), k.id);
           cancelled++;
         } else {
-          await notify(t, k.customer_id, 'SHOP_PAUSED', 'Shop temporarily paused', `${b.shop_name} is temporarily paused on TrimSlot. Your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} has not been cancelled, but please check with the shop before you go. You can cancel it from My bookings.`, k.id);
+          await notify(t, k.customer_id, 'SHOP_PAUSED', 'This shop is paused', `${b.shop_name} is paused on TrimSlot for now. Your ${k.service_name} booking on ${fmtWhen(k.date, k.start_min)} is not cancelled. Please check with the shop before you go. You can cancel it in My bookings.`, k.id);
         }
       }
       await audit(t, null, ADMIN, 'ADMIN_BARBER_SUSPENDED', { barber_id: id, shop: b.shop_name, reason: d.reason, upcoming: future.length, bookings: future.length ? d.bookings : undefined, cancelled });
-      await notify(t, b.user_id, 'BARBER_SUSPENDED', 'Shop paused', `${b.shop_name} is hidden from customers and cannot take new bookings: ${d.reason}${future.length ? (d.bookings === 'cancel' ? ` Your ${future.length} upcoming booking${future.length === 1 ? ' was' : 's were'} cancelled and the customers told.` : ` Your ${future.length} upcoming booking${future.length === 1 ? ' was' : 's were'} kept and the customers told.`) : ''}`);
+      await notify(t, b.user_id, 'BARBER_SUSPENDED', 'Shop paused', `${b.shop_name} is hidden from customers. It cannot take new bookings: ${d.reason}${future.length ? (d.bookings === 'cancel' ? ` Your ${future.length} upcoming booking${future.length === 1 ? ' was' : 's were'} cancelled and the customers told.` : ` Your ${future.length} upcoming booking${future.length === 1 ? ' was' : 's were'} kept and the customers told.`) : ''}`);
       return out(b, 'SUSPENDED', true, { upcoming: future.length, cancelled, customers_notified: future.length });
     });
     const refunds: string[] = [];
@@ -203,8 +203,8 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   api.post('/admin/payments/:reference/retry-refund', guard, wrap(async (req, res) => {
     const ref = String(req.params.reference);
     const p = await db.maybeOne('SELECT refund_status FROM payments WHERE reference=$1', [ref]);
-    if (!p) throw notFound('Payment not found');
-    if (p.refund_status !== 'NEEDS_REFUND') throw conflict('NOT_RETRYABLE', p.refund_status ? `This refund is already ${p.refund_status.toLowerCase().replace('_', ' ')}.` : 'This payment is not flagged for refund.');
+    if (!p) throw notFound('We could not find that payment.');
+    if (p.refund_status !== 'NEEDS_REFUND') throw conflict('NOT_RETRYABLE', p.refund_status ? `This refund is already ${p.refund_status.toLowerCase().replace('_', ' ')}.` : 'This payment is not marked for a refund.');
     const r = await requestRefund(db, ref);
     await audit(db, null, ADMIN, 'ADMIN_REFUND_RETRIED', { reference: ref, result: r });
     const now = await db.one('SELECT refund_status, refund_error FROM payments WHERE reference=$1', [ref]);
@@ -213,7 +213,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   /** Ask Paystack again about a payment that never confirmed (webhook missed / old amount bug). Confirms the booking if it was really paid and the slot is still free; otherwise the customer is flagged for a refund. */
   api.post('/admin/payments/:reference/reverify', guard, wrap(async (req, res) => {
     const ref = String(req.params.reference);
-    const p = await db.maybeOne<any>('SELECT reference, status FROM payments WHERE reference=$1', [ref]); if (!p) throw notFound('Payment not found');
+    const p = await db.maybeOne<any>('SELECT reference, status FROM payments WHERE reference=$1', [ref]); if (!p) throw notFound('We could not find that payment.');
     const result = await processReference(db, ref);
     await audit(db, null, ADMIN, 'ADMIN_PAYMENT_REVERIFIED', { reference: ref, result: result.result });
     res.json({ result: result.result, payment: await db.one('SELECT reference, status, refund_status, booking_id, plan_purchase_id FROM payments WHERE reference=$1', [ref]) });
@@ -224,8 +224,8 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     await requirePin(db, req);    // irreversible: records a refund as paid out
     const out = await db.tx(async (t) => {
       const p = await t.maybeOne('SELECT id, refund_status, amount_kobo, booking_id, plan_purchase_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]);
-      if (!p) throw notFound('Payment not found');
-      if (!p.refund_status) throw conflict('NOT_FLAGGED', 'This payment is not flagged for refund.');
+      if (!p) throw notFound('We could not find that payment.');
+      if (!p.refund_status) throw conflict('NOT_FLAGGED', 'This payment is not marked for a refund.');
       if (p.refund_status === 'REFUNDED') return { refund_status: 'REFUNDED' };
       await t.query(`UPDATE payments SET refund_status='REFUNDED', refund_error=NULL WHERE id=$1`, [p.id]);
       await audit(t, p.booking_id, ADMIN, 'ADMIN_MARKED_REFUNDED', { reference: ref, amount_kobo: p.amount_kobo, note: note || null });
@@ -243,13 +243,13 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
   api.post('/admin/bookings/:id/resolve', guard, wrap(async (req, res) => {
     const id = Number(req.params.id);
     const d = z.object({ action: z.enum(['credit', 'refund']) }).safeParse(req.body);
-    if (!d.success) throw badRequest("action must be 'credit' or 'refund'");
+    if (!d.success) throw badRequest("Choose credit or refund.");
     if (d.data.action === 'refund') await requirePin(db, req);    // refunding money is irreversible; choosing a credit is not
     let refRef: string | null = null; let credit: any = null;
     await db.tx(async (t) => {
       const b = Number.isInteger(id) ? await t.maybeOne<any>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id]) : undefined;
-      if (!b) throw notFound('Booking not found');
-      if (b.payment_status !== 'CREDIT_PENDING') throw conflict('ALREADY_RESOLVED', 'This booking is not waiting for a decision.');
+      if (!b) throw notFound('We could not find that booking.');
+      if (b.payment_status !== 'CREDIT_PENDING') throw conflict('ALREADY_RESOLVED', 'This booking does not need a decision.');
       if (d.data.action === 'credit') {
         credit = await issueCredit(t, b, 'EARLY_CANCEL');
         await t.query(`UPDATE bookings SET payment_status='CREDITED' WHERE id=$1`, [id]);
@@ -262,7 +262,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
         }
         await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
         await audit(t, id, ADMIN, 'ADMIN_RESOLVED_REFUND', { reference: pay?.reference ?? null });
-        await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is being refunded to your original payment method.`, id);
+        await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is on its way back to the way you paid.`, id);
       }
     });
     let refund: string | null = null;

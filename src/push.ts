@@ -31,11 +31,11 @@ function realSender(): Sender | null {
 export const getPushSender = (): Sender | null => sender ?? realSender();
 
 export const subscribeSchema = z.object({
-  endpoint: z.string().url().max(1000).refine((u) => u.startsWith('https://'), 'Push endpoint must be https'),
+  endpoint: z.string().url().max(1000).refine((u) => u.startsWith('https://'), 'The push address must start with https://'),
   keys: z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(6).max(100) }),
 });
 export async function saveSubscription(db: Db, userId: number, body: unknown, ua: string | undefined) {
-  const r = subscribeSchema.safeParse(body); if (!r.success) throw badRequest('Invalid push subscription');
+  const r = subscribeSchema.safeParse(body); if (!r.success) throw badRequest('We could not turn on push alerts. Try again.');
   const n = (await db.one<{ c: number }>('SELECT COUNT(*)::int c FROM push_subscriptions WHERE user_id=$1', [userId])).c;
   if (n >= 10) await db.query('DELETE FROM push_subscriptions WHERE id IN (SELECT id FROM push_subscriptions WHERE user_id=$1 ORDER BY id LIMIT $2)', [userId, n - 9]);
   // an endpoint belongs to one browser profile: if another account used it before on this device, it moves to the current user

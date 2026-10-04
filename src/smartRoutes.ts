@@ -40,7 +40,7 @@ export function registerSmart(api: Router, barberR: Router, db: Db, wrap: (fn: H
 
   /* ---------- push ---------- */
   api.post('/push/subscribe', requireAuth, wrap(async (req, res) => {
-    if (!(await getSettingsCached(db)).feature_push) throw badRequest('Push notifications are switched off.');
+    if (!(await getSettingsCached(db)).feature_push) throw badRequest('Push alerts are off.');
     await saveSubscription(db, req.user!.id, req.body?.subscription ?? req.body, req.headers['user-agent']);
     res.status(201).json({ ok: true });
   }));
@@ -54,8 +54,8 @@ export function registerSmart(api: Router, barberR: Router, db: Db, wrap: (fn: H
   }));
   api.post('/push/test', requireAuth, wrap(async (req, res) => {
     const recent = await db.one<{ c: number }>(`SELECT COUNT(*)::int c FROM notifications WHERE user_id=$1 AND type='TEST_PUSH' AND created_at > $2`, [req.user!.id, new Date(Date.now() - 60000).toISOString()]);
-    if (recent.c >= 2) throw badRequest('Give it a minute before sending another test.');
-    await notify(db, req.user!.id, 'TEST_PUSH', 'Notifications are on', "You'll be alerted here for bookings, your turn in the queue and reminders.");
+    if (recent.c >= 2) throw badRequest('Wait a minute before you send another test.');
+    await notify(db, req.user!.id, 'TEST_PUSH', 'Alerts are on', "You will get alerts here about bookings, your turn in line and reminders.");
     const r = await flushPush(db, 20);
     res.json({ ok: true, sent: r.sent });
   }));

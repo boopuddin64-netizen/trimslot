@@ -18,8 +18,8 @@ import { isExclusionViolation, isUniqueViolation } from './db';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
-const reasonZ = z.object({ reason: z.string().trim().min(3, 'Write a reason (at least 3 characters)').max(500, 'Keep the reason under 500 characters') });
-const parseB = <T extends z.ZodTypeAny>(sch: T, body: unknown): z.infer<T> => { const r = sch.safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Invalid request'); return r.data; };
+const reasonZ = z.object({ reason: z.string().trim().min(3, 'Write a reason (at least 3 letters).').max(500, 'Keep the reason under 500 characters.') });
+const parseB = <T extends z.ZodTypeAny>(sch: T, body: unknown): z.infer<T> => { const r = sch.safeParse(body ?? {}); if (!r.success) throw badRequest(r.error.issues[0]?.message || 'Please check what you typed and try again.'); return r.data; };
 const idOf = (v: unknown) => { const n = Number(v); if (!Number.isInteger(n) || n < 1) throw notFound(); return n; };
 const like = (q: string) => '%' + q.replace(/[\\%_]/g, (c) => '\\' + c) + '%';
 const dateQ = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && isValidDate(v) ? v : null);
@@ -50,7 +50,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   get('/users/:id', async (req, res) => {
     const id = idOf(req.params.id);
     const u = await db.maybeOne<any>('SELECT id, role, name, email, phone, avatar_url, avatar_removed_at, created_at, account_status, status_reason, status_at, warn_count, deletion_requested_at, deletion_request_note, anonymised_at FROM users WHERE id=$1', [id]);
-    if (!u) throw notFound('User not found');
+    if (!u) throw notFound('We could not find that user.');
     const barber = u.role === 'barber' ? await db.maybeOne<any>('SELECT id, shop_name, review_status, booking_paused FROM barbers WHERE user_id=$1', [id]) : null;
     const col = u.role === 'customer' ? 'k.customer_id' : 'k.barber_id'; const who = u.role === 'customer' ? id : barber?.id ?? -1;
     const bookings = await db.many(`SELECT k.id, k.date, k.start_min, k.service_name, k.price_kobo, k.status, k.payment_status, k.payment_option, b.shop_name, cu.name AS customer_name FROM bookings k JOIN barbers b ON b.id=k.barber_id JOIN users cu ON cu.id=k.customer_id WHERE ${col}=$1 ORDER BY k.date DESC, k.start_min DESC LIMIT 40`, [who]);
@@ -68,8 +68,8 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
     if (to === 'BANNED') await requirePin(db, req);    // a ban is permanent until an admin reverses it by hand
     res.json(await db.tx(async (t) => {
-      const u = await t.maybeOne<any>('SELECT id, role, name, account_status FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('User not found');
-      if (u.role !== 'customer') throw conflict('USE_BARBER_REVIEW', 'Barbers are suspended from the Barbers section (review workflow).');
+      const u = await t.maybeOne<any>('SELECT id, role, name, account_status FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('We could not find that user.');
+      if (u.role !== 'customer') throw conflict('USE_BARBER_REVIEW', 'To suspend a barber, use the Barbers section.');
       if (u.account_status === to) return { changed: false, account_status: to };
       await t.query(`UPDATE users SET account_status=$2, status_reason=$3, status_at=$4 WHERE id=$1`, [id, to, reason, isoNow()]);
       await audit(t, null, ADMIN, to === 'BANNED' ? 'ADMIN_USER_BANNED' : 'ADMIN_USER_SUSPENDED', { user_id: id, reason, from: u.account_status });
@@ -81,18 +81,18 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   post('/users/:id/reinstate', async (req, res) => {
     const id = idOf(req.params.id);
     res.json(await db.tx(async (t) => {
-      const u = await t.maybeOne<any>('SELECT id, account_status FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('User not found');
+      const u = await t.maybeOne<any>('SELECT id, account_status FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('We could not find that user.');
       if (u.account_status === 'ACTIVE') return { changed: false, account_status: 'ACTIVE' };
       await t.query(`UPDATE users SET account_status='ACTIVE', status_reason=NULL, status_at=$2 WHERE id=$1`, [id, isoNow()]);
       await audit(t, null, ADMIN, 'ADMIN_USER_REINSTATED', { user_id: id, from: u.account_status });
-      await notify(t, id, 'ACCOUNT_REINSTATED', 'Account restored', 'Your TrimSlot account is active again. Welcome back.');
+      await notify(t, id, 'ACCOUNT_REINSTATED', 'Account restored', 'Your TrimSlot account works again. Welcome back.');
       return { changed: true, account_status: 'ACTIVE' };
     }));
   });
   post('/users/:id/warn', async (req, res) => {
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
     res.json(await db.tx(async (t) => {
-      const u = await t.maybeOne<any>('SELECT id FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('User not found');
+      const u = await t.maybeOne<any>('SELECT id FROM users WHERE id=$1 FOR UPDATE', [id]); if (!u) throw notFound('We could not find that user.');
       const n = (await t.one<any>('UPDATE users SET warn_count=warn_count+1 WHERE id=$1 RETURNING warn_count', [id])).warn_count;
       await audit(t, null, ADMIN, 'ADMIN_USER_WARNED', { user_id: id, reason, warn_count: n });
       await notify(t, id, 'ACCOUNT_WARNING', 'Warning from TrimSlot', reason);
@@ -100,9 +100,9 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     }));
   });
   post('/users/:id/notify', async (req, res) => {
-    const id = idOf(req.params.id); const d = parseB(z.object({ title: z.string().trim().max(80).optional(), body: z.string().trim().min(3, 'Write a message').max(500) }), req.body);
+    const id = idOf(req.params.id); const d = parseB(z.object({ title: z.string().trim().max(80).optional(), body: z.string().trim().min(3, 'Write a message.').max(500) }), req.body);
     await db.tx(async (t) => {
-      if (!(await t.maybeOne('SELECT 1 FROM users WHERE id=$1', [id]))) throw notFound('User not found');
+      if (!(await t.maybeOne('SELECT 1 FROM users WHERE id=$1', [id]))) throw notFound('We could not find that user.');
       await notify(t, id, 'ADMIN_MESSAGE', d.title || 'Message from TrimSlot', d.body);
       await audit(t, null, ADMIN, 'ADMIN_USER_NOTIFIED', { user_id: id, title: d.title || null });
     });
@@ -113,14 +113,14 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   get('/bookings/:id', async (req, res) => {
     const id = idOf(req.params.id);
     const b = await db.maybeOne<any>(`SELECT k.*, b.shop_name, cu.name AS customer_name, cu.email AS customer_email, cu.avatar_url AS customer_avatar, bu.name AS barber_name FROM bookings k JOIN barbers b ON b.id=k.barber_id JOIN users cu ON cu.id=k.customer_id JOIN users bu ON bu.id=b.user_id WHERE k.id=$1`, [id]);
-    if (!b) throw notFound('Booking not found');
+    if (!b) throw notFound('We could not find that booking.');
     const payments = await db.many(`SELECT reference, amount_kobo, fee_kobo, debt_netted_kobo, status, refund_status, refund_reason, disputed, dispute_note, created_at, verified_at FROM payments WHERE booking_id=$1 ORDER BY id DESC`, [id]);
     const history = await db.many(`SELECT id, actor_role, action, details, created_at FROM audit_log WHERE booking_id=$1 ORDER BY id DESC LIMIT 40`, [id]);
     const { id: _i, ...rest } = b;
     res.json({ booking: { id, ...rest, start_label: fmtWhen(b.date, b.start_min), incomplete: isIncomplete(b) }, payments, history });
   });
   const lockBooking = async (t: any, id: number) => {
-    const pre = await t.maybeOne('SELECT barber_id FROM bookings WHERE id=$1', [id]); if (!pre) throw notFound('Booking not found');
+    const pre = await t.maybeOne('SELECT barber_id FROM bookings WHERE id=$1', [id]); if (!pre) throw notFound('We could not find that booking.');
     await t.query('SELECT 1 FROM barbers WHERE id=$1 FOR UPDATE', [pre.barber_id]);     // same lock order as booking/payment code: barber -> booking
     return (await t.one('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id])) as any;
   };
@@ -135,23 +135,23 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     let ref: string | null = null;
     const out = await db.tx(async (t) => {
       const b = await lockBooking(t, id);
-      if (!['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `This booking is ${b.status} and cannot be cancelled.`);
+      if (!['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `This booking is ${b.status}. You cannot cancel it.`);
       const now = isoNow(); let pay = 'VOID'; let note = ''; let credit: any = null;
       if (b.payment_status === 'PAID') {
-        if (b.plan_purchase_id || b.credit_id) { await restoreEntitlement(t, b); note = ' Your plan session / credit has been returned.'; }
+        if (b.plan_purchase_id || b.credit_id) { await restoreEntitlement(t, b); note = ' We gave your plan session or credit back.'; }
         else if (b.payment_option === 'ONLINE') {
           const choice = d.refund ?? 'refund';
           if (choice === 'credit') { credit = await issueCredit(t, b, 'EARLY_CANCEL'); pay = credit ? 'CREDITED' : 'VOID'; note = ' You have a session credit with this barber.'; }
           else if (choice === 'refund') {
             const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [id]);
             if (p && !p.refund_status) { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [p.reference, 'cancelled by admin: ' + d.reason]); ref = p.reference; }
-            note = ' Your payment is being refunded to your original payment method.';
+            note = ' We are sending your money back the way you paid.';
           }
         }
       }
       await t.query(`UPDATE bookings SET status='CANCELLED', payment_status=$2, cancelled_at=$3, cancelled_by='admin', hold_expires_at=NULL WHERE id=$1`, [id, pay, now]);
       await audit(t, id, ADMIN, 'ADMIN_BOOKING_CANCELLED', { reason: d.reason, refund: d.refund ?? null, payment_status: pay });
-      await tell(t, b, 'BOOKING_CANCELLED', 'Booking cancelled', `Your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)} was cancelled by TrimSlot support: ${d.reason}.${note}`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was cancelled by TrimSlot support: ${d.reason}. The slot is open again.`);
+      await tell(t, b, 'BOOKING_CANCELLED', 'Booking cancelled', `Your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)} was cancelled by TrimSlot support: ${d.reason}.${note}`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was cancelled by TrimSlot support: ${d.reason}. The time is free again.`);
       await refreshQueueNotifications(t, b.barber_id, b.date);
       return { status: 'CANCELLED', payment_status: pay, credit_id: credit?.id ?? null };
     });
@@ -164,7 +164,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     validateBookableDate(d.date);
     res.json(await db.tx(async (t) => {
       const b = await lockBooking(t, id);
-      if (b.status !== 'CONFIRMED') throw conflict('ILLEGAL_TRANSITION', `Only confirmed bookings can be moved (this one is ${b.status}).`);
+      if (b.status !== 'CONFIRMED') throw conflict('ILLEGAL_TRANSITION', `You can only move confirmed bookings. This one is ${b.status}.`);
       const startMin = hhmmToMin(d.time);
       const { schedule, dayOff } = await loadSchedule(t, b.barber_id, d.date);
       const busy = (await busyIntervals(t, b.barber_id, d.date)).filter((iv) => !(d.date === b.date && iv.start === b.start_min && iv.end === b.end_min));
@@ -172,15 +172,15 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
       const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: b.duration_min, busy, nowMin: isToday ? lagosMinutes(clock.now()) : null });
       const endMin = startMin + b.duration_min;
       const overlaps = busy.some((iv) => iv.start < endMin && startMin < iv.end);
-      if (overlaps || (!d.force && !free.some((s) => s.start === startMin))) throw conflict('SLOT_UNAVAILABLE', overlaps ? 'That time overlaps another booking.' : 'That time is outside the barber\'s working hours, in a break or on a day off. Tick "override hours" to allow it.');
+      if (overlaps || (!d.force && !free.some((s) => s.start === startMin))) throw conflict('SLOT_UNAVAILABLE', overlaps ? 'That time clashes with another booking.' : 'That time is outside the barber\'s work hours, in a break, or on a day off. Tick "override hours" to allow it.');
       const mine = await t.many('SELECT start_min, end_min FROM bookings WHERE customer_id=$1 AND date=$2 AND status IN (\'CONFIRMED\',\'ARRIVED\',\'IN_SERVICE\') AND id<>$3', [b.customer_id, d.date, id]);
-      if (mine.some((m: any) => m.start_min < endMin && startMin < m.end_min)) throw conflict('CUSTOMER_OVERLAP', 'The customer already has a booking that overlaps this time.');
+      if (mine.some((m: any) => m.start_min < endMin && startMin < m.end_min)) throw conflict('CUSTOMER_OVERLAP', 'The customer already has a booking at this time.');
       const start = scheduledInstant(d.date, startMin);
       try { await t.query(`UPDATE bookings SET scheduled_at=$2, ends_at=$3, barber_hold=FALSE, skipped_at=NULL WHERE id=$1`, [id, start.toISOString(), new Date(start.getTime() + b.duration_min * 60000).toISOString()]); }
-      catch (e: any) { if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'That time was just taken.'); throw e; }
+      catch (e: any) { if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'Someone just took that time.'); throw e; }
       const from = fmtWhen(b.date, b.start_min), to = fmtWhen(d.date, startMin);
       await audit(t, id, ADMIN, 'ADMIN_BOOKING_RESCHEDULED', { reason: d.reason, from, to, forced: !!d.force });
-      await tell(t, b, 'BOOKING_RESCHEDULED', 'Booking moved', `Your ${b.service_name} booking was moved from ${from} to ${to} by TrimSlot support: ${d.reason}. If that does not work for you, cancel it from My bookings.`, `${b.service_name} was moved from ${from} to ${to} by TrimSlot support: ${d.reason}.`);
+      await tell(t, b, 'BOOKING_RESCHEDULED', 'Booking moved', `Your ${b.service_name} booking was moved from ${from} to ${to} by TrimSlot support: ${d.reason}. If that time does not work for you, cancel it in My bookings.`, `${b.service_name} was moved from ${from} to ${to} by TrimSlot support: ${d.reason}.`);
       await refreshQueueNotifications(t, b.barber_id, b.date); if (d.date !== b.date) await refreshQueueNotifications(t, b.barber_id, d.date);
       return { from, to };
     }));
@@ -190,17 +190,17 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const id = idOf(req.params.id); const d = parseB(z.object({ reason: reasonZ.shape.reason, paid: z.boolean().optional() }), req.body);
     res.json(await db.tx(async (t) => {
       const b = await lockBooking(t, id);
-      if (!['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `Cannot complete a booking that is ${b.status}.`);
+      if (!['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `You cannot complete a booking that is ${b.status}.`);
       const now = isoNow();
       if (b.payment_status === 'PAYMENT_DUE') {
-        if (d.paid === undefined) throw new AppError(409, 'PAYMENT_CHOICE', 'This is a pay-on-arrival booking. Say whether the customer paid (paid: true) or not (paid: false).');
+        if (d.paid === undefined) throw new AppError(409, 'PAYMENT_CHOICE', 'This is a pay-on-arrival booking. Say if the customer paid (paid: true) or not (paid: false).');
         await t.query(d.paid ? `UPDATE bookings SET payment_status='PAID', paid_via='ADMIN', paid_at=$2 WHERE id=$1` : `UPDATE bookings SET payment_status='VOID' WHERE id=$1`, d.paid ? [id, now] : [id]);
-      } else if (b.payment_status === 'PENDING') throw conflict('UNPAID', 'This booking is an unpaid online attempt; it cannot be completed.');
+      } else if (b.payment_status === 'PENDING') throw conflict('UNPAID', 'This booking was an online try that was never paid. You cannot complete it.');
       await t.query(`UPDATE bookings SET status='COMPLETED', service_complete=$2, service_start=COALESCE(service_start,$2) WHERE id=$1`, [id, now]);
       const after = await t.one<any>('SELECT * FROM bookings WHERE id=$1', [id]);
       const ledger = await accrueCommission(t, after);
       await audit(t, id, ADMIN, 'ADMIN_BOOKING_COMPLETED', { reason: d.reason, paid: d.paid ?? null, ledger_id: ledger });
-      await tell(t, b, 'BOOKING_COMPLETED', 'Booking completed', `Your ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked completed by TrimSlot support.`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked completed by TrimSlot support: ${d.reason}.`);
+      await tell(t, b, 'BOOKING_COMPLETED', 'Booking completed', `Your ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked as done by TrimSlot support.`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked as done by TrimSlot support: ${d.reason}.`);
       await refreshQueueNotifications(t, b.barber_id, b.date);
       return { status: 'COMPLETED', ledger_id: ledger };
     }));
@@ -210,14 +210,14 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
     res.json(await db.tx(async (t) => {
       const b = await lockBooking(t, id);
-      if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `Cannot mark a ${b.status} booking as no-show.`);
+      if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw conflict('ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
       await t.query(`UPDATE bookings SET status='NO_SHOW' WHERE id=$1`, [id]);
       if (b.payment_status === 'PENDING' || b.payment_status === 'PAYMENT_DUE') await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
       const s = await getSettings(t);
       const credit = b.payment_status === 'PAID' && b.payment_option !== 'CREDIT' && s.credit_on_missed_session ? await issueCredit(t, b, 'NO_SHOW', s) : null;
       if (credit) await t.query(`UPDATE bookings SET payment_status='CREDITED' WHERE id=$1`, [id]);
       await audit(t, id, ADMIN, 'ADMIN_BOOKING_NO_SHOW', { reason, credit_id: credit?.id ?? null });
-      await tell(t, b, 'NO_SHOW', 'Marked as no-show', `You were marked as a no-show for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} by TrimSlot support: ${reason}.${credit ? ' No refund, but you have 1 session credit with this barber.' : ''}`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked no-show by TrimSlot support.`);
+      await tell(t, b, 'NO_SHOW', 'Marked as no-show', `TrimSlot support marked you as a no-show for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}: ${reason}.${credit ? ' You get no refund, but you now have 1 session credit with this barber.' : ''}`, `${b.service_name} on ${fmtWhen(b.date, b.start_min)} was marked no-show by TrimSlot support.`);
       await refreshQueueNotifications(t, b.barber_id, b.date);
       return { status: 'NO_SHOW', credit_id: credit?.id ?? null };
     }));
@@ -227,12 +227,12 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   post('/credits/issue', async (req, res) => {
     const d = parseB(z.object({ customer_id: z.coerce.number().int().positive(), barber_id: z.coerce.number().int().positive(), value_naira: z.coerce.number().positive().max(1_000_000), reason: reasonZ.shape.reason, days: z.coerce.number().int().min(1).max(365).optional() }), req.body);
     res.json(await db.tx(async (t) => {
-      const c = await t.maybeOne<any>(`SELECT id FROM users WHERE id=$1 AND role='customer'`, [d.customer_id]); if (!c) throw notFound('Customer not found');
-      const bb = await t.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1', [d.barber_id]); if (!bb) throw notFound('Barber not found');
+      const c = await t.maybeOne<any>(`SELECT id FROM users WHERE id=$1 AND role='customer'`, [d.customer_id]); if (!c) throw notFound('We could not find that customer.');
+      const bb = await t.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1', [d.barber_id]); if (!bb) throw notFound('We could not find that barber.');
       const s = await getSettings(t); const exp = new Date(Date.now() + (d.days ?? s.credit_expiry_days) * 86400000).toISOString();
       const cr = await t.one<any>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at) VALUES ($1,$2,NULL,'ADMIN_GRANT',$3,$4,$5) RETURNING id`, [d.customer_id, d.barber_id, Math.round(d.value_naira * 100), exp, isoNow()]);
       await audit(t, null, ADMIN, 'ADMIN_CREDIT_ISSUED', { user_id: d.customer_id, barber_id: d.barber_id, credit_id: cr.id, value_kobo: Math.round(d.value_naira * 100), reason: d.reason });
-      await notify(t, d.customer_id, 'CREDIT_ISSUED', 'Session credit added', `You received a session credit worth ${naira(Math.round(d.value_naira * 100))} for ${bb.shop_name} (valid until ${exp.slice(0, 10)}): ${d.reason}.`);
+      await notify(t, d.customer_id, 'CREDIT_ISSUED', 'Session credit added', `You got a session credit worth ${naira(Math.round(d.value_naira * 100))} for ${bb.shop_name} (valid until ${exp.slice(0, 10)}): ${d.reason}.`);
       return { credit_id: cr.id, expires_at: exp };
     }));
   });
@@ -240,12 +240,12 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
     await requirePin(db, req);
     res.json(await db.tx(async (t) => {
-      const c = await t.maybeOne<any>('SELECT * FROM session_credits WHERE id=$1 FOR UPDATE', [id]); if (!c) throw notFound('Credit not found');
+      const c = await t.maybeOne<any>('SELECT * FROM session_credits WHERE id=$1 FOR UPDATE', [id]); if (!c) throw notFound('We could not find that credit.');
       if (c.status === 'REVOKED') return { changed: false };
-      if (c.status !== 'AVAILABLE') throw conflict('CREDIT_USED', 'This credit has already been used.');
+      if (c.status !== 'AVAILABLE') throw conflict('CREDIT_USED', 'This credit is already used.');
       await t.query(`UPDATE session_credits SET status='REVOKED' WHERE id=$1`, [id]);
       await audit(t, null, ADMIN, 'ADMIN_CREDIT_REVOKED', { user_id: c.customer_id, credit_id: id, reason });
-      await notify(t, c.customer_id, 'CREDIT_REVOKED', 'Session credit removed', `A session credit was removed from your account: ${reason}.`);
+      await notify(t, c.customer_id, 'CREDIT_REVOKED', 'Session credit removed', `We removed a session credit from your account: ${reason}.`);
       return { changed: true };
     }));
   });
@@ -254,24 +254,24 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   post('/plans/:id/visibility', async (req, res) => {
     const id = idOf(req.params.id); const d = parseB(z.object({ active: z.boolean(), reason: reasonZ.shape.reason }), req.body);
     res.json(await db.tx(async (t) => {
-      const p = await t.maybeOne<any>('SELECT id, name, active, barber_id FROM plans WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('Plan not found');
+      const p = await t.maybeOne<any>('SELECT id, name, active, barber_id FROM plans WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('We could not find that plan.');
       if (p.active === d.active) return { changed: false, active: p.active };
       await t.query('UPDATE plans SET active=$2 WHERE id=$1', [id, d.active]);
       await audit(t, null, ADMIN, d.active ? 'ADMIN_PLAN_RESTORED' : 'ADMIN_PLAN_HIDDEN', { plan_id: id, barber_id: p.barber_id, reason: d.reason });
-      await notify(t, await barberUid(t, p.barber_id), 'PLAN_ADMIN', d.active ? 'Plan restored' : 'Plan hidden', `Your plan "${p.name}" was ${d.active ? 'restored' : 'hidden from customers'} by TrimSlot: ${d.reason}. Existing purchases are not affected.`);
+      await notify(t, await barberUid(t, p.barber_id), 'PLAN_ADMIN', d.active ? 'Plan restored' : 'Plan hidden', `Your plan "${p.name}" was ${d.active ? 'restored' : 'hidden from customers'} by TrimSlot: ${d.reason}. People who already bought it keep their plan.`);
       return { changed: true, active: d.active };
     }));
   });
   post('/plan-purchases/:id/adjust', async (req, res) => {
     const id = idOf(req.params.id);
     const d = parseB(z.object({ reason: reasonZ.shape.reason, delta: z.coerce.number().int().min(-100).max(100).optional(), extend_days: z.coerce.number().int().min(-365).max(365).optional() }), req.body);
-    if (!d.delta && !d.extend_days) throw badRequest('Give a session change (delta) or extra days (extend_days).');
+    if (!d.delta && !d.extend_days) throw badRequest('Add a change in sessions (delta) or extra days (extend_days).');
     res.json(await db.tx(async (t) => {
-      const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('Plan purchase not found');
-      if (p.status !== 'ACTIVE') throw conflict('NOT_ACTIVE', 'Only active plan purchases can be adjusted.');
+      const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('We could not find that plan purchase.');
+      if (p.status !== 'ACTIVE') throw conflict('NOT_ACTIVE', 'You can only change active plan purchases.');
       const total = p.sessions_total + (d.delta ?? 0);
-      if (total < Math.max(1, p.sessions_used)) throw badRequest(`Total sessions cannot go below ${Math.max(1, p.sessions_used)} (already used).`);
-      if (total > 500) throw badRequest('Total sessions cannot exceed 500.');
+      if (total < Math.max(1, p.sessions_used)) throw badRequest(`Total sessions cannot be below ${Math.max(1, p.sessions_used)}. That many are already used.`);
+      if (total > 500) throw badRequest('Total sessions cannot be more than 500.');
       const base = Math.max(new Date(p.expires_at).getTime(), (d.extend_days ?? 0) > 0 ? Date.now() : 0);
       const exp = d.extend_days ? new Date(base + d.extend_days * 86400000).toISOString() : p.expires_at;
       await t.query('UPDATE plan_purchases SET sessions_total=$2, expires_at=$3 WHERE id=$1', [id, total, exp]);
@@ -285,15 +285,15 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     if (d.refund) await requirePin(db, req);
     let ref: string | null = null;
     const out = await db.tx(async (t) => {
-      const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('Plan purchase not found');
+      const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('We could not find that plan purchase.');
       if (p.status === 'CANCELLED') return { changed: false };
-      if (p.status !== 'ACTIVE') throw conflict('NOT_ACTIVE', 'Only active plan purchases can be cancelled.');
+      if (p.status !== 'ACTIVE') throw conflict('NOT_ACTIVE', 'You can only cancel active plan purchases.');
       await t.query(`UPDATE plan_purchases SET status='CANCELLED' WHERE id=$1`, [id]);
       if (d.refund) { const pay = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE plan_purchase_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [id]);
         if (pay && !pay.refund_status) { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [pay.reference, 'plan cancelled by admin: ' + d.reason]); ref = pay.reference; } }
       const upcoming = (await t.one<any>(`SELECT COUNT(*)::int c FROM bookings WHERE plan_purchase_id=$1 AND status IN ('CONFIRMED','ARRIVED') AND date>=$2`, [id, lagosDate()])).c;
       await audit(t, null, ADMIN, 'ADMIN_PLAN_PURCHASE_CANCELLED', { user_id: p.customer_id, purchase_id: id, refund: !!d.refund, reason: d.reason, upcoming_plan_bookings: upcoming });
-      await notify(t, p.customer_id, 'PLAN_ADJUSTED', 'Plan cancelled', `Your plan "${p.plan_name}" was cancelled by TrimSlot: ${d.reason}.${d.refund ? ' Your payment is being refunded.' : ''}`);
+      await notify(t, p.customer_id, 'PLAN_ADJUSTED', 'Plan cancelled', `Your plan "${p.plan_name}" was cancelled by TrimSlot: ${d.reason}.${d.refund ? ' We are sending your money back.' : ''}`);
       await notify(t, await barberUid(t, p.barber_id), 'PLAN_ADMIN', 'Plan purchase cancelled', `A customer's "${p.plan_name}" purchase was cancelled by TrimSlot: ${d.reason}.`);
       return { changed: true, refund_flagged: !!ref, upcoming_plan_bookings: upcoming };
     });
@@ -337,9 +337,9 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   post('/payments/:reference/dispute', async (req, res) => {
     const ref = String(req.params.reference); const d = parseB(z.object({ disputed: z.boolean().default(true), note: z.string().trim().max(500).optional() }), req.body);
-    if (d.disputed && (!d.note || d.note.length < 3)) throw badRequest('Write a note about the dispute (at least 3 characters)');
+    if (d.disputed && (!d.note || d.note.length < 3)) throw badRequest('Write a note about the dispute (at least 3 letters).');
     res.json(await db.tx(async (t) => {
-      const p = await t.maybeOne<any>('SELECT id, disputed, booking_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]); if (!p) throw notFound('Payment not found');
+      const p = await t.maybeOne<any>('SELECT id, disputed, booking_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]); if (!p) throw notFound('We could not find that payment.');
       await t.query(`UPDATE payments SET disputed=$2, dispute_note=$3, disputed_at=$4 WHERE id=$1`, [p.id, d.disputed, d.disputed ? d.note : null, d.disputed ? isoNow() : null]);
       await audit(t, p.booking_id, ADMIN, d.disputed ? 'ADMIN_PAYMENT_FLAGGED' : 'ADMIN_PAYMENT_UNFLAGGED', { reference: ref, note: d.note || null });
       return { disputed: d.disputed };
@@ -373,10 +373,10 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
 
   /* ================= broadcasts ================= */
   post('/broadcast', async (req, res) => {
-    const d = parseB(z.object({ audience: z.enum(['customers', 'barbers', 'user']), user_id: z.coerce.number().int().positive().optional(), title: z.string().trim().min(2, 'Add a title').max(80), body: z.string().trim().min(3, 'Write the message').max(500) }), req.body);
+    const d = parseB(z.object({ audience: z.enum(['customers', 'barbers', 'user']), user_id: z.coerce.number().int().positive().optional(), title: z.string().trim().min(2, 'Add a title.').max(80), body: z.string().trim().min(3, 'Write the message.').max(500) }), req.body);
     res.json(await db.tx(async (t) => {
       let n = 0;
-      if (d.audience === 'user') { if (!d.user_id) throw badRequest('Choose the user (user_id).'); if (!(await t.maybeOne('SELECT 1 FROM users WHERE id=$1', [d.user_id]))) throw notFound('User not found'); await notify(t, d.user_id, 'ANNOUNCEMENT', d.title, d.body); n = 1; }
+      if (d.audience === 'user') { if (!d.user_id) throw badRequest('Choose the user (user_id).'); if (!(await t.maybeOne('SELECT 1 FROM users WHERE id=$1', [d.user_id]))) throw notFound('We could not find that user.'); await notify(t, d.user_id, 'ANNOUNCEMENT', d.title, d.body); n = 1; }
       else n = (await t.query(`INSERT INTO notifications (user_id, type, title, body, is_read, created_at) SELECT id, 'ANNOUNCEMENT', $2, $3, FALSE, $4 FROM users WHERE role=$1 AND account_status='ACTIVE'`, [d.audience === 'customers' ? 'customer' : 'barber', d.title, d.body, isoNow()])).rowCount;
       const b = await t.one<any>(`INSERT INTO broadcasts (audience, user_id, title, body, recipients, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [d.audience.toUpperCase(), d.user_id ?? null, d.title, d.body, n, isoNow()]);
       await audit(t, null, ADMIN, 'ADMIN_BROADCAST', { broadcast_id: b.id, audience: d.audience, recipients: n, title: d.title, ...(d.user_id ? { user_id: d.user_id } : {}) });
@@ -395,9 +395,9 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     res.json({ reports: rows, counts: { OPEN: c.open, RESOLVED: c.resolved, DISMISSED: c.dismissed } });
   });
   post('/reports/:id/resolve', async (req, res) => {
-    const id = idOf(req.params.id); const d = parseB(z.object({ status: z.enum(['RESOLVED', 'DISMISSED']), note: z.string().trim().min(3, 'Add a resolution note (at least 3 characters)').max(500), notify_reporter: z.boolean().optional() }), req.body);
+    const id = idOf(req.params.id); const d = parseB(z.object({ status: z.enum(['RESOLVED', 'DISMISSED']), note: z.string().trim().min(3, 'Add a note about how you fixed it (at least 3 letters).').max(500), notify_reporter: z.boolean().optional() }), req.body);
     res.json(await db.tx(async (t) => {
-      const r = await t.maybeOne<any>('SELECT * FROM reports WHERE id=$1 FOR UPDATE', [id]); if (!r) throw notFound('Report not found');
+      const r = await t.maybeOne<any>('SELECT * FROM reports WHERE id=$1 FOR UPDATE', [id]); if (!r) throw notFound('We could not find that report.');
       if (r.status !== 'OPEN') throw conflict('ALREADY_RESOLVED', 'This report is already closed.');
       await t.query('UPDATE reports SET status=$2, admin_note=$3, resolved_at=$4 WHERE id=$1', [id, d.status, d.note, isoNow()]);
       await audit(t, r.booking_id, ADMIN, 'ADMIN_REPORT_' + d.status, { report_id: id, note: d.note, user_id: r.target_user_id });
@@ -409,13 +409,13 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   /* ================= global + per-barber controls ================= */
   post('/barbers/:id/pause', async (req, res) => {
     const id = idOf(req.params.id); const d = parseB(z.object({ paused: z.boolean(), reason: z.string().trim().max(300).optional() }), req.body);
-    if (d.paused && (!d.reason || d.reason.length < 3)) throw badRequest('Write a reason for pausing bookings (at least 3 characters)');
+    if (d.paused && (!d.reason || d.reason.length < 3)) throw badRequest('Write a reason for pausing bookings (at least 3 letters).');
     res.json(await db.tx(async (t) => {
-      const b = await t.maybeOne<any>('SELECT id, shop_name, booking_paused, user_id FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('Barber not found');
+      const b = await t.maybeOne<any>('SELECT id, shop_name, booking_paused, user_id FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('We could not find that barber.');
       if (b.booking_paused === d.paused) return { changed: false, paused: d.paused };
       await t.query('UPDATE barbers SET booking_paused=$2, pause_reason=$3 WHERE id=$1', [id, d.paused, d.paused ? d.reason : null]);
       await audit(t, null, ADMIN, d.paused ? 'ADMIN_BARBER_BOOKINGS_PAUSED' : 'ADMIN_BARBER_BOOKINGS_RESUMED', { barber_id: id, shop: b.shop_name, reason: d.reason || null });
-      await notify(t, b.user_id, 'BARBER_PAUSE', d.paused ? 'New bookings paused' : 'New bookings resumed', d.paused ? `New bookings for ${b.shop_name} are paused by TrimSlot: ${d.reason}. Existing bookings are not affected.` : `${b.shop_name} can take new bookings again.`);
+      await notify(t, b.user_id, 'BARBER_PAUSE', d.paused ? 'New bookings paused' : 'New bookings resumed', d.paused ? `New bookings for ${b.shop_name} are paused by TrimSlot: ${d.reason}. Bookings you already have are not changed.` : `${b.shop_name} can take new bookings again.`);
       return { changed: true, paused: d.paused };
     }));
   });
@@ -423,7 +423,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const id = idOf(req.params.id);
     const d = parseB(z.object({ percent: z.coerce.number().min(0).max(100).nullable().optional(), flat_naira: z.coerce.number().min(0).max(1_000_000).nullable().optional(), reason: z.string().trim().max(300).optional() }), req.body);
     res.json(await db.tx(async (t) => {
-      const b = await t.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('Barber not found');
+      const b = await t.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('We could not find that barber.');
       const clear = d.percent == null && d.flat_naira == null;
       await t.query('UPDATE barbers SET fee_percent_override=$2, fee_flat_kobo_override=$3 WHERE id=$1', [id, clear ? null : (d.percent ?? 0), clear ? null : Math.round((d.flat_naira ?? 0) * 100)]);
       await audit(t, null, ADMIN, 'ADMIN_BARBER_FEE_SET', { barber_id: id, shop: b.shop_name, percent: clear ? null : d.percent ?? 0, flat_naira: clear ? null : d.flat_naira ?? 0, reason: d.reason || null });
@@ -446,7 +446,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   get('/ledger/:barberId', async (req, res) => {
     const id = idOf(req.params.barberId);
-    const b = await db.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1', [id]); if (!b) throw notFound('Barber not found');
+    const b = await db.maybeOne<any>('SELECT id, shop_name FROM barbers WHERE id=$1', [id]); if (!b) throw notFound('We could not find that barber.');
     const entries = await db.many(`SELECT l.id, l.booking_id, l.kind, l.amount_kobo, l.remaining_kobo, l.status, l.note, l.created_at, l.settled_at FROM commission_ledger l WHERE l.barber_id=$1 ORDER BY l.id DESC LIMIT 200`, [id]);
     const apps = await db.many(`SELECT a.id, a.ledger_id, a.kind, a.amount_kobo, a.reason, a.created_at, p.reference FROM ledger_applications a JOIN commission_ledger l ON l.id=a.ledger_id LEFT JOIN payments p ON p.id=a.payment_id WHERE l.barber_id=$1 ORDER BY a.id DESC LIMIT 200`, [id]);
     res.json({ barber: b, balance: await ledgerBlocked(db, id), entries, applications: apps });
@@ -456,7 +456,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const d = parseB(z.object({ amount_naira: z.coerce.number().positive().max(10_000_000).optional(), all: z.boolean().optional(), reason: reasonZ.shape.reason }), req.body);
     if (kind !== 'settle') await requirePin(db, req);    // waive / adjust permanently change what a barber owes
     res.json(await db.tx(async (t) => {
-      const b = await t.maybeOne<any>('SELECT id, shop_name, user_id FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('Barber not found');
+      const b = await t.maybeOne<any>('SELECT id, shop_name, user_id FROM barbers WHERE id=$1 FOR UPDATE', [id]); if (!b) throw notFound('We could not find that barber.');
       const owed = await outstandingKobo(t, id);
       const amt = d.all ? owed : Math.round((d.amount_naira ?? 0) * 100);
       if (amt <= 0) throw badRequest(d.all ? 'Nothing is owed.' : 'Enter an amount.');

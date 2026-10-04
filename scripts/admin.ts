@@ -37,7 +37,7 @@ async function main() {
       await db.tx(async (t) => {
         await t.query('UPDATE barbers SET verified=$1, verified_at=$2 WHERE id=$3', [on, on ? isoNow() : null, b.barber_id]);
         await audit(t, null, { id: null, role: 'system' }, on ? 'BARBER_VERIFIED' : 'BARBER_UNVERIFIED', { barber_id: b.barber_id, via: 'admin CLI' });
-        if (on && !b.verified) await notify(t, b.user_id, 'BARBER_VERIFIED', "You're live! 🎉", `${b.shop_name} is now visible to customers and can take bookings.`);
+        if (on && !b.verified) await notify(t, b.user_id, 'BARBER_VERIFIED', 'Your shop is live! 🎉', `${b.shop_name} is now visible to customers. It can take bookings.`);
       });
       console.log(`${on ? 'Verified' : 'Unverified'}: ${b.shop_name} (${b.name}, ${b.email ?? b.phone}).`);
     }
