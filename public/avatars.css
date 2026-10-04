@@ -13,3 +13,25 @@
 .av.in{margin-right:8px}
 .chk.accept{align-items:flex-start;font-weight:400;font-size:13px}.chk.accept input{margin-top:2px;flex:none}
 .now .av{border-color:rgba(255,255,255,.4)}
+
+/* ---- profile picture cropper (flat, compact; colours come from the theme variables so both themes pass AA) ---- */
+.crop-scrim{align-items:center}
+.sheet.crop{max-width:340px;border-radius:12px;border:1px solid var(--line2);margin:0 12px;padding:16px;text-align:center}
+.sheet.crop h3{margin:0 0 2px;font-size:16px}
+.sheet.crop p{margin:0 0 12px}
+.crop-view{position:relative;width:min(280px,calc(100vw - 80px),max(140px,calc(100dvh - 300px)));aspect-ratio:1;margin:0 auto;border-radius:50%;overflow:hidden;background:var(--bg2);border:2px solid var(--ctl);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.crop-view.drag{cursor:grabbing}
+.crop-view:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+.crop-img{position:absolute;left:0;top:0;max-width:none;width:auto;height:auto;transform-origin:0 0;pointer-events:none;user-select:none;-webkit-user-drag:none;will-change:transform}
+.crop-zoom{display:flex;align-items:center;gap:10px;margin:14px 4px 4px;text-align:left}
+.crop-zoom label{font-size:13px;font-weight:600;color:var(--ink)}
+.crop-zoom input[type=range]{flex:1;min-width:0;height:28px;margin:0;padding:0;background:transparent;border:0;-webkit-appearance:none;appearance:none;cursor:pointer}
+.crop-zoom input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--ctl)}
+.crop-zoom input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--ctl)}
+.crop-zoom input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;margin-top:-9px;border-radius:50%;background:var(--brand);border:2px solid var(--card);box-shadow:0 0 0 1px var(--brand)}
+.crop-zoom input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--brand);border:2px solid var(--card);box-shadow:0 0 0 1px var(--brand)}
+.crop-zoom input[type=range]:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+.crop-zoom input[type=range]:disabled{opacity:.5;cursor:not-allowed}
+.sheet.crop .err{margin:10px 0 0;text-align:left}
+.crop-btns{display:flex;gap:8px;margin-top:14px}
+.crop-btns .btn{flex:1}

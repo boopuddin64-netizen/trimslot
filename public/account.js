@@ -29,8 +29,7 @@ async function squareJpeg(file) {
   }
   throw new Error('That photo is too big. Try a different one.');
 }
-async function putAvatar(file) {
-  const blob = await squareJpeg(file);
+async function putBlob(blob) {
   const r = await fetch('/api/me/avatar', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || 'The upload did not work');
@@ -43,11 +42,16 @@ const photoCard = (u) => `<div class="card avatar-edit">${av(u, 'xl')}<div class
   ${u.avatar_url ? `<button class="btn ghost sm" id="av-rm" type="button">Remove</button>` : ''}</div><div class="small muted" id="av-msg" style="margin-top:4px"></div></div></div>`;
 
 function wirePhoto() {
-  const go1 = async (f) => {
-    if (!f) return; const m = $('#av-msg'); m.textContent = 'Cropping and uploading…';
-    try { state.user.avatar_url = await putAvatar(f); toast('Photo saved'); route(); } catch (e) { m.textContent = e.message; fail(e); }
+  const upload = async (blob) => { state.user.avatar_url = await putBlob(blob); };
+  const go1 = async (f, input) => {
+    if (!f) return; const m = $('#av-msg'); m.textContent = '';
+    try {
+      if (window.AvatarCrop && window.CropMath) { if (await AvatarCrop.open(f, upload)) { toast('Photo saved'); route(); } }
+      else { m.textContent = 'Saving…'; await upload(await squareJpeg(f)); toast('Photo saved'); route(); }
+    } catch (e) { m.textContent = e.message; fail(e); }
+    finally { if (input) input.value = ''; }   // lets the same picture be chosen again
   };
-  ['#av-cam', '#av-file'].forEach((s) => { const el = $(s); if (el) el.onchange = () => go1(el.files[0]); });
+  ['#av-cam', '#av-file'].forEach((s) => { const el = $(s); if (el) el.onchange = () => go1(el.files[0], el); });
   const rm = $('#av-rm'); if (rm) rm.onclick = async () => { try { await api('/me/avatar', { method: 'DELETE' }); state.user.avatar_url = null; toast('Photo removed'); route(); } catch (e) { fail(e); } };
 }
 
