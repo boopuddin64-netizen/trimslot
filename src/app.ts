@@ -42,6 +42,7 @@ import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 import { feeSettingsOf, onlineBreakdown } from './fees';
+import { canReschedule, rescheduleBooking } from './reschedule';
 import { helpEligible, helpView, requestHelp } from './help';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
@@ -82,6 +83,7 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     barber_name: barber?.barber_name, shop_name: barber?.shop_name, location: barber?.location,
     cancel_deadline: cancelCutoff(b.scheduled_at, cutoffMin).toISOString(),
     can_cancel: ['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status) && canCustomerCancel(b.scheduled_at, clock.now(), cutoffMin),
+    can_reschedule: canReschedule(b, cutoffMin),
     can_check_in: b.status === 'CONFIRMED' && b.date === lagosDate(),
     allowed_next: TRANSITIONS[b.status],
     created_at: b.created_at,
@@ -447,6 +449,12 @@ export function createApp(db: Db) {
     const b = await ownBooking(req);
     await requestHelp(db, req.user!.id, b.id, req.body?.note);
     res.status(201).json({ booking: await decorate(db, (await getBooking(db, b.id))!) });
+  }));
+  /** Move an upcoming booking to another free time (same barber and service). Allowed only while cancelling is still allowed. */
+  api.post('/bookings/:id/reschedule', limits.payment, cust, wrap(async (req, res) => {
+    const b = await ownBooking(req);
+    const d = parse(z.object({ date: z.string(), time: z.string() }), req.body);
+    res.json({ booking: await decorate(db, await rescheduleBooking(db, req.user!.id, b.id, d)) });
   }));
   api.post('/bookings/:id/check-in', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCheckIn(db, req.user!.id, (await ownBooking(req)).id)) })));
 

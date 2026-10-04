@@ -28,6 +28,7 @@ export interface BookingRow {
   cancelled_at: string | null; cancelled_by: string | null;
   barber_hold: boolean; skipped_at: string | null; last_queue_pos: number | null; created_at: string;
   note_to_barber: string | null; rem2h_at: string | null; rem30_at: string | null; leave_at: string | null;
+  reschedule_count: number;
   booking_fee_kobo: number; ps_fee_est_kobo: number; barber_fee_kobo: number; platform_charge_kobo: number; payout_kobo: number | null;
 }
 

@@ -205,7 +205,7 @@ async function route() {
       if (parts[0] === 'book') return bookWizard(Number(parts[1]));
       if (parts[0] === 'wallet') return wallet(q.get('plan'), Number(q.get('pp')) || 0);
       if (parts[0] === 'bookings') return myBookings();
-      if (parts[0] === 'booking') return bookingDetail(Number(parts[1]), q.get('pay'));
+      if (parts[0] === 'booking') return parts[2] === 'move' ? moveBooking(Number(parts[1])) : bookingDetail(Number(parts[1]), q.get('pay'));
     } else {
       if (parts[0] === 'today') return barberToday();
       if (parts[0] === 'plans') return barberPlans();
@@ -736,7 +736,7 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your time is saved only after you pay. Until then, others can book it. Pay to save it. If someone takes it first, we refund you.</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira((b.money && b.money.total_kobo) || b.price_kobo)} now</button><button class="btn sec" id="verify">I paid. Check my payment</button></div>` : ''}
     ${b.can_check_in ? `<button class="btn big green block" id="here">${ic('pin')} I'm Here</button>` : ''}
     ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button shows on the day of your visit.</div>` : ''}
-    ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
+    ${canCancel ? `<div class="btns" style="margin-top:16px">${b.can_reschedule ? `<a class="btn" id="move" href="#/booking/${b.id}/move">${ic('cal', 'sm')} Change time</a>` : ''}<button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
     ${locked ? `<div class="info small notice" id="lockedbox">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you do not come and your barber marks a no-show, you get no refund. If you paid, you get 1 credit with this barber instead.${b.barber_contact ? `<div style="margin-top:8px"><b>Something urgent? Call or WhatsApp your barber.</b> Your barber decides what happens to the booking.</div>${contactBtns(b.barber_contact)}` : ''}</div></div>` : ''}
     ${helpHtml(b)}
     ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time, and we found no payment for it. If you still see a charge, tap “Report a problem” and we will sort it out.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
@@ -755,6 +755,31 @@ async function bookingDetail(id, payResult, quiet) {
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) throw new Error('Not cancelled'); await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
+}
+
+/* ---------- customer: change the time of an upcoming booking (same barber and service) ---------- */
+async function moveBooking(id) {
+  const { booking: b } = await api('/bookings/' + id);
+  if (!b.can_reschedule) { app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><div class="info notice">${ic('lock', 'sm')}<div>You cannot change the time of this booking any more.</div></div>`; return; }
+  const today = state.cfg.today;
+  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
+  let date = b.date < today ? today : b.date, time = null;
+  const draw = async () => {
+    app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><h1>Change time</h1>
+      <div class="card small"><b>${esc(b.service_name)}</b> with ${esc(b.shop_name)}<div class="muted">Now: ${dateLabel(b.date)}, ${esc(b.start_label)}</div><div class="muted">Your payment stays the same.</div></div>
+      <div class="days">${days.map((d) => { const x = new Date(d + 'T00:00:00Z'); return `<button class="chip ${date === d ? 'on' : ''}" data-d="${d}">${DAYN[x.getUTCDay()]}<b>${x.getUTCDate()}</b>${MON[x.getUTCMonth()]}</button>`; }).join('')}</div>
+      <div id="slots" class="card muted">Loading times…</div>
+      <div class="btns cta"><a class="btn sec" href="#/booking/${id}">Keep my time</a><button class="btn" id="save" disabled>Move my booking</button></div>`;
+    document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { date = el.dataset.d; time = null; draw(); });
+    try {
+      const r = await api(`/barbers/${b.barber_id}/slots?service_id=${b.service_id}&date=${date}`);
+      $('#slots').className = 'card';
+      $('#slots').innerHTML = r.slots.length ? `<div class="small muted" style="margin-bottom:8px">${dateLabel(date)} · ${b.duration_min} min</div><div class="chips">${r.slots.map((s) => `<button class="chip ${time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>` : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>`;
+      document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#save').disabled = false; });
+    } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    $('#save').onclick = async () => { const btn = $('#save'); btn.disabled = true; try { await api(`/bookings/${id}/reschedule`, { method: 'POST', body: { date, time } }); toast('Your booking is moved'); go('#/booking/' + id); } catch (e) { fail(e); btn.disabled = false; } };
+  };
+  draw();
 }
 
 /* ---------- report a problem (customers + barbers) ---------- */
