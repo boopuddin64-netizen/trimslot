@@ -18,7 +18,8 @@ export function publicSettingsView(s: Settings) {
     liability_cap_naira: s.liability_cap_kobo > 0 ? s.liability_cap_kobo / 100 : null,
     retention_events_days: s.retention_events_days, retention_bad_events_days: s.retention_bad_events_days, retention_notifications_days: s.retention_notifications_days,
     retention_push_stale_days: s.retention_push_stale_days, retention_deleted_days: s.retention_deleted_days, retention_checkout_days: s.retention_checkout_days,
-    retention_rate_limit_hours: s.retention_rate_limit_hours,
+    retention_rate_limit_hours: s.retention_rate_limit_hours, retention_admin_alerts_days: s.retention_admin_alerts_days,
+    loyalty_every_n: s.loyalty_every_n, loyalty_credit_naira: s.loyalty_credit_kobo / 100,
     terms_version: s.terms_version, privacy_version: s.privacy_version, barber_agreement_version: s.barber_agreement_version,
   };
 }

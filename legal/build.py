@@ -25,7 +25,7 @@ DEFAULTS = {
     "min_plan_price_naira": "1,000", "max_plan_price_naira": "500,000", "max_plan_validity_days": "90", "max_plan_sessions": "30",
     "liability_cap_naira": "₦[AMOUNT]",
     "retention_events_days": "400", "retention_bad_events_days": "30", "retention_notifications_days": "180", "retention_push_stale_days": "60",
-    "retention_deleted_days": "30", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
+    "retention_deleted_days": "30", "loyalty_every_n": "10", "loyalty_credit_naira": "1,000", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
     "terms_version": "1", "privacy_version": "1", "barber_agreement_version": "1",
 }
 TOKEN = re.compile(r"\{\{([a-z_]+)\}\}")

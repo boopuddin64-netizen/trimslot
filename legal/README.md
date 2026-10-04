@@ -23,7 +23,7 @@
 
 * `[SQUARE BRACKETS IN CAPITALS]` = something we do not know yet (company name, address, e-mail…). Replace before launch.
 * `[LAWYER: …]` = a specific point where we need a decision or a check.
-* Numbers are written as `{{setting_name}}` (for example `{{cancel_cutoff_min}}`). They are admin settings (Controls page); the public pages show the live value, the Word/PDF show the defaults (30 min cancel lock, 30-day credit, 15 min hold, 3 h refund auto-approve, ₦10 + 0.15 %, 50 % commission). Changing a number never needs a code change or a rebuild. Wording around a number still needs a human check.
+* Numbers are written as `{{setting_name}}` (for example `{{cancel_cutoff_min}}`). They are admin settings (Controls page); the public pages show the live value, the Word/PDF show the defaults (for example 30 min cancel lock, 30-day credit, 15 min before an unpaid try closes, 3 h refund auto-approve, a three-way split of the payment-processor fee, 50 % commission). Changing a number never needs a code change or a rebuild. Wording around a number still needs a human check.
 * The app is in **Paystack test mode** and **maintenance mode** (bookings paused) while this pack is reviewed. These documents describe the intended live service.
 * Money amounts are in Nigerian Naira (₦). Times are West Africa Time (Lagos, UTC+1).
 
@@ -32,4 +32,4 @@
 1. Everyone accepts the **Terms of Service** and is told about the **Privacy Policy** when creating an account.
 2. Barbers additionally accept the **Barber Agreement** when they sign up (mandatory tick-box, logged with version, time, IP and browser; users are asked to accept again when a version is raised).
 3. The **Refund, Cancellation and Credit Policy** and the **Plan Terms** are incorporated into the Terms of Service (they are linked from it and shown at the point of booking / purchase).
-4. The **Cookie and Notification text** is shown in the app the first time notifications are offered.
+4. A short **notification card** is shown in the app on the main screens (the exact wording is quoted in document 06, with the gaps found in review).

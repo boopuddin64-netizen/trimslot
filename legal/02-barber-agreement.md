@@ -17,7 +17,7 @@
 
 **Effective date:** [EFFECTIVE DATE]  **Version:** {{barber_agreement_version}}
 
-This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**") and you, the person or business that signs up as a barber or shop on TrimSlot ("**you**", "the **Barber**"). It adds to the [Terms of Service](terms.html) and the [Privacy Policy](privacy.html). If they conflict on a barber matter, this agreement wins. By ticking "I agree" when you sign up (or by continuing to use the barber side of the app after we notify you of this agreement) you accept it. If you sign up for a company or partnership, you confirm you have authority to bind it.
+This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**") and you, the person or business that signs up as a barber or shop on TrimSlot ("**you**", "the **Barber**"). It adds to the [Terms of Service](terms.html) and the [Privacy Policy](privacy.html). If they conflict on a barber matter, this agreement wins. In this agreement the "**Service**" means the TrimSlot website and web app described in the Terms of Service, and "**the Policy**" means the [Refund, Cancellation and Credit Policy](refunds.html). By ticking "I agree" when you sign up (or by continuing to use the barber side of the app after we notify you of this agreement) you accept it. If you sign up for a company or partnership, you confirm you have authority to bind it.
 
 ## 1. Your status: an independent business
 
@@ -98,33 +98,35 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 * older debt is paid first;
 * if the customer is refunded, the netting is reversed and the balance goes back up.
 
+The netted amount is worked out **when the customer starts to pay** and is applied to your balance only when the payment is confirmed. If your balance is settled in the meantime (for example by a manual settlement) while a customer is still in checkout, that payment can take more from your share than you owed. The app records this; it is not paid back to you automatically. TrimSlot staff review it with you and may correct it. [OWNER/LAWYER: confirm this is acceptable or add an automatic correction; see question 56.]
+
 8.3 **Manual settlement.** You may also settle the balance by another method we agree in writing (for example, bank transfer to [COMPANY BANK ACCOUNT]). We may record manual settlements, waivers or adjustments with a reason, and show them in your balance history.
 
-8.4 **Limits.** We may set a **maximum balance** and/or a **maximum age** for the balance. If you go over, we may switch off "pay on arrival" for your shop (customers then have to pay online), send reminders (at most one every three days), and suspend your shop. [OWNER: confirm the limits; at the date of this draft they are not set.]
+8.4 **Limits.** We may set a **maximum balance** and/or a **maximum age** for the balance. If you go over a limit, the app **switches off "pay on arrival"** for your shop (customers then have to pay online) until the balance is back within the limits. It also sends you **reminders** when the oldest part of your balance is more than 7 days old or a limit is exceeded (at most one every three days). **The app does not suspend your shop by itself**: any suspension is a decision by TrimSlot staff (section 12). [OWNER: confirm the limits; at the date of this draft they are not set.]
 
 8.5 If you owe money and stop using TrimSlot, you must pay what you owe within [14] days of our written request, and we may recover it through the courts. [LAWYER: enforceability, interest, recovery.]
 
 ## 9. Payouts, bank account and Paystack subaccount
 
-9.1 To receive online payments you must set up a **payout account** in the app: choose your bank and enter your 10-digit account number. We create a **Paystack subaccount** in your name. Online payments are split by Paystack: your share is paid into that bank account by Paystack, on Paystack's settlement schedule, and our fee goes to TrimSlot. **We do not hold your share of customer money.** Until payouts are set up, customers can only choose Pay on arrival at your shop.
+9.1 To receive online payments you must set up a **payout account** in the app: choose your bank and enter your 10-digit account number. We create a **Paystack subaccount** in your name. Online payments are split by Paystack when the customer pays: your share is paid into that bank account by Paystack, on Paystack's settlement schedule, and TrimSlot's charge goes to TrimSlot. **The app does not receive or hold your share of the customer's money.** Until payouts are set up, customers cannot pay you online and can only choose Pay on arrival at your shop.
 
 9.2 We look up the **account name** with Paystack to check that the account belongs to you. If the lookup is unavailable (it sometimes is, especially in Paystack test mode), you may type the account name yourself. It will then be marked **"name not verified"**. **You confirm that the account is yours (or your business's) and that the name you type is exactly the name on the account.** Paystack also checks the account when it creates the subaccount.
 
 9.3 We store only the bank name, the **last 4 digits** of the account number, the account name and the Paystack subaccount code — not the full number. Paystack holds the full details.
 
-9.4 You are responsible for entering correct details. If money is sent to a wrong account because of what you entered, TrimSlot is not responsible for recovering it. If you change bank details, we may ask for verification and may delay payouts to prevent fraud.
+9.4 You are responsible for entering correct details. If money is sent to a wrong account because of what you entered, TrimSlot is not responsible for recovering it. If you change your bank details, we check the account name again and create a new Paystack subaccount; the change applies to payments made after it, not to earlier ones.
 
-9.5 Paystack's terms apply to settlements. Delays, holds, reversals, chargebacks, disputes and payment-provider fees are governed by Paystack's rules; TrimSlot is not liable for Paystack's acts or delays. If a customer wins a chargeback or is refunded, the amount (and our fee share, if any) can be taken back from your balance or later payouts. [LAWYER: confirm.]
+9.5 Paystack's terms apply to settlements. Delays, holds, reversals, chargebacks, disputes and payment-provider fees are governed by Paystack's rules; TrimSlot is not liable for Paystack's acts or delays. **The app has no feature that takes money back from your balance or later payouts for a chargeback or a refund.** How Paystack treats your share when a split payment is refunded or charged back is set by Paystack and your bank, and we do not promise any particular result. [LAWYER/OWNER: decide whether TrimSlot should have a right to recover a chargeback or refund from a barber who caused it, and check with Paystack how a refunded split payment is reversed; see questions 17 and 55.]
 
 9.6 You may need to complete Paystack's verification (KYC) for your business. Paystack may refuse or close your subaccount; we are not responsible for its decisions.
 
 ## 10. Refunds, no-shows and credits — your part
 
-10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The original online payment (less our fee) has already been paid to you and stays with you; it is not refunded to the customer, and no second payment is made when the credit is used.
+10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The money the customer paid (less our fee) has already been paid to you and stays with you (for a plan session, you were paid when the customer bought the plan); it is not refunded to the customer, and no second payment is made when the credit is used. The credit is worth the **service price on the missed booking**. For a missed plan session that can be more than that one session cost the customer under the plan, and you honour it at that value. [OWNER: confirm this is intended; see question 57.]
 
-10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically after {{refund_auto_approve_hours}} hour(s) if nobody decides. We may take the refunded amount from your balance or future payouts. [OWNER/LAWYER: confirm how Paystack reverses the split on a refund.] A plan session or credit that the customer used is returned to them.
+10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically after {{refund_auto_approve_hours}} hour(s) if nobody decides. The app does not take the refunded amount from your balance or your payouts. [OWNER/LAWYER: check how Paystack reverses the split on a refund and who bears it; see question 55.] A plan session or credit that the customer used is returned to them.
 
-10.3 Duplicate and late payments are refunded to the customer by TrimSlot through Paystack; you do not receive them.
+10.3 Duplicate payments, payments that arrive too late, and payments for a time someone else booked first are refunded to the customer by TrimSlot through Paystack; you do not receive them. (A late payment for a time that is still free confirms the booking as normal.)
 
 ## 11. Plans you sell
 
@@ -132,7 +134,7 @@ If you create plans, you must follow the [Plan Terms](plan-terms.html). You set 
 
 ## 12. Suspension, removal and ending
 
-12.1 **We may suspend or remove your shop** (immediately where reasonably necessary) if: you breach this agreement or the Terms; there are serious or repeated complaints (hygiene, safety, behaviour, fraud, unfair no-shows); you do not honour bookings, plans or credits; you misuse customer data; your balance is over a limit; we suspect fraud or money laundering; a regulator or Paystack requires it; or the law requires it.
+12.1 **We may suspend or remove your shop** (immediately where reasonably necessary) if: you breach this agreement or the Terms; there are serious or repeated complaints (hygiene, safety, behaviour, fraud, unfair no-shows); you do not honour bookings, plans or credits; you misuse customer data; your balance is over a limit (suspension is always a decision by TrimSlot staff); we suspect fraud or money laundering; a regulator or Paystack requires it; or the law requires it.
 
 12.2 Suspension is **reversible**. While suspended your shop is hidden and cannot take new bookings. We decide what happens to upcoming bookings: they may be cancelled, with paid bookings refunded or restored to the customer under the Policy. We may keep your balance owed on record.
 
@@ -177,5 +179,5 @@ Keep your login private, use a strong password, and tell us immediately of any b
 * **Q28.** Barber ID/KYC and its lawful basis.
 * **Q29.** Anti-circumvention clause needed?
 * **Q30.** Typed (unverified) bank account name when Paystack lookup is unavailable.
-* **Q17.** Chargebacks recovered from a barber's balance.
+* **Q17.** Chargebacks and refunds of split payments: who bears them, and is a recovery clause against the barber needed (the app has no such mechanism today)? See also 55.
 * **Q3.** Does using Paystack subaccounts/splits need any CBN or other licence for us?

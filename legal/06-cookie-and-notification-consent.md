@@ -29,7 +29,8 @@ TrimSlot keeps this to the minimum. We **do not use advertising, tracking or ana
 | `trimslot_prompt_snooze` | Browser local storage | Remembers that you said "not now" to the notification prompt, so we don't nag | Until cleared | No |
 | `trimslot_next` | Browser session storage | Remembers the page you were going to open when you were asked to log in | Until you close the tab | No |
 | Service worker and cache | Browser | Lets the app receive notifications and load faster | Until cleared | Notifications: yes (see Part B) |
-| Admin key (staff only) | Browser session storage | Keeps staff signed in to the admin area | Until you close the tab | No |
+| `trimslot_admin_key` (staff only) | Browser session storage | Keeps staff signed in to the admin area | Until you close the tab | No |
+| `adm_sf_customers`, `adm_sf_barbers`, `adm_sf_bookings`, `adm_sf_payments`, `adm_sf_credits`, `adm_sf_reports`, `adm_sf_ledger`, `adm_sf_reviews`, `adm_sf_waitlist`, `adm_sf_purchases`, `adm_sf_plans` (staff only) | Browser local storage | Saved filter views in the admin lists (a name and the filter settings, including any search text staff typed) | Until staff delete the view or clear the browser | No — a choice staff make |
 | Profile picture | Served by the app to you and your barbers only; not a cookie | Shows your optional photo | Until you remove it or delete your account | Your choice (you upload it) |
 
 Our payment provider **Paystack** and our host **Vercel** may set their own cookies or collect technical data when you use their pages (for example, the Paystack checkout page). Their notices apply: [PAYSTACK PRIVACY LINK], [VERCEL PRIVACY LINK]. 
@@ -47,16 +48,26 @@ TrimSlot sends two kinds of notification:
 
 ### Consent text shown in the app (before the browser's own permission box)
 
-> **Turn on notifications?**
-> Get a message on this device when your booking is confirmed, when it's almost time, when it's your turn in the queue, and about refunds or credits. We send **no adverts**. You can turn this off any time in Profile → Notifications, or in your browser settings.
-> By tapping **Turn on**, you agree that TrimSlot stores a push subscription for this device (a technical address and keys created by your browser) and uses your browser's push service (for example Google, Mozilla or Apple) to deliver these messages. See our [Privacy Policy](privacy.html).
-> **[Turn on]**  **[Not now]**
+This is what the app actually shows, on a card on the main screens (the "Not now" button hides it for 7 days):
+
+> **Never miss your turn**
+> Get a heads-up for confirmations, reminders and when you're next in line.
+> **[Enable notifications]**  **[Not now]**
+
+On an iPhone or iPad (where the browser allows notifications only for an installed app) the card says instead:
+
+> **Get alerts on your iPhone**
+> Tap **Share**, then **Add to Home Screen**, and open TrimSlot from there. iPhones only allow notifications for installed apps.
+
+After the person taps "Enable notifications", the browser shows its own permission box. The person can later turn push on or off with the "Push notifications" switch on the Profile page.
+
+**Gap found in review:** the card does not say that a push subscription (and a short description of the browser) is stored, does not say that the messages can show on a lock screen, and does not link to the Privacy Policy. [LAWYER/OWNER: decide whether the card must say more before the permission box (a suggested longer text: "Get a message on this device when your booking is confirmed, when it's almost time, when it's your turn in the queue, and about refunds or credits. We send no adverts. You can turn this off any time in Profile. By tapping Enable notifications you agree that TrimSlot stores a push subscription and a short description of this browser, and uses your browser's push service to deliver these messages. See our Privacy Policy."); see question 59.]
 
 ### Details
 
-* **What we store:** the subscription address and encryption keys your browser gives us, linked to your account, plus which messages were sent. We do not read your contacts or location.
+* **What we store:** the subscription address and encryption keys your browser gives us, linked to your account, a short description of your browser and device (the "user agent" text), when the subscription was made and last worked, plus which messages were sent. A subscription belongs to the **browser**: if someone else logs in on the same browser and turns notifications on, the subscription moves to their account. We do not read your contacts or location.
 * **What the messages contain:** booking details such as shop name, service and time. These may appear on your lock screen — turn off lock-screen previews on your device if that matters.
-* **Withdrawing consent:** turn off "Push notifications" in Profile → Notifications (we then delete the subscription), or block notifications for the site in your browser. This does not affect the in-app list.
+* **Withdrawing consent:** turn off "Push notifications" on the Profile page (we then delete the subscription), or block notifications for the site in your browser. This does not affect the in-app list.
 * **Staff** can turn on push alerts for refunds waiting, auto-approved refunds, refund failures and deletion requests (with quiet hours); they are separate from customer notifications.
 * **Barbers** receive notifications about new bookings, arrivals, cancellations and balance reminders.
 * **Marketing:** none today. If we ever send marketing, we will ask for a separate consent and you will be able to say no without losing the service.
@@ -69,3 +80,4 @@ TrimSlot sends two kinds of notification:
 
 * **Q39.** Is a cookie banner needed with one strictly necessary cookie plus local-storage preferences?
 * **Q40.** Is the push-notification consent text sufficient? Rules on lock-screen messages?
+* **Q59.** The consent card in the app is shorter than the text first drafted here (see above): is it enough, or must it mention the stored subscription and link to the Privacy Policy?

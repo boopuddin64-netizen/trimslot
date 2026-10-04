@@ -33,7 +33,7 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 ## 2. Who can use the Service
 
-2.1 You must be **18 or older** to create an account. [LAWYER: confirm. The app currently says parents/guardians may book for children — see open questions.]
+2.1 You must be **18 or older** to create an account. The app has no feature for booking on behalf of a child; the account holder is the customer. [LAWYER: confirm; see open question 7.]
 
 2.2 Give us correct information (name, and at least one of e-mail or phone number) and keep it up to date. Keep your password secret. You are responsible for what happens on your account. Tell us at once at [EMAIL] if you think someone else is using it.
 
@@ -45,7 +45,7 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, you also pay a small **booking fee**. It is shown as its own line, and the total is shown, before you pay. The booking fee is your share ({{fee_share_customer_percent}}%) of the payment company's processing fee; the barber and TrimSlot share the rest. We do not quote the payment company's own rates, because they can change. [LAWYER/OWNER: confirm this disclosure — see open questions.]
 
-3.2 **Pay now (online).** The slot is held for you for **{{payment_hold_min}} minutes** while you pay. If payment is not completed in that time, the booking is marked "Incomplete", you are not charged, and the slot is released to others. A slot is only confirmed once Paystack confirms your payment to us.
+3.2 **Pay now (online).** **No slot is reserved while you pay, and the first confirmed payment for a time wins.** Your attempt stays open for **{{payment_hold_min}} minutes**. A booking is confirmed only when Paystack confirms your payment to us. If someone else's payment for the same time is confirmed first, your booking is not confirmed and your payment is refunded automatically. If you do not pay within {{payment_hold_min}} minutes, the booking is marked "Incomplete" and you are not charged. If your payment is confirmed after that and the time is still free, the booking is confirmed; if the time has been taken, the payment is refunded automatically.
 
 3.3 **Pay on arrival.** If the barber offers it, you pay the barber directly (cash or bank transfer) at the shop. The barber records the payment in the app. Pay-on-arrival may be switched off for a shop or for the whole Service at any time.
 
@@ -63,6 +63,8 @@ The detailed rules are in the **Refund, Cancellation and Credit Policy**. In sho
 * After that, you cannot cancel in the app. If you do not turn up, the barber may mark you as a no-show.
 * If you cancel **in time** a booking you paid online, you get a **refund** (approved by us, or automatically after {{refund_auto_approve_hours}} hour(s) if nobody has decided). You do not also get a credit.
 * A missed paid session is **not refunded**, but you get **one session credit** with the same barber, valid for **{{credit_expiry_days}} days**, which cannot be exchanged for cash. A booking gets a refund or a credit, never both.
+* **Loyalty credits.** If TrimSlot switches the loyalty reward on, you may earn a session credit with a barber after every {{loyalty_every_n}} completed visits with that barber (worth ₦{{loyalty_credit_naira}}, valid 90 days). It is a free reward, not something you buy. We can switch the reward off or change it at any time; credits already issued are kept, except as set out in the next point.
+* **Removing a credit.** We may remove (revoke) a session credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking these Terms. We tell you by notification and give the reason. [LAWYER: confirm this clause is acceptable for credits that were paid for (a missed paid session).]
 * If we or the barber cannot serve you, or your online payment is a duplicate or arrives too late, the policy explains what happens (including automatic refund requests).
 
 [LAWYER: confirm this is lawful and fair under the Federal Competition and Consumer Protection Act 2018 and FCCPC rules — in particular "no refund, credit only" for a missed session.]
@@ -73,7 +75,7 @@ Nothing in these Terms takes away rights you have under Nigerian consumer-protec
 
 5.1 After a completed visit you may leave a rating and comment. Keep it honest, relevant and lawful. No hate speech, threats, private information about others, or fake reviews. Barbers may reply. We may hide or remove reviews that break these Terms.
 
-5.2 You can report a customer, a barber or a booking (for example for no-show, behaviour, payment, quality or safety). Reports are read by TrimSlot staff and may be shared with the person reported, in line with the Privacy Policy. Do not file false reports.
+5.2 You can report a customer, a barber or a booking (for example for no-show, behaviour, payment, quality or safety). Reports go to TrimSlot staff only; the person you report cannot see your report in the app. We may contact the people involved to sort the matter out, in line with the Privacy Policy. Do not file false reports.
 
 5.3 You give us a non-exclusive, free licence to display content you post (reviews, photos for barbers, shop descriptions) on the Service for as long as it is posted, and to keep it as needed for legal reasons. You confirm you have the right to post it. [LAWYER: copyright/licence wording.]
 
@@ -119,7 +121,7 @@ We may change the Service and these Terms. For important changes we will give no
 
 ## 12. Complaints and disputes
 
-12.1 **First, tell us.** E-mail [EMAIL] or call [PHONE] and give your booking number if you have one. We aim to reply within [5] working days and to resolve the complaint within [30] days. [LAWYER: confirm complaint-handling duties.]
+12.1 **First, tell us.** E-mail [EMAIL] or call [PHONE] and give your booking number if you have one. We aim to reply within [2] working days and to resolve the complaint within [30] days. [LAWYER: confirm complaint-handling duties.]
 
 12.2 **If we cannot agree**, we will try in good faith to settle through mediation for [30] days. [LAWYER: choose and name the scheme/centre, e.g. a Lagos multi-door courthouse or an approved mediation body.]
 
@@ -143,7 +145,7 @@ We may change the Service and these Terms. For important changes we will give no
 
 * **Q5.** Limitation of liability (s.9): is the cap enforceable against consumers; what can we not exclude?
 * **Q6.** Courts, mediation or arbitration for consumer disputes (s.12)?
-* **Q7.** Age 18+ vs adults booking for children.
+* **Q7.** Age 18+ (the app has no child-booking feature; do we need an age check?).
 * **Q8.** Can we change the Terms by in-app notice? What notice period?
 * **Q9.** The sign-up tick-box and acceptance log now exist (document, version, time, IP address, user agent; re-accept when a version changes): is that sufficient, and is storing the IP and user agent proportionate?
 * **Q10.** Reviews: content licence, defamation, notice-and-takedown.

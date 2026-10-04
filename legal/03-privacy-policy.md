@@ -34,11 +34,11 @@ This policy explains, in plain English, what personal data we collect, why, who 
 | **Bookings** | Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history | You and the barber |
 | **Payments** | Paystack transaction reference, amount, fees, status, refund status; the e-mail we send Paystack for the receipt (yours, or a placeholder address if you have none). **Card and bank-login details are typed into Paystack and never reach us.** We also keep the technical webhook messages Paystack sends us (which may contain payer details such as e-mail, card type, last 4 digits, bank and IP address) as an audit record. | You, Paystack |
 | **My barbers** (customers) | The list of barbers you added, opened through their private link, or booked, and when. A barber's private link and QR code let anyone who has them see the shop's public profile (shop name, photo, services, prices, hours, ratings, plans); barbers are not listed to the public otherwise. Barbers can make a new link at any time. | You, the barber's link |
-| **Plans, credits, balance** | Plans bought, sessions used, expiry, session credits; for barbers, the commission balance owed and its history | System |
+| **Plans, credits, balance** | Plans bought, sessions used, expiry, session credits (including free loyalty credits, if that reward is switched on, earned after a number of completed visits with the same barber, and credits that staff have removed); for barbers, the commission balance owed and its history | System |
 | **Reliability label** | A simple label shown **to barbers** about a customer ("New", "Reliable", "Mostly reliable", "Often misses") with counts of completed visits and no-shows | Calculated from your bookings |
 | **Reviews, reports, notes** | Ratings and comments you write; reports you file or that are filed about you (category and message); private notes a barber writes about a customer; favourites; waitlist entries | You, barbers |
-| **Notifications** | The in-app notifications we send you; if you turn on browser notifications, your **push subscription** (a browser-generated address and keys that let your browser receive our messages) | System, your browser |
-| **Technical** | IP address, browser type, request logs (time, page, response code, account ID), security counters (such as failed log-in counts and rate limits), error logs | Your device |
+| **Notifications** | The in-app notifications we send you; if you turn on browser notifications, your **push subscription**: a browser-generated address and keys that let your browser receive our messages, the date it was created and when it last worked, and a short description of your browser and device (the "user agent" text your browser sends). A push subscription belongs to the **browser**, not to the account: if a different person logs in on the same browser and turns notifications on, the subscription **moves to that account** and the earlier account stops receiving pushes on that browser. | System, your browser |
+| **Technical** | IP address, browser type, request logs (time, page, response code, account ID), security counters, error logs. The security counters (the `rate_limits` records) store, for a short time, your **IP address** and, for failed log-ins, the **e-mail or phone number you typed**, with a count of attempts; they are deleted automatically after about {{retention_rate_limit_hours}} hours. | Your device |
 | **Admin records** | An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why); alerts to staff about refunds waiting, auto-approved refunds, refund failures and deletion requests | System |
 
 We do **not** knowingly collect sensitive personal data (such as health, biometric, religion). Please do not put health or other sensitive information in notes or reviews. We do not track your precise GPS location; shop addresses are text typed by barbers.
@@ -54,7 +54,8 @@ We do **not** knowingly collect sensitive personal data (such as health, biometr
 | Prevent fraud, abuse, fake bookings and misuse; security; rate-limiting; audit trail; resolving disputes and reports | Legitimate interests (safe and fair platform); legal obligation |
 | Reliability label shown to barbers, to reduce no-shows | Legitimate interests [LAWYER: confirm; consider a right to object and a DPIA] |
 | Reviews and shop ratings | Legitimate interests / contract |
-| Browser (push) notifications | **Consent** — you choose to switch them on and can switch them off at any time |
+| Browser (push) notifications, including storing a short description of your browser with the subscription (to help us find and remove dead subscriptions) | **Consent** — you choose to switch them on and can switch them off at any time |
+| Free loyalty credits (only if TrimSlot switches the reward on) and removing a credit that was issued by mistake or unfairly | Contract / legitimate interests |
 | Service announcements and important changes | Contract / legitimate interests |
 | Marketing messages | **We do not send marketing today.** If we start, we will ask for consent first. |
 | Tax, accounting, regulator and court requests | Legal obligation |
@@ -83,7 +84,7 @@ Our database and hosting are outside Nigeria (**United Kingdom**), and our provi
 
 ## 6. How long we keep it
 
-[LAWYER: confirm every period.] The periods marked "automatic" are run by a clean-up job that runs about once an hour. TrimSlot staff can change these periods in the admin settings and this page shows the current values.
+[LAWYER: confirm every period.] The periods marked "automatic" are run by a clean-up job. The job starts from TrimSlot's scheduled "sweep" and runs at most once an hour. The scheduled sweep runs **once a day** by default; if TrimSlot also uses an external one-minute timer it runs far more often. So an item can be kept up to about a day longer than the period shown. [OWNER: confirm which timer is in use.] TrimSlot staff can change these periods in the admin settings and this page shows the current values.
 
 | Data | How long | How |
 |---|---|---|
@@ -91,9 +92,9 @@ Our database and hosting are outside Nigeria (**United Kingdom**), and our provi
 | Bookings, payments, refunds, credits, plans and the audit trail | These are **financial records** and are kept for [6] years [LAWYER: confirm]. After deletion they stay but **without your name** (shown as "Deleted customer"). A payment that succeeded cannot be hard-deleted. | Kept; anonymised |
 | Raw payment webhook messages from Paystack | **{{retention_events_days}} days**; messages with an invalid signature **{{retention_bad_events_days}} days** | Automatic |
 | In-app notifications | **{{retention_notifications_days}} days** | Automatic |
-| Push subscriptions | Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, or when unused for **{{retention_push_stale_days}} days** | Automatic |
+| Push subscriptions (including the browser description) | Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, when it has failed repeatedly, or when unused for **{{retention_push_stale_days}} days** | Automatic |
 | Staff alerts | **{{retention_admin_alerts_days}} days** | Automatic |
-| Security counters and rate limits | **{{retention_rate_limit_hours}} hours** | Automatic |
+| Security counters and rate limits (IP address, and the e-mail or phone typed at failed log-ins) | **{{retention_rate_limit_hours}} hours** | Automatic |
 | Unpaid "Pay now" attempts, abandoned plan checkouts | Marked incomplete; never-paid plan checkouts are deleted after **{{retention_checkout_days}} days** (after checking with Paystack that no money was taken) | Automatic |
 | Hidden (deleted) reviews, reports and unsold plans | **{{retention_deleted_days}} days** after being deleted | Automatic |
 | Acceptance record | Kept with your account; the IP address and browser details are removed if you delete your account | Kept |
@@ -118,7 +119,7 @@ We use one essential cookie to keep you logged in, and small items in your brows
 
 ## 10. Children
 
-The Service is for people aged **18 and over**. [LAWYER: the app lets an adult book for a child; decide whether to allow this and how to treat children's data under NDPA s.31.] If you think a child has given us data, contact us and we will remove it.
+The Service is for people aged **18 and over**. The app has no feature for booking on behalf of a child and we do not knowingly collect children's data. [LAWYER: confirm whether an age check is needed; NDPA s.31.] If you think a child has given us data, contact us and we will remove it.
 
 ## 11. Third-party links and content
 
@@ -141,7 +142,8 @@ We will post changes here and, for important ones, notify you in the app. The "E
 * **Q33.** International transfers (London database and hosting, Paystack group): mechanism and notices.
 * **Q34.** Retention periods to publish (now automatic and admin-editable; bookings and payment records are kept anonymised, [6] years proposed).
 * **Q35.** Data-subject rights procedure and time limits; self-service export (JSON) and delete now exist; barber private notes are excluded from the export.
-* **Q36.** Raw Paystack webhook payloads stored up to {{retention_events_days}} days: data minimisation?
+* **Q36.** Raw Paystack webhook payloads are stored for {{retention_events_days}} days ({{retention_bad_events_days}} days if the signature was invalid) and may contain payer details (e-mail, card type, last 4 digits, bank, IP address). Is that proportionate, or should the period be shorter or the payload trimmed?
+* **Q53.** Push subscriptions store a browser description and can move between accounts on one shared browser; failed-login records keep the typed e-mail/phone and the IP for {{retention_rate_limit_hours}} hours. Any further notice or shorter period needed?
 * **Q37.** Barbers as controllers of customer data they receive.
 * **Q38.** Breach notification wording (72 hours to NDPC).
 * **Q7.** Children's data (see Terms, age), including the optional profile picture.

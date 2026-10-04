@@ -33,7 +33,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 2.2 The terms you see are **frozen at purchase**. If the barber later edits or deletes the plan, **your plan does not change.**
 
-2.3 If you start a plan checkout and do not pay, nothing is bought. Unpaid plan checkouts are removed after about {{retention_checkout_days}} days. If you pay twice for the same plan, the duplicate payment is refunded automatically.
+2.3 If you start a plan checkout and do not pay, nothing is bought. Unpaid plan checkouts are removed after about {{retention_checkout_days}} days (after we check with Paystack that no money was taken). If you pay twice for the same plan, the duplicate payment is refunded automatically.
 
 2.4 Plans are not available while bookings are paused for maintenance, or if the platform has switched plans off.
 
@@ -45,7 +45,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 3.3 If you **cancel in time** (at least {{cancel_cutoff_min}} minutes before), the session is **returned** to the plan. If the **barber cannot serve** you, the session is returned. 
 
-3.4 If you **miss** a plan appointment and the barber marks you no-show, the session counts as **used** and you receive **one session credit** with the same barber ({{credit_expiry_days}} days, not cashable) as set out in the Refund, Cancellation and Credit Policy.
+3.4 If you **miss** a plan appointment and the barber marks you no-show, the session counts as **used** and you receive **one session credit** with the same barber ({{credit_expiry_days}} days, not cashable) as set out in the Refund, Cancellation and Credit Policy. That credit is worth the **service price on the missed booking**, which for a plan session can be more than that one session cost you under the plan. [OWNER: confirm; see question 57.]
 
 3.5 Sessions are personal to you and cannot be transferred, shared, sold or exchanged for cash.
 

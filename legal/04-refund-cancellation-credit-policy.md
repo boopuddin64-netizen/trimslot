@@ -30,8 +30,8 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 | You want to cancel **less than {{cancel_cutoff_min}} minutes** before | You **cannot cancel in the app**. Contact the barber. If you do not turn up it is a **missed session** (section 4). |
 | You **do not turn up** and the barber marks you a no-show (only possible after your appointment time) | Paid session: **no refund**, but you get **1 session credit with the same barber**, valid **{{credit_expiry_days}} days**, **not cashable**. Pay on arrival: nothing is charged; the no-show stays on your record. |
 | The **barber cannot serve you** ("Not served") | Paid online: a **refund** (section 5). Plan session / credit: returned automatically. |
-| You started paying but **did not finish** | Not charged. The booking becomes "Incomplete" after **{{payment_hold_min}} minutes** and the slot is released (section 6). |
-| You were **charged twice**, or your payment arrived **late / after the slot was taken** | Not a booking. The extra or late payment is **refunded automatically** to your original payment method (section 7). |
+| You started paying but **did not finish** | Not charged. **No time is reserved while you pay.** After **{{payment_hold_min}} minutes** the try closes and the booking becomes "Incomplete" (section 6). |
+| You were **charged twice**, or your payment arrived **after someone else's payment took the time** | Not a booking. The extra payment, or the payment for the time that was taken, is **refunded automatically** to your original payment method (section 7). A payment that arrives late for a time that is **still free** confirms the booking (section 6.2). |
 
 ## 2. Cancelling a booking
 
@@ -45,7 +45,7 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 
 3.1 When you cancel in time a booking that you **paid online**, you are entitled to a **refund** of what you paid for the booking. You do **not** also receive a credit.
 
-3.2 The refund starts as **"refund pending"** and waits for approval by TrimSlot staff. If staff approve it, the refund request is sent to Paystack at once. If staff have **not approved or rejected it within {{refund_auto_approve_hours}} hour(s)** of your cancellation, it is **approved automatically** and the refund request is sent to Paystack. You are notified when it is approved. You can see the status ("refund pending", "refunded") on your booking.
+3.2 The refund starts as **"refund pending"** and waits for approval by TrimSlot staff. If staff approve it, the refund request is sent to Paystack at once. If staff have **not approved or rejected it within {{refund_auto_approve_hours}} hour(s)** of your cancellation, it is **approved automatically** and the refund request is sent to Paystack. The automatic approval is done by a scheduled check, so it happens at the next check after that time: within minutes if TrimSlot runs the check every minute, otherwise at the daily run. [OWNER: confirm which schedule is in use.] You are notified when it is approved. You can see the status ("refund pending", "refunded") on your booking.
 
 3.3 Staff may **reject** a refund only for a stated reason (for example where the service was in fact delivered). [LAWYER/OWNER: define the permitted grounds.] You are told the reason, you receive neither a refund nor a credit for that booking, and you can contest it with "Report a problem" or by e-mail to [EMAIL].
 
@@ -59,7 +59,7 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 
 4.1 A barber can mark a booking **no-show** only after the scheduled time has passed and you have not arrived. Do check-in with "I'm Here" when you arrive.
 
-4.2 **If you had paid** (online or with a plan session): there is **no refund**, but you receive **one session credit with the same barber**, worth the price of the missed booking. The credit is issued straight away; it does not wait for approval. A booking never gets both a credit and a refund.
+4.2 **If you had paid** (online or with a plan session): there is **no refund**, but you receive **one session credit with the same barber**, worth the price of the missed booking. The credit is worth the **service price on the missed booking**; for a missed plan session that is the price of the service booked, even though the session cost you a share of the plan price. [OWNER: confirm; see question 57.] The credit is issued straight away; it does not wait for approval. A booking never gets both a credit and a refund.
 
 4.3 Credit rules:
 * **Same barber only**, not usable at other shops.
@@ -67,10 +67,12 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 * **Not cashable** — it cannot be exchanged for money, transferred or sold.
 * Use it on a service **priced at or below the credit's value**; there is no change given and no top-up in the app. [OWNER: confirm top-up is not possible.]
 * A booking you pay for with a credit and then miss does **not** earn a new credit.
+* **Loyalty credits.** If TrimSlot switches the loyalty reward on, you earn a credit with a barber after every {{loyalty_every_n}} completed visits with that barber (worth ₦{{loyalty_credit_naira}}, valid 90 days from the day it is issued). It follows the same rules as other credits.
+* **Removal.** TrimSlot staff may remove (revoke) a credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking the Terms. You are told in the app and given the reason. [LAWYER: confirm; see question 54.]
 * If you cancel in time a booking paid with a credit, the credit comes back to you (still with the original expiry).
 * A missed **plan session** counts as used: the session is not restored, and you receive the credit described above.
 
-4.4 If you did not pay in advance (pay on arrival), nothing is charged for a no-show. The barber's record shows it, and repeated no-shows may lead to a "reliability" label and restrictions.
+4.4 If you did not pay in advance (pay on arrival), nothing is charged for a no-show. The barber's record shows it, and repeated no-shows can change the "reliability" label that barbers see.
 
 4.5 If you believe a no-show was marked wrongly, report it in the app ("Report a problem") or e-mail [EMAIL]. We may reverse it and cancel the credit.
 
@@ -80,17 +82,17 @@ If the barber marks the booking "**Not served**": a **plan session or credit is 
 
 ## 6. Incomplete payments
 
-6.1 When you choose "Pay now", the slot is held for **{{payment_hold_min}} minutes**. If you do not complete payment, or you leave and cancel, the attempt is marked **Incomplete**, **you are not charged**, and the barber does not see it.
+6.1 When you choose "Pay now", **no slot is reserved while you pay, and the first confirmed payment for a time wins.** The attempt stays open for **{{payment_hold_min}} minutes**. If you do not complete payment, or you leave and cancel, the attempt is marked **Incomplete**, **you are not charged**, and the barber does not see it.
 
-6.2 If payment is confirmed by Paystack a little after the hold ended and the slot is **still free**, the booking is confirmed. If the slot was taken meanwhile, see section 7.
+6.2 If Paystack confirms your payment after the attempt closed, **and the time is still free** (and the shop is still open for bookings), the booking is **confirmed**. This does not depend on when the cleaning-up check happens to run. If the time was taken meanwhile, the payment is refunded (section 7). An attempt that **you cancelled yourself** is never revived: a payment that arrives for it is refunded.
 
 6.3 If money was taken but the page showed an error, tap "I've paid, check status" on the booking, or contact us with the booking number and Paystack reference. We can verify directly with Paystack.
 
 ## 7. Duplicate, late and mismatched payments
 
-7.1 **Duplicate** (you paid twice for one booking or plan), **late** (payment arrived after the attempt closed) and **slot taken** (someone else booked the time first) payments are **never kept as bookings**. They are flagged "needs refund" and **a refund request is sent to Paystack automatically**; if that fails, we retry on a schedule and staff can action it.
+7.1 **Duplicate** (you paid twice for one booking or plan), **too late** (the payment arrived after the attempt closed and the time was no longer free, or you had cancelled it) and **time taken** (someone else's payment for that time was confirmed first) payments are **never kept as bookings**. They are flagged "needs refund" and **a refund request is sent to Paystack automatically**; if that fails, we retry on a schedule and staff can action it. A payment that arrives late for a time that is still free is not in this group: it confirms the booking (6.2).
 
-7.2 You will see a notification. The refund goes to the **original payment method**. Time to arrive depends on Paystack and your bank [typically [5–10] working days]. 
+7.2 You get a notification in the app for each of these cases (a second payment, a late payment, and a payment for a time that was taken). The refund goes to the **original payment method**. Time to arrive depends on Paystack and your bank [typically [5–10] working days].
 
 7.3 If the amount Paystack reports does not match the price (other than Paystack's processing fee), the booking is **not confirmed automatically**; staff review it, and you are refunded if you were charged wrongly.
 
@@ -102,18 +104,18 @@ Plan purchases and unused sessions are covered by the [Plan Terms](plan-terms.ht
 
 ## 9. Chargebacks and disputes with your bank
 
-Please contact us first. If you start a chargeback, we will give your bank the records we hold. If a chargeback succeeds, we may cancel related bookings, plans or credits and recover the amount from the barber's balance where it was their fault.
+Please contact us first. If you start a chargeback with your bank, we will give your bank the records we hold. If a chargeback succeeds, we may cancel related bookings, plans or credits. [LAWYER/OWNER: the app has no automatic way to recover a chargeback from a barber; decide whether a recovery right is needed. See question 17.]
 
 ## 10. How to ask for help
 
-Use "Report a problem" on the booking, or contact [EMAIL] / [PHONE] with the booking number. We aim to reply within [2] working days. You can still complain to the FCCPC or take legal action; this policy does not remove any right you cannot lawfully give up.
+Use "Report a problem" on the booking, or contact [EMAIL] / [PHONE] with the booking number. We aim to reply within [2] working days and to resolve the complaint within [30] days (the same as Terms of Service 12.1). You can still complain to the FCCPC or take legal action; this policy does not remove any right you cannot lawfully give up.
 
 ## Open questions for the lawyer
 
 > Numbers refer to `00-open-questions-for-lawyer.md`, which has the full list.
 
-* **Q11.** Missed paid session: no refund, 1 credit, same barber, 30 days, no cash value. Lawful under the FCCPA 2018?
-* **Q12.** In-time cancellation of an online-paid booking is now a refund (pending approval, auto-approved after the hold time). Are the hold time, the right to reject, and the refund timeline acceptable?
+* **Q11.** Missed paid session: no refund, 1 credit, same barber, {{credit_expiry_days}} days, no cash value. Lawful under the FCCPA 2018?
+* **Q12.** In-time cancellation of an online-paid booking is now a refund (pending approval, auto-approved after {{refund_auto_approve_hours}} hour(s)). Is the auto-approval time, the right to reject, and the refund timeline acceptable?
 * **Q13.** Is the credit expiry ({{credit_expiry_days}} days) lawful and fair?
 * **Q14.** Is the {{cancel_cutoff_min}}-minute cancel lock reasonable and sufficiently disclosed before payment?
 * **Q15.** Booking fee (the customer's share of the processor fee): refunded in full with the booking on a refund, not credited on a credit. Right? (See 24b.)
