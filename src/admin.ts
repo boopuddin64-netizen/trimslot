@@ -6,7 +6,7 @@ import { requirePin } from './adminPin';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
-import { requestRefund, processReference } from './paystack';
+import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefunded } from './paystack';
 import { isoNow, lagosDate } from './time';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
@@ -235,11 +235,12 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     const note = z.object({ note: z.string().trim().max(200).optional() }).parse(req.body || {}).note;
     await requirePin(db, req);    // irreversible: records a refund as paid out
     const out = await db.tx(async (t) => {
-      const p = await t.maybeOne('SELECT id, refund_status, amount_kobo, booking_id, plan_purchase_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]);
+      const p = await t.maybeOne('SELECT id, refund_status, refund_reason, amount_kobo, booking_id, plan_purchase_id FROM payments WHERE reference=$1 FOR UPDATE', [ref]);
       if (!p) throw notFound('We could not find that payment.');
       if (!p.refund_status) throw conflict('NOT_FLAGGED', 'This payment is not marked for a refund.');
       if (p.refund_status === 'REFUNDED') return { refund_status: 'REFUNDED' };
       await t.query(`UPDATE payments SET refund_status='REFUNDED', refund_error=NULL WHERE id=$1`, [p.id]);
+      if (p.refund_status === 'NEEDS_REFUND' && p.refund_reason === MISMATCH_REASON && p.booking_id) await notifyMismatchRefunded(t, p.booking_id);   // not when a refund was already requested (the customer was told then)
       await audit(t, p.booking_id, ADMIN, 'ADMIN_MARKED_REFUNDED', { reference: ref, amount_kobo: p.amount_kobo, note: note || null });
       return { refund_status: 'REFUNDED' };
     });

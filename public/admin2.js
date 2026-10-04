@@ -62,7 +62,7 @@ async function userSheet(id, reload) {
   const pay = (r.payments || []).length ? r.payments.map((p) => `<div class="kv"><span class="mono">${esc(p.reference)}${p.disputed ? ' ⚑' : ''}</span><b>${naira(p.amount_kobo)} ${payBadge(p.status)}</b></div>`).join('') : '<div class="muted small">No payments.</div>';
   const cr = (r.credits || []).map((c) => `<div class="kv"><span>${esc(c.shop_name)} · ${esc(c.reason)}<small class="muted" style="display:block">to ${dshort(c.expires_at)}</small></span><b>${naira(c.value_kobo)} ${bd(c.status === 'AVAILABLE' ? 'b-purple' : 'b-gray', c.status)} ${c.status === 'AVAILABLE' ? act('Revoke', 'sec', `data-rv="${c.id}"`) : ''}</b></div>`).join('') || '<div class="muted small">None.</div>';
   const pl = (r.plans || []).map((p) => `<div class="kv"><span>${esc(p.plan_name)} · ${esc(p.shop_name)}</span><b>${p.sessions_total - p.sessions_used}/${p.sessions_total} ${bd(p.status === 'ACTIVE' ? 'b-green' : 'b-gray', p.status)}</b></div>`).join('') || '<div class="muted small">None.</div>';
-  const rp = (r.reports || []).map((x) => `<div class="kv"><span>${esc(x.category)}: ${esc(x.message).slice(0, 80)}</span><b>${bd(x.status === 'OPEN' ? 'b-amber' : 'b-gray', x.status)}</b></div>`).join('') || '<div class="muted small">None.</div>';
+  const rp = (r.reports || []).map((x) => `<div class="kv"><span>${x.staff_alert ? 'Staff alert' : esc(x.category)}: ${esc(x.message).slice(0, 80)}</span><b>${bd(x.status === 'OPEN' ? 'b-amber' : 'b-gray', x.status)}</b></div>`).join('') || '<div class="muted small">None.</div>';
   const hist = (r.history || []).map((h) => `<div class="kv"><span>${esc(human(h.action))}<small class="muted" style="display:block">${esc(h.details?.reason || '')}</small></span><b class="small">${stamp(h.created_at)}</b></div>`).join('') || '<div class="muted small">No admin actions yet.</div>';
   const isC = u.role === 'customer'; const btns = [];
   btns.push(act('Message', 'sec', 'data-k="notify"'));
@@ -219,8 +219,8 @@ let rstat = 'OPEN';
 async function reports() {
   const r = await api('/reports?status=' + rstat); badges.reports = r.counts.OPEN; drawNav('reports');
   const cols = [
-    ['Report', (x) => `<b>${esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>${x.admin_note ? `<span class="sub"><i>Resolution:</i> ${esc(x.admin_note)}</span>` : ''}`],
-    ['From', (x) => `${esc(x.reporter_name)}<span class="sub">${esc(x.reporter_role)} #${x.reporter_id}</span>`], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a><span class="sub">${esc(x.target_role)} #${x.target_user_id}</span>` : '—'],
+    ['Report', (x) => `<b>${x.staff_alert ? 'Staff alert: unanswered help request' : esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>${x.admin_note ? `<span class="sub"><i>Resolution:</i> ${esc(x.admin_note)}</span>` : ''}`],
+    ['From', (x) => x.staff_alert ? `TrimSlot system<span class="sub">customer ${esc(x.reporter_name)} asked for help</span>` : `${esc(x.reporter_name)}<span class="sub">${esc(x.reporter_role)} #${x.reporter_id}</span>`], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a><span class="sub">${esc(x.target_role)} #${x.target_user_id}</span>` : '—'],
     ['Booking', (x) => x.booking_id ? `<a href="#" data-b="${x.booking_id}">#${x.booking_id}</a>` : '—'], ['Filed', (x) => stamp(x.created_at)],
     ['', (x) => x.status === 'OPEN' ? act('Resolve', '', `data-do="res" data-id="${x.id}"`) + act('Dismiss', 'sec', `data-do="dis" data-id="${x.id}"`) : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), 'act'],
   ];

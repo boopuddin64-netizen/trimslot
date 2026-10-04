@@ -1,4 +1,4 @@
-/** Email verification by one-time code. 6 digits, valid 10 minutes, 5 wrong tries, at most 3 codes per email and 10 per network per hour.
+/** Email verification by one-time code. 6 digits, valid 10 minutes, 5 wrong tries, at most 3 codes per email and 60 per network per hour.
  *  Only an HMAC of the code is stored (never the code). Codes are compared in constant time. */
 import { createHmac, randomInt, timingSafeEqual } from 'crypto';
 import { Conn, Db } from './db';
@@ -12,13 +12,15 @@ import { audit } from './helpers';
 export const OTP_TTL_MIN = 10;
 export const OTP_MAX_ATTEMPTS = 5;
 export const OTP_SENDS_PER_HOUR = 3;
-export const OTP_SENDS_PER_IP_HOUR = 10;
+export const OTP_SENDS_PER_IP_HOUR = 60;
 const HOUR = 3600_000;
 
 /** Dev/test convenience: a fixed code, only outside production and only when no real mail provider is configured. */
 export const fixedDevCode = () => !config.isProd && !process.env.RESEND_API_KEY;
 const makeCode = () => (fixedDevCode() ? '123456' : String(randomInt(0, 1_000_000)).padStart(6, '0'));
-export const hashCode = (userId: number, email: string, code: string) => createHmac('sha256', config.jwtSecret).update(`otp:${userId}:${email.toLowerCase()}:${code}`).digest('hex');
+/** The code hash uses its own key, derived from the app secret for this one purpose (a leaked code hash tells nothing about the login secret, and the login secret is never used as an HMAC key here). */
+const otpKey = () => createHmac('sha256', config.jwtSecret).update('trimslot:email-otp:v1').digest();
+export const hashCode = (userId: number, email: string, code: string) => createHmac('sha256', otpKey()).update(`otp:${userId}:${email.toLowerCase()}:${code}`).digest('hex');
 const safeEq = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 export const maskEmail = (e: string) => e.replace(/^(.).*(@.*)$/, (_m, a, d) => a + '***' + d);
 

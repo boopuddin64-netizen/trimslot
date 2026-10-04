@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { bootApp, App } from './httpHelpers';
 import { WED, setNow, unverifiedUsers } from './helpers';
 import { setMailTransport, sendMail, mailerMode, Mail } from '../src/mailer';
-import { fixedDevCode, hashCode, OTP_MAX_ATTEMPTS } from '../src/emailOtp';
+import { fixedDevCode, hashCode, OTP_MAX_ATTEMPTS, OTP_SENDS_PER_IP_HOUR } from '../src/emailOtp';
 import { createBooking } from '../src/bookingService';
 
 const FLAG = 'EMAIL_VERIFICATION_REQUIRED';
@@ -78,10 +78,12 @@ test('email code: resend limit 3 per hour per email, and a cap per network', asy
     for (let i = 0; i < 3; i++) assert.equal((await c.call('POST', '/api/auth/email/send', {}, u.cookie)).status, 200);
     const r = await c.call('POST', '/api/auth/email/send', {}, u.cookie);
     assert.equal(r.status, 429); assert.equal(r.json.error.code, 'RATE_LIMITED');
-    // network cap: 10 per hour in total (3 already used above by this same network)
-    let blocked = 0;
-    for (let i = 0; i < 8; i++) { const x = await customer(); const s = await c.call('POST', '/api/auth/email/send', {}, x.cookie); if (s.status === 429) blocked++; }
-    assert.ok(blocked >= 1, 'the per-network cap stops the 11th code');
+    // network cap: 60 per hour in total. The 3 sends above already counted for this network; push the counter to 59, so exactly one more passes.
+    assert.equal(OTP_SENDS_PER_IP_HOUR, 60);
+    assert.equal(await c.db.maybeOne<any>(`SELECT 1 x FROM rate_limits WHERE key LIKE 'otp_send:ip:%'`).then((x) => !!x), true);
+    await c.db.query(`UPDATE rate_limits SET hits=59 WHERE key LIKE 'otp_send:ip:%'`);
+    const x1 = await customer(); assert.equal((await c.call('POST', '/api/auth/email/send', {}, x1.cookie)).status, 200, 'the 60th code from this network still works');
+    const x2 = await customer(); assert.equal((await c.call('POST', '/api/auth/email/send', {}, x2.cookie)).status, 429, 'the 61st is stopped by the per-network cap');
   } finally { done(); }
 });
 

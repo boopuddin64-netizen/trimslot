@@ -124,7 +124,7 @@ const CFG: Record<string, Cfg> = {
     where: (q, add) => { const st = String(q.status || '').toUpperCase(); if (['AVAILABLE', 'USED', 'REVOKED'].includes(st)) add('sc.status=?', st); const s = String(q.q || '').trim().slice(0, 60); if (s) add('lower(u.name) LIKE lower(?)', like(s)); },
   },
   reports: {
-    select: `r.id, r.category, r.status, r.message, r.created_at, r.booking_id, r.reporter_id, r.target_user_id, ru.name AS reporter_name, tu.name AS target_name`,
+    select: `r.id, r.category, r.status, r.message, r.created_at, r.booking_id, r.reporter_id, r.target_user_id, ru.name AS reporter_name, tu.name AS target_name, EXISTS (SELECT 1 FROM help_requests hr WHERE hr.report_id=r.id) AS staff_alert`,
     from: 'reports r JOIN users ru ON ru.id=r.reporter_id LEFT JOIN users tu ON tu.id=r.target_user_id', id: 'r.id', sorts: { newest: { expr: 'r.id', type: 'int' } }, defSort: 'newest',
     where: (q, add) => { add('r.deleted_at IS NULL'); const st = String(q.status || '').toUpperCase(); if (['OPEN', 'RESOLVED', 'DISMISSED'].includes(st)) add('r.status=?', st); const c = String(q.category || '').toUpperCase(); if (['NO_SHOW', 'BEHAVIOUR', 'PAYMENT', 'QUALITY', 'SAFETY', 'OTHER'].includes(c)) add('r.category=?', c); },
   },
@@ -297,7 +297,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     const d = parse(z.object({ ids, status: z.enum(['RESOLVED', 'DISMISSED']), note: reason }), req.body);
     res.json(await db.tx(async (t) => {
       const rows = await t.many<any>(`UPDATE reports SET status=$2, admin_note=$3, resolved_at=$4 WHERE id = ANY($1::int[]) AND status='OPEN' RETURNING id, reporter_id`, [d.ids, d.status, d.note, isoNow()]);
-      for (const r of rows) await notify(t, r.reporter_id, 'REPORT_UPDATE', d.status === 'RESOLVED' ? 'Your report was resolved' : 'Your report was reviewed', d.note);
+      for (const r of rows) if (!(await t.maybeOne('SELECT 1 FROM help_requests WHERE report_id=$1', [r.id]))) await notify(t, r.reporter_id, 'REPORT_UPDATE', d.status === 'RESOLVED' ? 'Your report was resolved' : 'Your report was reviewed', d.note);
       await audit(t, null, ADMIN, 'ADMIN_BULK_REPORTS_' + d.status, { requested: d.ids.length, closed: rows.length, note: d.note });
       return { changed: rows.length, skipped: d.ids.length - rows.length };
     }));

@@ -9,7 +9,7 @@
 <li>You can use a plan only for the services it lists, and only with the barber who sold it.</li>
 <li>Each booking uses one session. The visit must start before the plan ends.</li>
 <li>If you cancel in time, you get the session back. If the barber cannot serve you, you also get it back.</li>
-<li>If you miss a visit, the session counts as used. You get one credit with the same barber.</li>
+<li>If you miss a visit, the session counts as used. When your barber marks it a no-show, you get one credit with the same barber.</li>
 <li>Unused sessions end when the plan ends. We do not refund them.</li>
 </ul>
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>

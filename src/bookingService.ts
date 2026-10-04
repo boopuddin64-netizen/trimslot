@@ -91,14 +91,17 @@ export async function expireHoldsIn(c: Conn, scope: HoldScope = {}, o: { keep?: 
 
 /** Cheap pre-check (1 indexed read) so ordinary requests don't open a write transaction.
  *  Before anything is closed, Paystack is asked about its open checkouts (missed webhook + closed browser). Only the attempts that were looked at in this round are closed.
- *  `budgetMs` caps the Paystack time (ordinary requests use the short default; the sweeper may use more). */
+ *  `budgetMs` caps the Paystack time (the sweeper uses a long one). `budgetMs: 0` = never wait for Paystack (ordinary requests, auth): only holds with no payment attempt at all are
+ *  released; a hold that has a checkout is left for the sweeper / the booking page, which ask Paystack first. */
 export async function expireHolds(db: Db, scope: HoldScope = {}, o: { budgetMs?: number; batch?: number } = {}): Promise<number> {
   const params: unknown[] = [isoNow()];
   let where = `status='PENDING_PAYMENT' AND hold_expires_at < $1`;
   if (scope.barberId != null) { params.push(scope.barberId); where += ` AND barber_id=$${params.length}`; }
   if (scope.customerId != null) { params.push(scope.customerId); where += ` AND customer_id=$${params.length}`; }
+  const noPaystack = o.budgetMs !== undefined && o.budgetMs <= 0;
+  if (noPaystack) where += ` AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.booking_id=bookings.id)`;
   if (!(await db.maybeOne(`SELECT 1 FROM bookings WHERE ${where} LIMIT 1`, params))) return 0;
-  const started = Date.now(), budget = o.budgetMs ?? 7000, batch = Math.max(1, o.batch ?? 25);
+  const started = Date.now(), budget = noPaystack ? 1000 : (o.budgetMs ?? 7000), batch = Math.max(1, o.batch ?? 25);
   const handled: number[] = [];       // already looked at and kept open: do not look again in this call
   let closed = 0;
   for (let round = 0; round < 8 && Date.now() - started < budget; round++) {
@@ -107,7 +110,8 @@ export async function expireHolds(db: Db, scope: HoldScope = {}, o: { budgetMs?:
     const due = await db.many<{ id: number; hold_expires_at: string }>(`SELECT id, hold_expires_at FROM bookings WHERE ${w} ORDER BY id LIMIT ${batch}`, ps);
     if (!due.length) break;
     let verdict: HoldVerdict;
-    try {
+    if (noPaystack) verdict = { keep: new Set(), unverified: new Set(), mismatch: new Set() };   // nothing to ask: these holds never opened a checkout
+    else try {
       // paystack.ts imports this file, so it is loaded here on first use (a plain import would be circular).
       verdict = await (require('./paystack') as typeof import('./paystack')).verifyBeforeClosing(db, due, { budgetMs: Math.max(1000, budget - (Date.now() - started)) });
     } catch (e: any) {

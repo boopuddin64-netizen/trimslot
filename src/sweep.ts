@@ -29,7 +29,7 @@ export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked
   // (1) ask the gateway first (a late/mismatched charge is then confirmed or flagged for refund instead of silently vanishing),
   // (2) keep any purchase that has a signed charge event on record, so the money trail is not lost.
   const ckDays = Math.max(1, Math.floor((await getSettings(db)).retention_checkout_days));
-  const staleBase = `FROM plan_purchases pp WHERE pp.status='PENDING' AND pp.created_at < now() - make_interval(days => ${ckDays}) AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.plan_purchase_id=pp.id AND p.status='SUCCESS')`;
+  const staleBase = `FROM plan_purchases pp WHERE pp.status='PENDING' AND pp.created_at < now() - make_interval(days => ${ckDays}) AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.plan_purchase_id=pp.id AND (p.status='SUCCESS' OR p.refund_status IS NOT NULL))`;   // a payment flagged for a refund (e.g. an amount mismatch) is money staff still must settle: never delete it
   if (!config.mockMode) {
     const refs = await db.many<{ reference: string }>(`SELECT p.reference FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id WHERE p.status='INITIATED' AND pp.status='PENDING' AND pp.created_at < now() - make_interval(days => $1) AND pp.created_at > now() - interval '30 days' LIMIT 10`, [ckDays]).catch(() => []);
     for (const r of refs) await processReference(db, r.reference).catch(() => undefined);
