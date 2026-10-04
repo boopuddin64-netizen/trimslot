@@ -667,9 +667,9 @@ function payBanner(b, payResult) {
   const sent = issue && issue.refund === 'sent';
   const back = sent ? 'We have sent your payment back. Your bank may take a few working days to show it.' : 'We are refunding your payment.';
   if (kind === 'slot_taken') return `<div class="err">Sorry. Someone else booked that time before your payment finished, so this booking is <b>not confirmed</b>. ${back} Please pick another time.</div>`;
-  if (kind === 'late') return `<div class="err">Your payment reached us after the time to pay had ended, and the time was taken by someone else, so this booking is <b>not confirmed</b>. ${back} Please pick another time.</div>`;
+  if (kind === 'late') return `<div class="err">Your payment reached us after the time to pay had ended, and we could not keep this booking, so it is <b>not confirmed</b>. ${back} Please pick another time.</div>`;
   if (kind === 'duplicate') return `<div class="ok">${DONE_STATUS.includes(b.status) ? 'Your booking is already paid and <b>confirmed</b>.' : 'This booking was already paid.'} You paid twice, so ${sent ? 'we have sent the extra payment back. Your bank may take a few working days to show it.' : 'we are sending the extra payment back.'}</div>`;
-  if (kind === 'mismatch') return `<div class="err">We got your payment, but the amount was not right for this booking, so we did not confirm it. Please contact support and give them your booking number #${b.id}. We will confirm it or refund you.</div>`;
+  if (kind === 'mismatch') return `<div class="err">We got your payment, but the amount was not right for this booking, so we did not confirm it. ${issue && issue.refund !== 'none' ? back : 'Our team is checking it. We will confirm the booking or refund you.'} Please keep your booking number #${b.id}.</div>`;
   if (payResult === 'processed' || payResult === 'already_processed') {
     if (DONE_STATUS.includes(b.status)) return '<div class="ok">We got your payment. Your booking is confirmed.</div>';
     if (b.status === 'PENDING_PAYMENT') return '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
@@ -693,10 +693,10 @@ async function confirmReturn(kind, id, title) {
 }
 async function bookingDetail(id, payResult, quiet) {
   const { booking: b } = await api('/bookings/' + id);
-  if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch', 'checked'].includes(payResult)) {
+  if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch'].includes(payResult)) {   // back from Paystack (or Paystack was slow to answer): ask again before showing anything
     const r = await confirmReturn('booking', id, 'Checking your payment…');
     history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : PAY_TERMINAL.includes(r) ? r : 'checked'));
-    return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'));
+    return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'), true);
   }
   const q = b.queue;
   const payMsg = payBanner(b, payResult);
