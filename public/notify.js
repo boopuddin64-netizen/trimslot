@@ -109,9 +109,9 @@ const Notify = (() => {
   async function currentSub() { const reg = await registerSW(); if (!reg) return null; await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
   async function subscribe() {
     const key = state.cfg && state.cfg.vapid_public_key;
-    if (!pushSupported() || !key) throw new Error('Push notifications are not available on this device or browser.');
+    if (!pushSupported() || !key) throw new Error('Push alerts do not work on this phone or browser.');
     const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked. Enable them in your browser or phone settings, then try again.' : 'Notifications were not enabled.');
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Alerts are blocked. Turn them on in your browser or phone settings. Then try again.' : 'Alerts were not turned on.');
     const reg = await registerSW(); await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
@@ -139,16 +139,16 @@ const Notify = (() => {
     if (!state.user) return '';
     if (isIOS && !standalone()) {
       if (snoozed()) return '';
-      return `<div class="promo" id="notifcard"><span class="promo-ico">${ic('bell')}</span><div class="grow"><b>Get alerts on your iPhone</b><div class="small muted">Tap <b>Share</b>, then <b>Add to Home Screen</b>, and open TrimSlot from there. iPhones only allow notifications for installed apps.</div></div><button class="promo-x" data-snooze aria-label="Not now">${ic('off', 'sm')}</button></div>`;
+      return `<div class="promo" id="notifcard"><span class="promo-ico">${ic('bell')}</span><div class="grow"><b>Get alerts on your iPhone</b><div class="small muted">Tap <b>Share</b>, then <b>Add to Home Screen</b>. Then open TrimSlot from your home screen. iPhones only give alerts to apps you add.</div></div><button class="promo-x" data-snooze aria-label="Not now">${ic('off', 'sm')}</button></div>`;
     }
     if (!pushSupported() || !(state.cfg && state.cfg.features && state.cfg.features.push) || Notification.permission !== 'default' || snoozed()) return '';
-    return `<div class="promo" id="notifcard"><span class="promo-ico">${ic('bell')}</span><div class="grow"><b>Never miss your turn</b><div class="small muted">Get a heads-up for confirmations, reminders and when you're next in line.</div><div class="btns" style="margin-top:10px"><button class="btn sm" data-enable>Enable notifications</button><button class="btn sm sec" data-snooze>Not now</button></div></div></div>`;
+    return `<div class="promo" id="notifcard"><span class="promo-ico">${ic('bell')}</span><div class="grow"><b>Never miss your turn</b><div class="small muted">Get alerts when your booking is confirmed, for reminders, and when you are next in line.</div><div class="btns" style="margin-top:10px"><button class="btn sm" data-enable>Turn on alerts</button><button class="btn sm sec" data-snooze>Not now</button></div></div></div>`;
   }
   document.addEventListener('click', async (ev) => {
     const t = ev.target.closest && ev.target.closest('[data-enable],[data-snooze]'); if (!t) return;
     if (t.hasAttribute('data-snooze')) { LS.set('trimslot_prompt_snooze', String(Date.now() + 7 * 86400000)); const c = document.getElementById('notifcard'); if (c) c.remove(); return; }
     t.disabled = true;
-    try { await subscribe(); toast('Notifications enabled'); const c = document.getElementById('notifcard'); if (c) c.remove(); }
+    try { await subscribe(); toast('Alerts are on'); const c = document.getElementById('notifcard'); if (c) c.remove(); }
     catch (e) { t.disabled = false; toast(e.message, true); }
   });
 
@@ -157,21 +157,21 @@ const Notify = (() => {
     const canPush = pushSupported() && state.cfg && state.cfg.features && state.cfg.features.push;
     const perm = pushSupported() ? Notification.permission : 'unsupported';
     const on = perm === 'granted' && LS.get('trimslot_push', '1') !== '0';
-    const sub = !canPush ? (isIOS && !standalone() ? 'On iPhone: Share → Add to Home Screen first' : 'Not available on this browser') : perm === 'denied' ? 'Blocked in your browser settings' : on ? 'On for this device' : 'Off';
-    return `<div class="lrow"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Push notifications<span class="sub">${sub}</span></span><button class="switch" id="pushsw" role="switch" aria-checked="${on}" aria-label="Push notifications" ${canPush && perm !== 'denied' ? '' : 'disabled'}></button></div>
+    const sub = !canPush ? (isIOS && !standalone() ? 'On iPhone: tap Share, then Add to Home Screen first' : 'Not available on this browser') : perm === 'denied' ? 'Blocked in your browser settings' : on ? 'On for this device' : 'Off';
+    return `<div class="lrow"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Push alerts<span class="sub">${sub}</span></span><button class="switch" id="pushsw" role="switch" aria-checked="${on}" aria-label="Push alerts" ${canPush && perm !== 'denied' ? '' : 'disabled'}></button></div>
       <div class="lrow"><span class="ico">${ic('clock', 'sm')}</span><span class="grow">Sound &amp; vibration<span class="sub">A soft chime when something happens while the app is open</span></span><button class="switch" id="soundsw" role="switch" aria-checked="${feedbackOn()}" aria-label="Sound and vibration"></button></div>
-      ${on ? `<button class="lrow" id="pushtest"><span class="ico">${ic('check', 'sm')}</span><span class="grow">Send a test notification</span><span class="end">${ic('right', 'sm')}</span></button>` : ''}
-      ${isIOS && !standalone() ? `<div class="lrow"><span class="ico">${ic('home', 'sm')}</span><span class="grow">Install on iPhone<span class="sub">Share → Add to Home Screen, then open TrimSlot from your home screen to allow alerts.</span></span></div>` : ''}`;
+      ${on ? `<button class="lrow" id="pushtest"><span class="ico">${ic('check', 'sm')}</span><span class="grow">Send a test alert</span><span class="end">${ic('right', 'sm')}</span></button>` : ''}
+      ${isIOS && !standalone() ? `<div class="lrow"><span class="ico">${ic('home', 'sm')}</span><span class="grow">Install on iPhone<span class="sub">Tap Share, then Add to Home Screen. Then open TrimSlot from your home screen to get alerts.</span></span></div>` : ''}`;
   }
   function wirePrefs() {
     const p = document.getElementById('pushsw'), s = document.getElementById('soundsw'), t = document.getElementById('pushtest');
     if (s) s.onclick = () => { const v = !feedbackOn(); LS.set('trimslot_alerts', v ? '1' : '0'); s.setAttribute('aria-checked', String(v)); if (v) { unlock(); chime(false); } };
     if (p) p.onclick = async () => {
       const turningOn = p.getAttribute('aria-checked') !== 'true'; p.disabled = true;
-      try { if (turningOn) { await subscribe(); toast('Push notifications on'); } else { await unsubscribe(); toast('Push notifications off'); } } catch (e) { toast(e.message, true); }
+      try { if (turningOn) { await subscribe(); toast('Push alerts on'); } else { await unsubscribe(); toast('Push alerts off'); } } catch (e) { toast(e.message, true); }
       p.disabled = false; route();
     };
-    if (t) t.onclick = async () => { t.disabled = true; try { await api('/push/test', { method: 'POST' }); toast('Test sent - it should arrive in a moment'); } catch (e) { toast(e.message, true); } t.disabled = false; };
+    if (t) t.onclick = async () => { t.disabled = true; try { await api('/push/test', { method: 'POST' }); toast('Test sent. It should show up in a moment.'); } catch (e) { toast(e.message, true); } t.disabled = false; };
   }
   return { start, stop, poll, paintUnread, promptCard, prefsRows, wirePrefs, resync, detach, iconFor, urlOf, chime, isIOS, standalone, pushSupported, registerSW };
 })();

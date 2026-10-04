@@ -41,7 +41,7 @@ for (const w of [360, 390]) {
     ok(w + ' 60 slots: no overlap, none outside the grid (' + ov.n + ' cells)', ov.bad === 0); ok(w + ' slot cells uniform height', ov.heights === 1); ok(w + ' 60 slots no page overflow', await noOverflow(p));
     await p.goto('/#/book/1'); await p.reload(); await p.waitForSelector('.svc'); await p.locator('.svc').first().click(); await p.click('#next'); await p.waitForSelector('[data-t]'); await p.locator('[data-t]').nth(2).click(); await p.click('#next'); await p.waitForSelector('#confirm');
     await shot(p, '15-book-payment-blocked', true);
-    ok(w + ' barber without payouts: Pay now blocked with clear message', await p.locator('#online-off').count() === 1 && (await p.locator('#online-off').innerText()).includes("hasn't set up online payments"));
+    ok(w + ' barber without payouts: Pay now blocked with clear message', await p.locator('#online-off').count() === 1 && (await p.locator('#online-off').innerText()).includes('cannot take online payments yet'));
     ok(w + ' pay on arrival still available', await p.locator('[data-p=ON_ARRIVAL]').count() === 1);
     await p.goto('/#/profile'); await p.waitForTimeout(500); await shot(p, '16-customer-profile', true); ok(w + ' profile no overflow', await noOverflow(p)); await ctx.close(); }
   /* ---- barber: payout setup ---- */

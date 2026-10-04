@@ -12,10 +12,10 @@ const av = (c, cls) => {
 
 /** Centre-crop to a square and compress to a small JPEG, all on the device. */
 async function squareJpeg(file) {
-  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose an image file.');
+  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose a picture file.');
   const bmp = await (window.createImageBitmap ? createImageBitmap(file).catch(() => null) : null) || await new Promise((res, rej) => {
     const im = new Image(); const u = URL.createObjectURL(file);
-    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('That image could not be read.')); im.src = u;
+    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('We could not read that picture.')); im.src = u;
   });
   const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, side = Math.min(w, h);
   const sx = Math.floor((w - side) / 2), sy = Math.floor((h - side) / 2);
@@ -27,13 +27,13 @@ async function squareJpeg(file) {
     if (blob && blob.size <= MAX) return blob;
     if (q > 0.5) q -= 0.1; else px = Math.round(px * 0.8);
   }
-  throw new Error('That photo is too large to compress. Try a different one.');
+  throw new Error('That photo is too big. Try a different one.');
 }
 async function putAvatar(file) {
   const blob = await squareJpeg(file);
   const r = await fetch('/api/me/avatar', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error?.message || 'Upload failed');
+  if (!r.ok) throw new Error(j.error?.message || 'The upload did not work');
   return j.avatar_url;
 }
 
@@ -44,7 +44,7 @@ const photoCard = (u) => `<div class="card avatar-edit">${av(u, 'xl')}<div class
 
 function wirePhoto() {
   const go1 = async (f) => {
-    if (!f) return; const m = $('#av-msg'); m.textContent = 'Cropping & uploading…';
+    if (!f) return; const m = $('#av-msg'); m.textContent = 'Cropping and uploading…';
     try { state.user.avatar_url = await putAvatar(f); toast('Photo saved'); route(); } catch (e) { m.textContent = e.message; fail(e); }
   };
   ['#av-cam', '#av-file'].forEach((s) => { const el = $(s); if (el) el.onchange = () => go1(el.files[0]); });
@@ -55,12 +55,12 @@ function wirePhoto() {
 const dataSection = (u) => `<h2>Your data</h2><div class="list">
   <button class="lrow" id="exp"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Download my data<span class="sub">A JSON file with your account, bookings and payments</span></span><span class="end">${ic('right', 'sm')}</span></button>
   <a class="lrow" href="/privacy.html" target="_blank" rel="noopener"><span class="ico">${ic('shield', 'sm')}</span><span class="grow">Privacy Policy</span><span class="end">${ic('right', 'sm')}</span></a>
-  ${u.deletion_requested ? `<button class="lrow" id="delcancel"><span class="ico">${ic('refresh', 'sm')}</span><span class="grow">Cancel my deletion request<span class="sub">Your request is waiting for TrimSlot</span></span></button>`
-    : `<button class="lrow danger" id="delacct"><span class="ico">${ic('trash', 'sm')}</span><span class="grow">Delete my account<span class="sub">Personal details are removed. Payment records are kept, without your name</span></span></button>`}</div>`;
+  ${u.deletion_requested ? `<button class="lrow" id="delcancel"><span class="ico">${ic('refresh', 'sm')}</span><span class="grow">Cancel my deletion request<span class="sub">TrimSlot has not answered yet</span></span></button>`
+    : `<button class="lrow danger" id="delacct"><span class="ico">${ic('trash', 'sm')}</span><span class="grow">Delete my account<span class="sub">We remove your personal details. We keep payment records, but without your name</span></span></button>`}</div>`;
 
 async function exportData() {
   const r = await fetch('/api/me/export', { credentials: 'same-origin' });
-  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error?.message || 'Could not prepare your data.'); }
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error?.message || 'We could not get your data ready.'); }
   const blob = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = (/filename="([^"]+)"/.exec(r.headers.get('content-disposition') || '') || [])[1] || 'trimslot-my-data.json';
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -68,8 +68,8 @@ async function exportData() {
 function deleteDialog(u) {
   const el = document.createElement('div'); el.className = 'scrim';
   el.innerHTML = `<form class="sheet" role="dialog" aria-modal="true" autocomplete="off"><h3 style="margin:0 0 6px">Delete your account</h3>
-    <p class="small muted" style="margin:0 0 8px">${u.role === 'barber' ? 'Your shop is removed and customers can no longer find it. If you still have upcoming bookings, a balance owed to TrimSlot or customer plans to honour, we send a request to TrimSlot instead and finish it once those are settled.' : 'Your name, contact details and picture are removed and you can no longer sign in. Bookings and payments are kept for our legal and accounting duties, without your name.'}</p>
-    ${u.role === 'customer' ? `<label class="chk"><input type="checkbox" name="forfeit"> <span>I understand that unused plan sessions and session credits are lost.</span></label>` : ''}
+    <p class="small muted" style="margin:0 0 8px">${u.role === 'barber' ? 'We remove your shop, so customers cannot find it. You may still have upcoming bookings, a balance to pay TrimSlot, or customer plans to honour. If so, we send your request to TrimSlot, and we finish it when those are done.' : 'We remove your name, contact details and picture. You can no longer log in. We keep bookings and payments because the law and our accounts need them, but without your name.'}</p>
+    ${u.role === 'customer' ? `<label class="chk"><input type="checkbox" name="forfeit"> <span>I know I lose my unused plan sessions and session credits.</span></label>` : ''}
     <div class="err hidden" id="delerr" role="alert"></div>
     <label>Your password</label><input name="password" type="password" autocomplete="current-password" required>
     <label>Type DELETE to confirm</label><input name="confirm" autocomplete="off" required>
@@ -84,12 +84,12 @@ function deleteDialog(u) {
       const r = await api('/me/delete', { method: 'POST', body: { password: f.password.value, confirm: f.confirm.value.trim(), acknowledge_forfeit: !!(f.forfeit && f.forfeit.checked) } });
       done();
       if (r && r.requested) { state.user.deletion_requested = true; toast('Request sent. TrimSlot will contact you.'); route(); }
-      else { state.user = null; toast('Your account was deleted'); go('#/login'); }
+      else { state.user = null; toast('Your account is deleted'); go('#/login'); }
     } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); b.disabled = false; }
   };
 }
 function wireData(u) {
-  const e = $('#exp'); if (e) e.onclick = async () => { e.disabled = true; try { await exportData(); toast('Your data was downloaded'); } catch (x) { fail(x); } e.disabled = false; };
+  const e = $('#exp'); if (e) e.onclick = async () => { e.disabled = true; try { await exportData(); toast('Your data is downloaded'); } catch (x) { fail(x); } e.disabled = false; };
   const d = $('#delacct'); if (d) d.onclick = () => deleteDialog(u);
   const c = $('#delcancel'); if (c) c.onclick = async () => { try { await api('/me/delete/cancel', { method: 'POST', body: {} }); state.user.deletion_requested = false; toast('Request cancelled'); route(); } catch (x) { fail(x); } };
 }

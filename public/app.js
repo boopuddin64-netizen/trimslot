@@ -55,7 +55,7 @@ async function api(path, opts = {}) {
 /* Network layer: in-flight de-duplication of identical writes (double-tap protection), a timeout, plain-English offline /
    server / rate-limit messages, and stale-session handling (expired login -> back to the login page, then back to where you were). */
 const inflight = new Map();
-const NET_MSG = "Can't reach TrimSlot. Check your internet connection and try again.";
+const NET_MSG = "We can't reach TrimSlot. Check your internet and try again.";
 function apiRaw(path, opts = {}) {
   const method = opts.method || 'GET';
   const key = method === 'GET' ? null : method + ' ' + path + ' ' + (opts.body === undefined ? '' : JSON.stringify(opts.body));
@@ -73,16 +73,16 @@ async function apiCall(path, opts = {}) {
   try {
     try { r = await fetch('/api' + path, init); }
     catch {
-      const e = new Error(ac.signal.aborted ? 'This is taking too long. Check your connection and try again.' : navigator.onLine === false ? "You're offline. Reconnect and try again." : NET_MSG);
+      const e = new Error(ac.signal.aborted ? 'This is taking too long. Check your internet and try again.' : navigator.onLine === false ? "You are offline. Go online and try again." : NET_MSG);
       e.code = 'NETWORK'; throw e;
     }
     try { j = await r.json(); } catch { /* empty or HTML error page */ }
   } finally { clearTimeout(to); }
   if (!r.ok) {
-    const fallback = r.status === 429 ? 'Too many attempts. Please wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Please try again in a moment.' : 'Request failed';
+    const fallback = r.status === 429 ? 'Too many tries. Wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Try again in a moment.' : 'That did not work. Try again.';
     const e = new Error(j.error?.message || fallback); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details;
     if (r.status === 401 && e.code === 'UNAUTHENTICATED' && state.user && !path.startsWith('/auth/')) {   // login expired while the app was open
-      state.user = null; state.unread = 0; e.message = 'Your session has expired. Please log in again.';
+      state.user = null; state.unread = 0; e.message = 'Your log-in has ended. Please log in again.';
       try { sessionStorage.setItem('trimslot_next', location.hash); } catch { /* private mode */ }
       gcache.clear(); location.hash = '#/login';
     }
@@ -90,13 +90,13 @@ async function apiCall(path, opts = {}) {
   }
   return j;
 }
-window.addEventListener('offline', () => toast("You're offline. Changes won't save until you reconnect.", true));
+window.addEventListener('offline', () => toast("You are offline. Your changes will not save until you go online.", true));
 window.addEventListener('online', () => toast('Back online'));
 function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
-const fail = (e) => toast(e.message || 'Something went wrong', true);
+const fail = (e) => toast(e.message || 'Something went wrong. Try again.', true);
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
@@ -141,7 +141,7 @@ async function signOut() { try { await Notify.detach(); } catch { /* ignore */ }
 function chrome() {
   const u = state.user;
   $('#mockbar').classList.toggle('hidden', !(state.cfg && state.cfg.mock));
-  if (state.cfg?.mock) $('#mockbar').textContent = 'MOCK PAYMENTS MODE — no real Paystack (set PAYSTACK_SECRET_KEY for test mode)';
+  if (state.cfg?.mock) $('#mockbar').textContent = 'TEST MODE: no real money moves here.';
   let mb = $('#maintbar'); if (!mb) { mb = document.createElement('div'); mb.id = 'maintbar'; mb.className = 'maintbar hidden'; $('#mockbar').after(mb); }
   mb.classList.toggle('hidden', !(state.cfg && state.cfg.maintenance)); if (state.cfg && state.cfg.maintenance) mb.textContent = state.cfg.maintenance;
   $('#topright').innerHTML = u
@@ -232,10 +232,10 @@ window.addEventListener('popstate', () => {   // Back/Forward between booking-wi
 /* ---------- landing / auth ---------- */
 function landing() {
   app.innerHTML = `
-    <div class="hero"><span class="pill">${ic('bolt', 'sm')} Skip the waiting room</span><h1>Book. Arrive.<br>Get Trimmed.</h1><p>Pick your barber, lock your slot, and watch the live queue — no more waiting around.</p>
+    <div class="hero"><span class="pill">${ic('bolt', 'sm')} Skip the long wait</span><h1>Book. Arrive.<br>Get Trimmed.</h1><p>Pick your barber. Book your time. Watch the live line. No more long waits.</p>
       <a class="btn" href="#/signup?role=customer">Book a haircut</a></div>
     <div class="feat"><div>${ic('cal')}Pick a time</div><div>${ic('pin')}Just arrive</div><div>${ic('clock')}Live queue</div></div>
-    <div class="card"><div class="row"><div class="avatar sm">${ic('store')}</div><div class="grow"><h3>Are you a barber?</h3><p class="muted small" style="margin:2px 0 0">Manage your day, services and queue from one simple screen.</p></div></div>
+    <div class="card"><div class="row"><div class="avatar sm">${ic('store')}</div><div class="grow"><h3>Are you a barber?</h3><p class="muted small" style="margin:2px 0 0">Run your day, your services and your line from one simple screen.</p></div></div>
       <div style="height:16px"></div><a class="btn sec" href="#/signup?role=barber">Set up my shop</a></div>
     ${state.cfg.demo ? '<div class="card small"><b>Demo logins</b><br>Customer: <code>chidi@trimslot.demo</code> / <code>Customer123!</code><br>Barber: <code>mike@trimslot.demo</code> / <code>Barber123!</code></div>' : ''}
     <p class="center"><a href="#/login">I already have an account</a></p>`;
@@ -244,18 +244,18 @@ function authPage(mode, roleQ) {
   let role = roleQ === 'barber' ? 'barber' : 'customer', saved = null;
   const draw = (err) => {
     const signup = mode === 'signup';
-    app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book or manage your shop.'}</p>
+    app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book a cut or run your shop.'}</p>
       ${signup ? `<div class="seg" id="roleseg"><button data-r="customer" class="${role === 'customer' ? 'on' : ''}">I'm a customer</button><button data-r="barber" class="${role === 'barber' ? 'on' : ''}">I'm a barber</button></div>` : ''}
       ${err ? `<div class="err">${esc(err)}</div>` : ''}
       <form id="f"${signup ? ' data-oneof="email,phone"' : ''}>
         ${signup ? `<label>Full name</label><input name="name" autocomplete="name" required>` : ''}
         ${signup && role === 'barber' ? `<label>Shop name</label><input name="shop_name" required><label>Shop location</label><input name="location" placeholder="Street, area, city">` : ''}
-        ${signup ? `<label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com"><label>Phone</label><input name="phone" type="tel" autocomplete="tel" placeholder="0803 123 4567"><p class="small muted">Provide at least one of email or phone.</p>`
+        ${signup ? `<label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com"><label>Phone</label><input name="phone" type="tel" autocomplete="tel" placeholder="0803 123 4567"><p class="small muted">Add an email or a phone number. One is enough.</p>`
       : `<label>Email or phone</label><input name="identifier" autocomplete="username" required>`}
         <label>Password</label><input name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" required minlength="8">
         ${signup ? `<label class="chk accept"><input type="checkbox" name="accept_terms" required> <span>I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and have read the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>` : ''}
         ${signup && role === 'barber' ? `<label class="chk accept"><input type="checkbox" name="accept_barber_agreement" required> <span>I agree to the <a href="/barber-agreement.html" target="_blank" rel="noopener">Barber Agreement</a>.</span></label>` : ''}
-        ${signup && role === 'barber' ? '<div class="info small">New barber shops are reviewed before they appear to customers. You can set up your services and hours right away.</div>' : ''}
+        ${signup && role === 'barber' ? '<div class="info small">We check every new barber shop before customers can see it. You can add your services and hours now.</div>' : ''}
         <div style="height:24px"></div><button class="btn block" type="submit">${signup ? 'Sign up' : 'Log in'}</button>
       </form>
       <p class="center small">${signup ? 'Have an account? <a href="#/login">Log in</a>' : 'New here? <a href="#/signup">Sign up</a>'}</p>
@@ -269,7 +269,7 @@ function authPage(mode, roleQ) {
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = Object.fromEntries(new FormData(ev.target));
-      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Creating account…' : 'Logging in…';
+      const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Making your account…' : 'Logging in…';
       try {
         if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } });
         else await api('/auth/login', { method: 'POST', body: fd });
@@ -292,7 +292,7 @@ async function customerHome() {
   const rebookCard = sg && opt ? `<div class="card rebook"><div class="row between"><div><div class="small muted">${ic('repeat', 'sm')} Book again</div><h3 style="margin:2px 0 0">${esc(sg.service.name)} · ${esc(sg.barber.shop_name)}</h3></div><b>${naira(sg.service.price_kobo)}</b></div>
       <div class="small muted" style="margin:4px 0 10px">${sg.usual ? `Your usual: ${DAYFULL[sg.usual.weekday]}s around ${t12(sg.usual.time)}` : 'Same barber, same service'}</div>
       <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
-  const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time opened up</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
+  const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time is free now</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
     ${Notify.promptCard()}${rebookCard}
@@ -315,7 +315,7 @@ async function customerHome() {
     state.wiz = { barberId: sg.barber.id, step: 3, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
     location.hash = '#/book/' + sg.barber.id;
   });
-  document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Removed from waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
+  document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Taken off the waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   startPoll(customerHome);
 }
 /* compact tappable row (~58px): t title, p pills, m one-line meta, r trailing figure, x optional third line */
@@ -366,7 +366,7 @@ async function bookWizard(barberId) {
     const head = `<a href="#/barber/${barberId}" class="back">${ic('back', 'sm')} ${esc(barber.shop_name)}</a><div class="wiz-head">${avatar(barber, 'sm')}<div class="grow"><h1 class="ellip">Book a session</h1><div class="muted small ellip">${esc(barber.shop_name)}${barber.location ? ' · ' + esc(barber.location) : ''}</div></div></div>${noticeHtml}${stepBar}${err ? `<div class="err">${esc(err)}</div>` : ''}`;
     if (w.step === 1) {
       app.innerHTML = head + `<h2>Pick a service</h2>` + services.map((s) => `<button class="svc ${w.service?.id === s.id ? 'on' : ''}" data-s="${s.id}"><div><b>${esc(s.name)}</b><div class="muted small">${s.duration_min} min</div></div><b>${naira(s.price_kobo)}</b></button>`).join('')
-        + (my.credits && my.credits.length ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have ${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} with this barber (valid until ${dateLabel(my.credits[0].expires_at.slice(0, 10))}). It is applied when you book.</div></div>` : '')
+        + (my.credits && my.credits.length ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>You have ${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} with this barber. ${my.credits.length === 1 ? 'It works' : 'They work'} until ${dateLabel(my.credits[0].expires_at.slice(0, 10))}. We use ${my.credits.length === 1 ? 'it' : 'one'} when you book.</div></div>` : '')
         + (my.plans && my.plans.some((p) => p.sessions_left > 0) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Your plan <b>${esc(p.plan_name)}</b> covers ${esc(svcNames(p.service_ids, services))}.`).join(' ')} You can use a plan session at the payment step for those.</div></div>` : '')
         + `<div class="btns cta"><button class="btn" id="next" ${w.service ? '' : 'disabled'}>Continue</button></div>`;
       document.querySelectorAll('[data-s]').forEach((el) => el.onclick = () => { w.service = services.find((s) => s.id === Number(el.dataset.s)); w.time = null; w.planId = null; draw(); });
@@ -385,8 +385,8 @@ async function bookWizard(barberId) {
         $('#slots').className = 'card';
         $('#slots').innerHTML = r.slots.length
           ? `<div class="small muted" style="margin-bottom:8px">${esc(w.service.name)} · ${w.service.duration_min} min · ${dateLabel(w.date)}</div><div class="chips">${r.slots.map((s) => `<button class="chip ${w.time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>`
-          : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Try another date.</p>${!r.closed_reason && (state.cfg.features || {}).waitlist ? `<div class="btns center"><button class="btn sm" id="joinwait">${ic('bell', 'sm')} Tell me if a time opens up</button></div>` : ''}`;
-        const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You're on the waitlist. We'll alert you the moment a time opens up.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
+          : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>${!r.closed_reason && (state.cfg.features || {}).waitlist ? `<div class="btns center"><button class="btn sm" id="joinwait">${ic('bell', 'sm')} Tell me when a time is free</button></div>` : ''}`;
+        const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You are on the waitlist. We will tell you as soon as a time is free.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
@@ -403,17 +403,17 @@ async function bookWizard(barberId) {
           <div class="muted small">${w.service.duration_min} min · ${dateLabel(w.date)} at ${t12(w.time)}</div><div class="muted small">${esc(barber.shop_name)}, ${esc(barber.location || '')}</div>
           ${w.pay === 'ONLINE' && pn.booking_fee_kobo ? `<div class="money">${mrow('Price', naira(w.service.price_kobo))}${mrow('Booking fee <small class="muted">· helps cover card payment costs</small>', naira(pn.booking_fee_kobo))}${mrow('Total to pay', naira(pn.total_kobo), 'tot')}</div>` : ''}</div>
         <h3 style="margin-top:16px">How would you like to pay?</h3>
-        ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · valid until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
+        ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · works until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
         ${pls.map((x) => `<button class="svc ${w.pay === 'PLAN' && pl && pl.id === x.id ? 'on' : ''}" data-p="PLAN" data-pid="${x.id}"><div><b>Use plan session</b><div class="muted small">${esc(x.plan_name)} · ${x.sessions_left} left · ends ${dateLabel(x.expires_at.slice(0, 10))}</div></div></button>`).join('')}
         ${!pls.length && otherPlans().length ? `<div class="info small notice" id="plan-nofit">${ic('ticket', 'sm')}<div>${otherPlans().map((x) => `Your plan <b>${esc(x.plan_name)}</b> covers ${esc(svcNames(x.service_ids, services))} only.`).join(' ')} It does not cover ${esc(w.service.name)}, so choose another way to pay.</div></div>` : ''}
-        ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}. A small booking fee is added: ${naira(pn.booking_fee_kobo)}.</div></div></button>`
-          : `<div class="svc off" aria-disabled="true" id="online-off"><div><b>Pay now</b><div class="muted small">Not available: this barber hasn't set up online payments yet.</div></div></div>`}
-        ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>${onlineOk ? "Pay on arrival isn't available for this booking right now. Please pay online." : "Neither online payment nor pay on arrival is available for this barber right now. Please pick another barber or try again later."}</div></div>`}
-        ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is briefly paused for maintenance.') : 'This shop has paused new bookings for now.'} You can't confirm a booking at the moment.</div></div>` : ''}
-        ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your slot is only secured once payment completes.</b> Until then it stays open to other customers. If someone books it first, your booking won't be confirmed and any payment is refunded.</div></div>` : ''}
-        <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before (a prepaid booking is then refunded to your card); after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
-        ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="e.g. low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
-        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(pn.total_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
+        ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Pay safely online with Paystack${state.cfg.mock ? ' (test checkout)' : ''}. We add a small booking fee: ${naira(pn.booking_fee_kobo)}.</div></div></button>`
+          : `<div class="svc off" aria-disabled="true" id="online-off"><div><b>Pay now</b><div class="muted small">Not available. This barber cannot take online payments yet.</div></div></div>`}
+        ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Pay with cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>${onlineOk ? "You cannot pay on arrival for this booking right now. Please pay online." : "This barber cannot take online payments or pay on arrival right now. Pick another barber or try again later."}</div></div>`}
+        ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is paused for a short time while we fix things.') : 'This shop has paused new bookings.'} You cannot book right now.</div></div>` : ''}
+        ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your time is saved only after you pay.</b> Until then, other people can book it. If someone books it first, your booking is not confirmed and we refund your money.</div></div>` : ''}
+        <div class="info small">After you book, this time is yours. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before. If you paid online, we refund your card. After that, the time stays yours. If you miss a <b>paid</b> session, we do not refund it. You get one credit with this barber.</div>
+        ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="For example: low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
+        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Go to pay ' + naira(pn.total_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; if (el.dataset.pid) w.planId = Number(el.dataset.pid); w.payTouched = true; draw(); });
       const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
       $('#back').onclick = () => stepBack(2);
@@ -447,7 +447,7 @@ const accountForm = (u) => `<form id="acct"><label>Full name</label><input name=
 function wireAccount(after) {
   $('#acct').onsubmit = async (ev) => {
     ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true;
-    try { const r = await api('/me', { method: 'PATCH', body: Object.fromEntries(new FormData(ev.target)) }); state.user = { ...state.user, ...r.user }; toast('Details saved'); after(); } catch (e) { fail(e); btn.disabled = false; }
+    try { const r = await api('/me', { method: 'PATCH', body: Object.fromEntries(new FormData(ev.target)) }); state.user = { ...state.user, ...r.user }; toast('Saved'); after(); } catch (e) { fail(e); btn.disabled = false; }
   };
 }
 const signOutRow = () => `<button class="lrow danger" id="signout"><span class="ico">${ic('logout')}</span><span class="grow">Sign out</span></button>`;
@@ -487,11 +487,11 @@ async function barberProfile() {
   app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
     <h2>My shop</h2>
     ${shareCard}
-    <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts active · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to take online payments'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
+    <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from completed visits, reply to customers</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
+      ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from finished visits. Reply to customers.</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
       ${p.verified ? `<a class="lrow" href="#/barber/${p.id}"><span class="ico">${ic('user', 'sm')}</span><span class="grow">View my public page<span class="sub">What customers see</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
     <h2>Account</h2>
     <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
@@ -516,19 +516,19 @@ async function barberPayouts() {
   app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Payouts</h1>
     <p class="muted">Money from online bookings goes straight to your bank account through Paystack. Pay-on-arrival bookings are paid to you directly.</p><div id="msg"></div>
     ${active ? `<div class="card payok"><div class="row between"><b>${ic('check', 'sm')} Payouts active</b><span class="badge b-green">ACTIVE</span></div>
-        <div class="small" style="margin-top:6px">${esc(st.bank_name || 'Bank')} · account ••••${esc(st.account_last4 || '')}</div><div class="small muted">${esc(st.account_name || '')}${st.name_verified === false ? ' · <span class="badge b-amber">NAME NOT VERIFIED</span>' : ''}</div>
+        <div class="small" style="margin-top:6px">${esc(st.bank_name || 'Bank')} · account ••••${esc(st.account_last4 || '')}</div><div class="small muted">${esc(st.account_name || '')}${st.name_verified === false ? ' · <span class="badge b-amber">NAME NOT CHECKED</span>' : ''}</div>
         <div class="btns" style="margin-top:10px"><button class="btn sm sec" id="chg">Change account</button></div></div>`
-      : `<div class="warn notice">${ic('warn')}<div><b>Payouts not set up.</b> Until you add your bank account, customers can't pay you online — they will only see “Pay on arrival”.</div></div>`}
+      : `<div class="warn notice">${ic('warn')}<div><b>Payouts are not set up.</b> Until you add your bank account, customers cannot pay you online. They only see “Pay on arrival”.</div></div>`}
     <form id="pof" class="card ${active ? 'hidden' : ''}" novalidate>
-      ${bl.source === 'fallback' || bl.source === 'stale' ? '<div class="info small">We couldn\'t load the full bank list just now, so this is a shorter list. If your bank isn\'t here, reload in a minute.</div>' : ''}${!bl.banks.length ? '<div class="err">We couldn\'t load the list of banks. Check your connection and <a href="#/payouts" onclick="event.preventDefault();location.reload()">reload</a>.</div>' : ''}
+      ${bl.source === 'fallback' || bl.source === 'stale' ? '<div class="info small">We could not load the full bank list, so this list is short. If your bank is not here, reload in a minute.</div>' : ''}${!bl.banks.length ? '<div class="err">We could not load the banks. Check your internet and <a href="#/payouts" onclick="event.preventDefault();location.reload()">reload</a>.</div>' : ''}
       <label for="pobank">Bank</label>
       <select id="pobank" name="bank_code" required><option value="">Choose your bank…</option>${bl.banks.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join('')}</select>
       <label for="poacct">Account number</label>
-      <input id="poacct" name="account_number" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10-digit NUBAN" required>
+      <input id="poacct" name="account_number" inputmode="numeric" autocomplete="off" maxlength="10" placeholder="10-digit account number" required>
       <div id="poname" class="small" aria-live="polite" style="min-height:20px;margin-top:6px"></div>
-      <div id="pomanual" class="hidden"><label for="pomn">Account name</label><input id="pomn" name="account_name" maxlength="80" autocomplete="off" placeholder="Name exactly as on the account"><div class="small muted" id="pomnote" style="margin-top:6px"></div><div class="btns" style="margin-top:8px"><button type="button" class="btn sm sec" id="poretry">Try the lookup again</button></div></div>
+      <div id="pomanual" class="hidden"><label for="pomn">Account name</label><input id="pomn" name="account_name" maxlength="80" autocomplete="off" placeholder="Write the name exactly as it is on the account"><div class="small muted" id="pomnote" style="margin-top:6px"></div><div class="btns" style="margin-top:8px"><button type="button" class="btn sm sec" id="poretry">Look up the name again</button></div></div>
       <div class="btns cta"><button class="btn" id="posave" disabled>Save payout account</button></div>
-      <p class="small muted">We never store your full account number — only the last 4 digits and a Paystack subaccount code.</p>
+      <p class="small muted">We never keep your full account number. We keep only the last 4 digits and a Paystack code.</p>
     </form>`;
   const chg = $('#chg'); if (chg) chg.onclick = () => { $('#pof').classList.remove('hidden'); chg.disabled = true; };
   const f = $('#pof'), bankSel = $('#pobank'), acct = $('#poacct'), nameEl = $('#poname'), save = $('#posave'), manual = $('#pomanual'), mn = $('#pomn');
@@ -538,15 +538,15 @@ async function barberPayouts() {
   const resolve = async () => {
     resolved = null; manual.classList.add('hidden'); sync();
     if (!(bankSel.value && /^\d{10}$/.test(acct.value))) { nameEl.textContent = ''; return; }
-    const my = ++seq; nameEl.innerHTML = '<span class="muted">Checking account…</span>';
+    const my = ++seq; nameEl.innerHTML = '<span class="muted">Checking the account…</span>';
     try {
       const r = await api('/barber/payout/resolve', { method: 'POST', body: { bank_code: bankSel.value, account_number: acct.value } });
       if (my !== seq) return; resolved = r.account_name; nameEl.innerHTML = `<span class="okt">${ic('check', 'sm')} ${esc(r.account_name)}</span>`;
     } catch (e) {
       if (my !== seq) return;
       if (e.code === 'RESOLVE_UNAVAILABLE') {   // the automatic name lookup is down / limited: let the barber type the name instead
-        nameEl.innerHTML = '<span class="muted">We couldn\'t check the account name automatically.</span>';
-        $('#pomnote').textContent = e.message + ' We\'ll mark the name as not verified.'; manual.classList.remove('hidden');
+        nameEl.innerHTML = '<span class="muted">We could not check the account name for you.</span>';
+        $('#pomnote').textContent = e.message + ' We will mark the name as not checked.'; manual.classList.remove('hidden');
       } else if (e.code === 'NETWORK') nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span> <button type="button" class="linkbtn" id="poagain">Try again</button>`;
       else nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span>`;
       const ag = $('#poagain'); if (ag) ag.onclick = resolve;
@@ -566,7 +566,7 @@ async function barberPayouts() {
 /* ---------- barber: plans manager (own tab) ---------- */
 async function barberPlans() {
   const [po, r] = await Promise.all([api('/barber/plans'), api('/barber/profile')]);
-  app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Sell session packs to your regulars. Customers see them on your page.</p><div id="msg"></div>${plansBody(po, r.services)}`;
+  app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Sell session packs to your regular customers. They see the packs on your page.</p><div id="msg"></div>${plansBody(po, r.services)}`;
   const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
   wirePlans(po, guard);
@@ -587,7 +587,7 @@ async function barberPage(id, shareCode) {
   const sched = data.schedule || [];
   const hoursRows = order.map((d) => { const x = sched.find((y) => y.weekday === d); return `<tr class="${d === wd ? 'today' : ''}"><td>${DAYFULL[d]}</td><td>${x && x.is_working ? `${t12(x.start)} – ${t12(x.end)}` : '<span class="muted">Closed</span>'}</td></tr>`; }).join('');
   const brk = sched.find((y) => y.is_working && y.break_start);
-  const queueTxt = q.serving ? `Chair busy now · ${q.waiting} waiting today` : q.waiting ? `${q.waiting} booked today` : 'No one booked yet today';
+  const queueTxt = q.serving ? `Chair in use · ${q.waiting} waiting today` : q.waiting ? `${q.waiting} booked today` : 'No bookings yet today';
   const rv = sh ? { reviews: data.reviews || [] } : data.rating && data.rating.count ? await api('/barbers/' + id + '/reviews?limit=5').catch(() => null) : null;
   const lo = data.loyalty;
   app.innerHTML = `${state.user ? `<a href="${state.user.role === 'barber' ? '#/profile' : '#/'}" class="back">${ic('back', 'sm')} ${state.user.role === 'barber' ? 'Profile' : 'My barbers'}</a>` : ''}
@@ -600,10 +600,10 @@ async function barberPage(id, shareCode) {
     ${lo ? `<div class="loyal small"><div class="row between"><span>${ic('ticket', 'sm')} Loyalty: every ${lo.every_n}th visit earns ${naira(lo.reward_kobo)}</span><b>${lo.into_cycle}/${lo.every_n}</b></div><div class="bar"><i style="width:${Math.round(lo.into_cycle / lo.every_n * 100)}%"></i></div></div>` : ''}
     ${barber.about ? `<h2>About</h2><p>${esc(barber.about)}</p>` : ''}
     ${notices.length ? `<div class="warn small notice" style="margin-top:16px">${ic('warn', 'sm')}<div>${notices.map((n) => `<div><b>${esc(n.title)}</b>${n.type === 'CLOSED' && n.reason ? ' — ' + esc(n.reason) : n.type === 'HOURS_UPDATED' ? ' — ' + esc(n.text) : ''}</div>`).join('')}</div></div>` : ''}
-    ${(my.credits && my.credits.length) || (my.plans && my.plans.some((p) => p.sessions_left > 0)) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Plan <b>${esc(p.plan_name)}</b>: ${p.sessions_left} session${p.sessions_left === 1 ? '' : 's'} left.`).join(' ')} ${my.credits.length ? `${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} available.` : ''} Applied when you book.</div></div>` : ''}
+    ${(my.credits && my.credits.length) || (my.plans && my.plans.some((p) => p.sessions_left > 0)) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Plan <b>${esc(p.plan_name)}</b>: ${p.sessions_left} session${p.sessions_left === 1 ? '' : 's'} left.`).join(' ')} ${my.credits.length ? `${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} available.` : ''} We use it when you book.</div></div>` : ''}
     <h2>Services</h2>
     <div class="list">${services.map((s) => `<div><span class="grow"><b>${esc(s.name)}</b><span class="sub">${s.duration_min} min</span></span><b>${naira(s.price_kobo)}</b></div>`).join('') || '<div class="muted">No services yet.</div>'}</div>
-    <div id="plans"><h2>Plans</h2>${plans.length ? `<p class="small muted" style="margin-top:0">Buy a pack and book without paying each time. Sessions end when the plan ends.</p>${plans.map((pl) => planCard(pl, services, isCustomer)).join('')}` : '<p class="muted small">This barber has no plans at the moment.</p>'}</div>
+    <div id="plans"><h2>Plans</h2>${plans.length ? `<p class="small muted" style="margin-top:0">Buy a pack and book without paying each time. Unused sessions end when the plan ends.</p>${plans.map((pl) => planCard(pl, services, isCustomer)).join('')}` : '<p class="muted small">This barber has no plans right now.</p>'}</div>
     ${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
     <h2>Opening hours</h2>
     <div class="card"><table class="hours">${hoursRows}</table>${brk ? `<div class="small muted" style="margin-top:8px">Break ${t12(brk.break_start)} – ${t12(brk.break_end)}</div>` : ''}</div>
@@ -621,31 +621,31 @@ const planCard = (pl, services, canBuy) => `<div class="card plan"><div class="r
   <div class="small muted">Includes ${esc(svcNames(pl.service_ids, services))}</div>
   ${canBuy ? `<div class="btns end" style="margin-top:12px"><button class="btn sm" data-buy="${pl.id}">Buy plan</button></div>` : ''}</div>`;
 async function buyPlan(id, el) {
-  if (!confirm('Buy this plan? You will be taken to Paystack to pay. Plan sessions end when the plan ends and are not refundable.')) return;
+  if (!confirm('Buy this plan? You will go to Paystack to pay. Sessions you do not use end when the plan ends. We do not refund them.')) return;
   el.disabled = true;
   try { const r = await api(`/plans/${id}/buy`, { method: 'POST' }); location.href = r.authorization_url; } catch (e) { fail(e); el.disabled = false; }
 }
 const expTxt = (iso) => dateLabel(String(iso).slice(0, 10));
 async function wallet(planResult, ppId) {
   if (planResult && ppId && !['processed', 'already_processed', 'refund_due', 'checked', 'amount_mismatch'].includes(planResult)) {
-    const r = await confirmReturn('plan', ppId, 'Confirming your plan payment…');
+    const r = await confirmReturn('plan', ppId, 'Checking your plan payment…');
     history.replaceState(null, '', '#/wallet?plan=' + (r === 'processed' || r === 'already_processed' || r === 'refund_due' || r === 'amount_mismatch' ? r : 'checked'));
     planResult = new URLSearchParams(location.hash.split('?')[1] || '').get('plan');
   }
   const w = await api('/me/wallet');
-  const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">Plan purchased. Pick "Use plan session" when you book.</div>'
-    : planResult === 'not_paid' ? '<div class="err">Payment was not completed, so the plan was not activated.</div>' : planResult === 'checked' ? '<div class="info">We have not received confirmation from Paystack yet. If you were charged, the plan activates on its own within a few minutes (or the payment is refunded).</div>' : planResult === 'amount_mismatch' ? '<div class="err">We received your payment but the amount did not match, so the plan was not activated automatically. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">That payment could not be applied and is being refunded.</div>' : '';
+  const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">You bought the plan. Choose "Use plan session" when you book.</div>'
+    : planResult === 'not_paid' ? '<div class="err">Your payment did not go through, so the plan is not on.</div>' : planResult === 'checked' ? '<div class="info">Paystack has not told us yet. If you were charged, the plan turns on by itself in a few minutes, or we refund you.</div>' : planResult === 'amount_mismatch' ? '<div class="err">We got your payment, but the amount was not right, so the plan is not on. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">We could not use that payment. We are sending your money back.</div>' : '';
   const live = w.credits.filter((c) => c.live), past = w.credits.filter((c) => !c.live);
   app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
     <h2>Session credits</h2>
-    <p class="small muted" style="margin-top:0">A missed paid session isn't refunded — you get 1 credit with the <b>same barber</b>, valid ${w.rules.credit_expiry_days} days. Credits can't be cashed out and are applied when you book with that barber.</p>
-    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · services up to ${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">No credits right now.</p>'}
+    <p class="small muted" style="margin-top:0">If you miss a paid session, we do not refund it. You get 1 credit with the <b>same barber</b>. It works for ${w.rules.credit_expiry_days} days. You cannot cash it out. We use it when you book with that barber.</p>
+    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · any service up to ${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">You have no credits right now.</p>'}
     <h2>My plans</h2>
     ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
       <div class="muted small">${esc(p.shop_name)}</div><div class="small">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
       <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
-      ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}</div>`).join('') || '<p class="muted small">No plans yet. Open a barber page to see the plans on offer.</p>'}
-    ${past.length ? `<h2>Used / expired credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Expired ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
+      ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}</div>`).join('') || '<p class="muted small">You have no plans yet. Open a barber page to see their plans.</p>'}
+    ${past.length ? `<h2>Used or ended credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Ended ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
 }
 
 /* ---------- customer: bookings ---------- */
@@ -653,13 +653,13 @@ async function myBookings() {
   const r = await api('/bookings');
   const upcoming = r.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status));
   const past = r.bookings.filter((b) => !upcoming.includes(b));
-  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">Nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? clist(past.map(bookingCard)) : ''}${past.length ? '' : '<p class="muted">No past bookings yet.</p>'}`;
+  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">You have nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? clist(past.map(bookingCard)) : ''}${past.length ? '' : '<p class="muted">No past bookings yet.</p>'}`;
   startPoll(myBookings);
 }
 /* Back from Paystack: the redirect lands here before the webhook may have arrived, so we ask the server to verify by reference (a few tries, a few seconds apart) instead of showing a stale "not confirmed". */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function confirmReturn(kind, id, title) {
-  app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please don't close this page. This usually takes a few seconds.</p></div>`;
+  app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please keep this page open. It takes a few seconds.</p></div>`;
   let last = null;
   for (let i = 0; i < 6; i++) {
     try {
@@ -674,17 +674,17 @@ async function confirmReturn(kind, id, title) {
 async function bookingDetail(id, payResult) {
   const { booking: b } = await api('/bookings/' + id);
   if (payResult && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'checked'].includes(payResult)) {
-    const r = await confirmReturn('booking', id, 'Confirming your payment…');
+    const r = await confirmReturn('booking', id, 'Checking your payment…');
     history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : r === 'slot_taken' || r === 'refund_due' ? r : r === 'amount_mismatch' ? 'amount_mismatch' : 'checked'));
     return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'));
   }
   const q = b.queue;
   let payMsg = '';
-  if (payResult === 'processed' || payResult === 'already_processed') payMsg = '<div class="ok">Payment received. Your booking is confirmed.</div>';
-  else if (payResult === 'not_paid') payMsg = '<div class="err">Payment was not completed. Your slot is not secured yet — pay below to lock it in, if it is still free.</div>';
-  else if (payResult === 'amount_mismatch') payMsg = '<div class="err">We received your payment but the amount did not match this booking, so it was not confirmed automatically. Please contact support with your booking number #' + id + ' — we will confirm it or refund you.</div>';
-  else if (payResult === 'checked') payMsg = '<div class="info">We have not received confirmation from Paystack yet. If you were charged, your booking will confirm on its own within a few minutes (or the payment is refunded). Tap “Check payment” to try again.</div>';
-  else if (payResult === 'slot_taken' || payResult === 'refund_due') payMsg = '<div class="err">Sorry — someone else booked that time before your payment completed, so this booking was <b>not confirmed</b>. Your payment is being refunded. Please pick another time.</div>';
+  if (payResult === 'processed' || payResult === 'already_processed') payMsg = '<div class="ok">We got your payment. Your booking is confirmed.</div>';
+  else if (payResult === 'not_paid') payMsg = '<div class="err">Your payment did not go through. Your time is not saved yet. Pay below to save it, if it is still free.</div>';
+  else if (payResult === 'amount_mismatch') payMsg = '<div class="err">We got your payment, but the amount was not right for this booking, so we did not confirm it. Please contact support. Give them your booking number #' + id + ' We will confirm it or refund you.</div>';
+  else if (payResult === 'checked') payMsg = '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
+  else if (payResult === 'slot_taken' || payResult === 'refund_due') payMsg = '<div class="err">Sorry. Someone else booked that time before your payment finished, so this booking is <b>not confirmed</b>. We are refunding your payment. Please pick another time.</div>';
   const canCancel = b.can_cancel;
   const locked = ['CONFIRMED', 'ARRIVED'].includes(b.status) && !b.can_cancel;
   let qHtml = '';
@@ -692,8 +692,8 @@ async function bookingDetail(id, payResult) {
     const cls = q.state === 'READY' ? 'ready' : q.state === 'NEXT' ? 'next' : q.state === 'BEING_SERVED' ? 'serving' : '';
     const big = q.state === 'IN_LINE' ? `#${q.position}` : q.state === 'NEXT' ? 'Next' : q.state === 'READY' ? 'Ready' : ic('scissors');
     qHtml = `<div class="qbox ${cls}"><div class="muted small">LIVE QUEUE · updates every 10s</div><div class="n">${big}</div><div style="font-weight:700;margin-top:6px">${esc(q.message)}</div>
-      ${q.state === 'IN_LINE' || q.state === 'NEXT' ? `<div class="small muted">${q.ahead} customer${q.ahead === 1 ? '' : 's'} ahead of you</div>` : ''}
-      ${q.eta && q.state !== 'BEING_SERVED' ? `<div class="eta">${ic('clock', 'sm')} Expected around <b>${lagosTime(q.eta.est_start)}</b>${q.eta.est_min > 0 ? ` · about ${q.eta.est_min} min` : ''}${q.eta.delay_min ? `<div class="small muted">Your barber is running about ${q.eta.delay_min} min behind</div>` : ''}</div>` : ''}</div>`;
+      ${q.state === 'IN_LINE' || q.state === 'NEXT' ? `<div class="small muted">${q.ahead} customer${q.ahead === 1 ? ' is' : 's are'} ahead of you</div>` : ''}
+      ${q.eta && q.state !== 'BEING_SERVED' ? `<div class="eta">${ic('clock', 'sm')} You should start around <b>${lagosTime(q.eta.est_start)}</b>${q.eta.est_min > 0 ? ` · about ${q.eta.est_min} min` : ''}${q.eta.delay_min ? `<div class="small muted">Your barber is running about ${q.eta.delay_min} min behind</div>` : ''}</div>` : ''}</div>`;
   }
   app.innerHTML = `<a href="#/bookings" class="back">${ic('back', 'sm')} My bookings</a>${payMsg}
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:18px">${esc(b.service_name)}</h1>${statusBadge(b.status, b)}</div>
@@ -706,24 +706,24 @@ async function bookingDetail(id, payResult) {
     ${qHtml}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).reviews ? (b.review ? `<div class="card review"><div class="row between"><b>Your review</b>${stars(b.review.rating)}</div>${b.review.comment ? `<p style="margin:8px 0 0">${esc(b.review.comment)}</p>` : ''}${b.review.reply ? `<div class="reply small"><b>Reply from your barber</b><div>${esc(b.review.reply)}</div></div>` : ''}</div>` : `<div class="card" id="rvcard"><h3 style="margin:0 0 4px">How was your visit?</h3><div class="starpick" id="starpick" role="radiogroup" aria-label="Rating">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" role="radio" aria-checked="false" aria-label="${i} star${i > 1 ? 's' : ''}">${ic('star')}</button>`).join('')}</div><textarea id="rvtext" rows="2" maxlength="500" placeholder="Add a short comment (optional)"></textarea><div class="btns"><button class="btn sm" id="rvsend" disabled>Send review</button></div></div>`) : ''}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).rebook ? `<div class="btns"><a class="btn sec" href="#/book/${b.barber_id}">${ic('repeat', 'sm')} Book again</a></div>` : ''}
-    ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your slot is only secured once payment completes — until then it stays open to others. Pay to lock it in (if it's taken first, you won't be charged, or you'll be refunded).</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira(b.price_kobo)} now</button><button class="btn sec" id="verify">I've paid, check status</button></div>` : ''}
+    ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your time is saved only after you pay. Until then, others can book it. Pay to save it. If someone takes it first, you will not be charged, or we will refund you.</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira(b.price_kobo)} now</button><button class="btn sec" id="verify">I paid. Check my payment</button></div>` : ''}
     ${b.can_check_in ? `<button class="btn big green block" id="here">${ic('pin')} I'm Here</button>` : ''}
-    ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button appears on the day of your appointment.</div>` : ''}
-    ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">Cancel until ${lagosTime(b.cancel_deadline)}, and the slot reopens at once.${b.payment_option === 'PLAN' ? ' Your plan session is returned.' : b.payment_option === 'CREDIT' ? ' Your credit is returned.' : b.payment_status === 'PAID' ? ' Your payment is refunded to your original payment method once approved.' : ''}</p>` : ''}
-    ${locked ? `<div class="info small notice">${ic('lock', 'sm')}<div>Cancellation closed at ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The slot stays booked for you. If you miss a <b>paid</b> session it isn't refunded — you get 1 credit with this barber instead.</div></div>` : ''}
-    ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Incomplete.</b> This booking wasn't completed because payment wasn't finished, so no slot was reserved. You haven't been charged.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
+    ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button shows on the day of your visit.</div>` : ''}
+    ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
+    ${locked ? `<div class="info small notice">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you miss a <b>paid</b> session, we do not refund it. You get 1 credit with this barber.</div></div>` : ''}
+    ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time. You were not charged.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
     <div class="btns" style="margin-top:14px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
-    ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} This session wasn't refunded, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
-    ${b.payment_status === 'REFUND_PENDING' ? `<div class="info small notice">${ic('clock', 'sm')}<div><b>Refund requested.</b> It is waiting for approval${b.refund && b.refund.due_at ? ' and is approved automatically by ' + lagosTime(b.refund.due_at) + ' at the latest' : ''}. You will be told when it is sent back to your card.</div></div>` : ''}
-    ${b.payment_status === 'REFUNDED' ? `<div class="ok small">${ic('check', 'sm')} <b>Refund approved.</b> The money is on its way back to your original payment method. Your bank can take a few working days to show it.</div>` : ''}
-    ${b.payment_status === 'REFUND_DECLINED' ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Refund not approved.</b> Open your notifications to see the reason, or use Report a problem if you disagree.</div></div>` : ''}
-    ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">Your payment is marked <b>credit pending</b>. We will confirm whether this becomes a credit or a refund.</div>` : ''}`;
+    ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} We did not refund this session, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
+    ${b.payment_status === 'REFUND_PENDING' ? `<div class="info small notice">${ic('clock', 'sm')}<div><b>Refund asked for.</b> It is waiting to be approved${b.refund && b.refund.due_at ? '. We approve it by ' + lagosTime(b.refund.due_at) + ' at the latest' : ''}. We will tell you when we send it back to your card.</div></div>` : ''}
+    ${b.payment_status === 'REFUNDED' ? `<div class="ok small">${ic('check', 'sm')} <b>Refund approved.</b> Your money is on its way back to the way you paid. Your bank may take a few working days to show it.</div>` : ''}
+    ${b.payment_status === 'REFUND_DECLINED' ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Refund not approved.</b> Open your notifications to see why. If you do not agree, use Report a problem.</div></div>` : ''}
+    ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">We are deciding if you get a credit or a refund for this payment. We will tell you.</div>` : ''}`;
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
-  on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thanks for your review'); route(); });
+  on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
-  on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); toast(r.booking.status === 'CONFIRMED' ? 'Payment confirmed' : 'Payment not received yet', r.booking.status !== 'CONFIRMED'); route(); });
-  on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You're checked in"); route(); });
+  on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); toast(r.booking.status === 'CONFIRMED' ? 'Payment confirmed' : 'We have not got your payment yet', r.booking.status !== 'CONFIRMED'); route(); });
+  on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) throw new Error('Not cancelled'); await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id); });
 }
@@ -735,14 +735,14 @@ document.addEventListener('click', (ev) => {
   if (box) { box.remove(); return; }
   box = document.createElement('div'); box.id = 'reportbox'; box.className = 'card'; box.style.marginTop = '12px';
   box.innerHTML = `<h3 style="margin-top:0">Report a problem</h3><p class="small muted">Tell us what went wrong. The TrimSlot team reads every report and may contact you.</p>
-    <form id="rform"><label>What is it about?</label><select name="category"><option value="NO_SHOW">Someone did not show up</option><option value="BEHAVIOUR">Behaviour</option><option value="PAYMENT">Payment</option><option value="QUALITY">Service quality</option><option value="SAFETY">Safety</option><option value="OTHER">Something else</option></select>
+    <form id="rform"><label>What is this about?</label><select name="category"><option value="NO_SHOW">Someone did not come</option><option value="BEHAVIOUR">How someone acted</option><option value="PAYMENT">Payment</option><option value="QUALITY">How good the service was</option><option value="SAFETY">Safety</option><option value="OTHER">Something else</option></select>
     <label>Details</label><textarea name="message" rows="4" maxlength="1000" required placeholder="What happened?"></textarea>
     <div class="btns cta"><button class="btn" type="submit">Send report</button></div></form>`;
   btn.closest('.btns').after(box); box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('#rform').onsubmit = async (e) => {
     e.preventDefault(); const sb = e.target.querySelector('button'); sb.disabled = true;
-    try { const d = Object.fromEntries(new FormData(e.target)); await api('/reports', { method: 'POST', body: { ...d, booking_id: id } }); box.innerHTML = `<div class="ok">Thanks - your report reached the TrimSlot team.</div>`; }
-    catch (err) { sb.disabled = false; toast(err.message || 'Could not send', true); }
+    try { const d = Object.fromEntries(new FormData(e.target)); await api('/reports', { method: 'POST', body: { ...d, booking_id: id } }); box.innerHTML = `<div class="ok">Thank you. The TrimSlot team got your report.</div>`; }
+    catch (err) { sb.disabled = false; toast(err.message || 'We could not send it', true); }
   };
 });
 
@@ -752,11 +752,11 @@ async function barberBalance() {
   const st = { ACCRUED: ['b-amber', 'Owed'], SETTLED: ['b-green', 'Settled'], WAIVED: ['b-blue', 'Waived'] };
   app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Platform balance owed</h1>
     <div class="card"><div class="muted small">YOU CURRENTLY OWE</div><div style="font-size:32px;font-weight:800;margin:4px 0">${naira(r.owed_kobo)}</div>
-      <div class="small muted">When a booking is paid outside the app (cash or transfer) and completed, TrimSlot's commission on it (${Math.round(r.factor * 100)}% of the normal in-app fee) is added here. It is deducted automatically from your next online payments and plan sales - you don't need to send money.</div></div>
-    ${r.blocked.blocked ? `<div class="warn notice">${ic('warn')}<div><b>Pay on arrival is paused for your shop.</b><div class="small">Your balance ${esc(r.blocked.reason || '')}. Customers can still pay online; once the balance is cleared, pay on arrival returns.</div></div></div>` : ''}
+      <div class="small muted">When a customer pays outside the app (cash or transfer) and you complete the booking, we add TrimSlot's commission here. It is ${Math.round(r.factor * 100)}% of the usual in-app fee. We take it out of your next online payments and plan sales. You do not need to send money.</div></div>
+    ${r.blocked.blocked ? `<div class="warn notice">${ic('warn')}<div><b>Pay on arrival is paused for your shop.</b><div class="small">Your balance ${esc(r.blocked.reason || '')}. Customers can still pay online. When you clear the balance, pay on arrival comes back.</div></div></div>` : ''}
     <h2>Entries</h2>${r.entries.length ? r.entries.map((e) => `<div class="card"><div class="row between"><b>${e.kind === 'ADJUSTMENT' ? 'Adjustment' : e.booking_id ? `<a href="#/b/${e.booking_id}">Booking #${e.booking_id}</a>` : 'Commission'}</b><span class="badge ${st[e.status][0]}">${st[e.status][1]}</span></div>
       <div class="row between" style="margin-top:4px"><span class="small muted">${esc(e.note || '')}</span><b>${naira(e.amount_kobo)}</b></div>
-      <div class="small muted" style="margin-top:4px">${lagosStamp(e.created_at)}${e.status === 'ACCRUED' && e.remaining_kobo < e.amount_kobo ? ' · ' + naira(e.remaining_kobo) + ' still owed' : ''}${e.settled_at ? ' · cleared ' + lagosStamp(e.settled_at) : ''}</div></div>`).join('') : '<div class="card muted center">Nothing owed. Commission shows up here after you complete a booking that was paid outside the app.</div>'}`;
+      <div class="small muted" style="margin-top:4px">${lagosStamp(e.created_at)}${e.status === 'ACCRUED' && e.remaining_kobo < e.amount_kobo ? ' · ' + naira(e.remaining_kobo) + ' still owed' : ''}${e.settled_at ? ' · cleared ' + lagosStamp(e.settled_at) : ''}</div></div>`).join('') : '<div class="card muted center">You owe nothing. Commission shows here after you complete a booking that was paid outside the app.</div>'}`;
 }
 
 /* ---------- notifications ---------- */
@@ -768,10 +768,10 @@ async function notifications() {
   let items = r.notifications, more = r.next_before;
   const draw = () => {
     const unread = items.filter((n) => !n.is_read).length;
-    app.innerHTML = `<div class="row between"><h1>Notifications</h1>${unread ? '<button class="btn sm sec" id="read">Mark all read</button>' : ''}</div>
+    app.innerHTML = `<div class="row between"><h1>Notifications</h1>${unread ? '<button class="btn sm sec" id="read">Mark all as read</button>' : ''}</div>
       ${Notify.promptCard()}
       ${items.length ? `<div class="nlist">${items.map(notifItem).join('')}</div>${more ? '<div class="btns end"><button class="btn sm sec" id="more">Older</button></div>' : ''}`
-        : `<div class="empty">${ic('bell')}<b>You're all caught up</b><span class="small muted">Booking updates, reminders and queue alerts will show up here.</span></div>`}`;
+        : `<div class="empty">${ic('bell')}<b>You have no new alerts</b><span class="small muted">Booking news, reminders and line updates show up here.</span></div>`}`;
     const rd = $('#read'); if (rd) rd.onclick = async () => { await api('/notifications/read', { method: 'POST' }); items = items.map((n) => ({ ...n, is_read: true })); state.unread = 0; Notify.paintUnread(); chrome(); draw(); };
     const mo = $('#more'); if (mo) mo.onclick = async () => { mo.disabled = true; const x = await api('/notifications?limit=30&before=' + more); items = items.concat(x.notifications); more = x.next_before; draw(); };
     document.querySelectorAll('[data-nid]').forEach((el) => el.addEventListener('click', () => {
@@ -793,45 +793,45 @@ const pendingBanner = () => {
   const u = state.user; if (!u || u.role !== 'barber' || u.verified !== false) return '';
   const st = u.review_status || 'PENDING', why = u.review_reason ? `<div class="why">${esc(u.review_reason)}</div>` : '';
   const btn = (label) => `<div class="btns" style="margin-top:10px"><button class="btn sm" data-resubmit>${label}</button></div>`;
-  if (st === 'REJECTED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>Your shop was not approved.</b>${why}<div class="small">Fix what's mentioned in Settings, then resubmit for review.</div>${btn('Resubmit for review')}</div></div>`;
-  if (st === 'NEEDS_INFO') return `<div class="warn notice" id="rvbox">${ic('shield')}<div><b>We need a bit more information.</b>${why}<div class="small">Update your shop details in Settings, then send it back for review.</div>${btn('Send for review again')}</div></div>`;
-  if (st === 'SUSPENDED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>Your shop is paused.</b>${why}<div class="small">Customers can't see or book it. Please contact support to get it reinstated.</div></div></div>`;
-  return '<div class="info notice" id="rvbox">'+ic('shield')+'<div><b>Awaiting verification.</b> Customers can\'t see or book your shop yet. Finish your profile, services and hours in Settings — we\'ll notify you when you\'re approved.</div></div>';
+  if (st === 'REJECTED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>We did not approve your shop.</b>${why}<div class="small">Fix what we listed in Settings. Then send it for review again.</div>${btn('Send for review again')}</div></div>`;
+  if (st === 'NEEDS_INFO') return `<div class="warn notice" id="rvbox">${ic('shield')}<div><b>We need a little more information.</b>${why}<div class="small">Update your shop details in Settings. Then send them for review again.</div>${btn('Send for review again')}</div></div>`;
+  if (st === 'SUSPENDED') return `<div class="err notice" id="rvbox">${ic('shield')}<div><b>Your shop is paused.</b>${why}<div class="small">Customers cannot see or book your shop. Contact support to get it back.</div></div></div>`;
+  return '<div class="info notice" id="rvbox">'+ic('shield')+'<div><b>We are checking your shop.</b> Customers cannot see or book it yet. Finish your profile, services and hours in Settings. We will tell you when we approve it.</div></div>';
 };
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest && ev.target.closest('[data-resubmit]'); if (!b) return;
   b.disabled = true;
   try { const r = await api('/barber/resubmit', { method: 'POST', body: {} }); state.user = { ...state.user, review_status: r.review_status, review_reason: r.review_reason, verified: r.verified }; toast('Sent for review'); route(); }
-  catch (e) { b.disabled = false; toast(e.message || 'Could not resubmit', true); }
+  catch (e) { b.disabled = false; toast(e.message || 'We could not send it again', true); }
 });
 const payoutBanner = () => {
   const u = state.user; if (!u || u.role !== 'barber' || u.verified === false || u.payout_ok !== false) return '';
-  return `<a class="notice warn payban" href="#/payouts">${ic('wallet')}<div><b>Set up payouts to take online payments.</b><div class="small">Until you add your bank account, customers can only pay you on arrival. <u>Set up now</u></div></div></a>`;
+  return `<a class="notice warn payban" href="#/payouts">${ic('wallet')}<div><b>Set up payouts to get paid online.</b><div class="small">Until you add your bank account, customers can only pay you on arrival. <u>Set up now</u></div></div></a>`;
 };
 async function barberToday(keepScroll) {
   const d = await api('/barber/today');
   const ns = d.now_serving;
   const nowCard = ns ? `<div class="now"><div class="lbl">NOW SERVING</div><div class="nm">${cav(ns.customer, 'in')}${esc(ns.customer.name)}</div>
       <div>${esc(ns.service_name)} · ${naira(ns.price_kobo)} ${payBadge(ns)}</div><div class="small" style="opacity:.8;margin:4px 0 12px">Started ${lagosTime(ns.service_start)} · booked for ${esc(ns.start_label)}</div>
-      ${ns.payment_status === 'PAYMENT_DUE' ? `<div class="info small">Collect ${naira(ns.price_kobo)} before completing:</div><div class="btns"><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="cash">Cash received</button><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="transfer">Transfer received</button></div><div style="height:12px"></div>` : ''}
+      ${ns.payment_status === 'PAYMENT_DUE' ? `<div class="info small">Collect ${naira(ns.price_kobo)} before you complete:</div><div class="btns"><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="cash">Cash received</button><button class="btn amber" data-a="record-payment" data-id="${ns.id}" data-m="transfer">Transfer received</button></div><div style="height:12px"></div>` : ''}
       <button class="btn big green block" data-a="complete" data-id="${ns.id}" ${ns.payment_status === 'PAYMENT_DUE' ? 'disabled' : ''}>Complete</button></div>`
     : `<div class="now idle"><div class="lbl">NOW SERVING</div><div class="nm" style="font-size:20px">Nobody in the chair</div>
-      ${d.next ? `<div class="small">Next: ${cav(d.next.customer, 'in sm')}<b>${esc(d.next.customer.name)}</b> ${d.next.status === 'ARRIVED' ? '(here)' : '(not arrived)'}</div>` : '<div class="small">Queue is empty.</div>'}</div>`;
+      ${d.next ? `<div class="small">Next: ${cav(d.next.customer, 'in sm')}<b>${esc(d.next.customer.name)}</b> ${d.next.status === 'ARRIVED' ? '(here)' : '(not here yet)'}</div>` : '<div class="small">No one is in line.</div>'}</div>`;
   const nx = d.next;
   const nextCard = nx ? `<h2>NEXT</h2><div class="card">${personRow(nx, !ns)}</div>` : '';
   const F = state.cfg.features || {};
   const [sm, tp] = await Promise.all([F.daily_summary ? api('/barber/summary').catch(() => null) : null, F.quick_actions ? api('/barber/queue/templates').catch(() => null) : null]);
   const smHtml = sm && sm.enabled ? `<div class="summary"><div><b>${sm.today.completed}</b><span>done</span></div><div><b>${naira(sm.today.earned)}</b><span>earned</span></div><div><b>${sm.today.remaining}</b><span>to go</span></div><div><b>${sm.tomorrow_booked}</b><span>tomorrow</span></div></div>
     <div class="small muted" style="margin:-2px 0 8px">${sm.yesterday.completed ? `Yesterday: ${sm.yesterday.completed} cuts · ${naira(sm.yesterday.earned)}` : 'No cuts yesterday'}${sm.rating && sm.rating.count ? ` · ${ratingChip(sm.rating)}` : ''}${sm.waitlisted ? ` · ${sm.waitlisted} on waitlist` : ''}</div>` : '';
-  const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you're running late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Shift everyone's expected time</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
+  const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you are late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Move everyone's start time later</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
       <div class="small muted" style="margin:12px 0 6px">Or send a message to everyone still waiting</div><div class="btns">${tp.templates.map((t) => `<button class="btn sm sec" data-tpl="${t.key}">${esc(t.label)}</button>`).join('')}</div></div></details>` : '';
   app.innerHTML = `${pendingBanner()}${payoutBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
     ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
-    <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else in line.</p>'}
+    <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else is in line.</p>'}
     ${d.done.length ? `<h2>Done today</h2>${clist(d.done.map((b) => crowA({ t: cav(b.customer) + esc(b.customer.name), p: statusBadge(b.status) + payBadge(b), m: `${esc(b.start_label)} · ${esc(b.service_name)}`, r: naira(b.price_kobo) }, '#/b/' + b.id)))}` : ''}`;
   $('#refresh').onclick = () => barberToday();
-  document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you're running ${el.dataset.delay} more minutes behind?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); toast(`Running ${r.delay_min} min behind · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
+  document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you are ${el.dataset.delay} more minutes late?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); toast(`You are ${r.delay_min} min late · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-tpl]').forEach((el) => el.onclick = async () => { if (!confirm(`Send "${el.textContent}" to everyone waiting today?`)) return; el.disabled = true; try { const r = await api('/barber/queue/message', { method: 'POST', body: { template: el.dataset.tpl } }); toast(`Sent to ${r.sent} customer${r.sent === 1 ? '' : 's'}`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-a]').forEach((el) => el.onclick = () => {
     const a = el.dataset.a;
@@ -846,7 +846,7 @@ function personRow(b, canStartNow) {
   return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosWhen(b.arrival_time, b.scheduled_time)}` : ''}</div></a>
       <div style="text-align:right"><span class="badge ${arrived ? 'b-green' : 'b-gray'}">${arrived ? 'ARRIVED' : 'NOT ARRIVED'}</span><div style="margin-top:4px">${payBadge(b)}</div></div></div>
     ${b.note_to_barber ? `<div class="small cnote">${ic('pencil', 'sm')} <b>Note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="small cnote priv">${ic('shield', 'sm')} ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted">Usual: ${esc(b.customer.usual.service_name)}</div>` : ''}
-    ${b.barber_hold && !arrived ? '<div class="small" style="color:var(--accent-ink);margin-top:4px">Waiting for this customer</div>' : ''}${b.skipped ? '<div class="small muted">Skipped, moved back in line</div>' : ''}
+    ${b.barber_hold && !arrived ? '<div class="small" style="color:var(--accent-ink);margin-top:4px">Waiting for this customer</div>' : ''}${b.skipped ? '<div class="small muted">Skipped. Moved back in line.</div>' : ''}
     <div class="btns" style="margin-top:12px">
       ${arrived ? `<button class="btn green" data-a="start" data-id="${b.id}">Start</button>` : `<button class="btn blue" data-a="mark-present" data-id="${b.id}">Mark Present</button>`}
       ${arrived ? '' : `<button class="btn sec" data-a="wait" data-id="${b.id}">Wait</button>`}
@@ -861,7 +861,7 @@ async function barberUpcoming() {
   app.innerHTML = `<h1>Upcoming</h1>${Object.keys(groups).sort().map((d) => `<h2>${dateLabel(d)}</h2>${clist(groups[d].map((b) => crowA({ t: cav(b.customer) + esc(b.customer.name), p: statusBadge(b.status) + payBadge(b), m: `${esc(b.start_label)} · ${esc(b.service_name)}`, r: naira(b.price_kobo) }, '#/b/' + b.id)))}`).join('') || '<p class="muted">No upcoming bookings.</p>'}`;
   startPoll(barberUpcoming);
 }
-const ACTION_LABEL = { BOOKED: 'Booked', PAYMENT_CONFIRMED: 'Payment confirmed', CHECKED_IN: 'Customer checked in ("I\'m Here")', MARKED_PRESENT: 'Barber marked present', STARTED: 'Service started', COMPLETED: 'Service completed', CANCELLED: 'Cancelled', NO_SHOW: 'Marked no-show', NOT_SERVED: 'Marked not served', PAYMENT_RECORDED: 'Payment recorded', SKIPPED: 'Skipped (moved back)', WAITING_FOR_CUSTOMER: 'Barber chose to wait', HOLD_EXPIRED: 'Payment attempt expired', CREDIT_ISSUED: 'Session credit issued (no refund)', PAYMENT_SLOT_TAKEN: 'Payment arrived after the slot was taken', LATE_PAYMENT: 'Late payment flagged', DUPLICATE_PAYMENT: 'Duplicate payment flagged' };
+const ACTION_LABEL = { BOOKED: 'Booked', PAYMENT_CONFIRMED: 'Payment confirmed', CHECKED_IN: 'Customer checked in ("I\'m Here")', MARKED_PRESENT: 'Barber marked present', STARTED: 'Service started', COMPLETED: 'Service completed', CANCELLED: 'Cancelled', NO_SHOW: 'Marked no-show', NOT_SERVED: 'Marked not served', PAYMENT_RECORDED: 'Payment recorded', SKIPPED: 'Skipped (moved back in line)', WAITING_FOR_CUSTOMER: 'Barber is waiting for the customer', HOLD_EXPIRED: 'Payment time ran out', CREDIT_ISSUED: 'Session credit given (no refund)', PAYMENT_SLOT_TAKEN: 'Payment came after someone took the time', LATE_PAYMENT: 'Late payment marked', DUPLICATE_PAYMENT: 'Double payment marked' };
 async function barberBooking(id) {
   const { booking: b, timeline } = await api('/barber/bookings/' + id);
   app.innerHTML = `<a href="#/today" class="back" id="goback">${ic('back', 'sm')} Back</a>
@@ -869,14 +869,14 @@ async function barberBooking(id) {
       <div class="muted small">${esc(b.customer.phone || '')} ${esc(b.customer.email || '')}</div><hr>
       <div class="row between"><b>${esc(b.service_name)}</b><b>${naira(b.price_kobo)}</b></div>
       <div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${b.duration_min} min</div>${barberMoney(b)}<div style="margin-top:6px">${payBadge(b)} <span class="small muted">${b.paid_via ? 'via ' + esc(b.paid_via) : ''}</span></div>
-      ${b.payment_option === 'PLAN' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a customer <b>plan session</b> — nothing to collect.</div>` : b.payment_option === 'CREDIT' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a <b>session credit</b> — nothing to collect.</div>` : ''}
-      ${b.payment_status === 'CREDITED' ? `<div class="small muted" style="margin-top:6px">Missed paid session: customer received one credit with you (no refund).</div>` : ''}
-      ${['REFUND_PENDING', 'REFUNDED'].includes(b.payment_status) ? `<div class="small muted" style="margin-top:6px">Paid session not delivered or cancelled in time: the customer is being refunded (no credit).</div>` : ''}
+      ${b.payment_option === 'PLAN' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} The customer used a <b>plan session</b>. Nothing to collect.</div>` : b.payment_option === 'CREDIT' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} The customer used a <b>session credit</b>. Nothing to collect.</div>` : ''}
+      ${b.payment_status === 'CREDITED' ? `<div class="small muted" style="margin-top:6px">The customer missed a paid session. They got one credit with you. No refund.</div>` : ''}
+      ${['REFUND_PENDING', 'REFUNDED'].includes(b.payment_status) ? `<div class="small muted" style="margin-top:6px">The paid session did not happen, or it was cancelled in time. The customer gets a refund. No credit.</div>` : ''}
       <hr><div class="small">Scheduled: <b>${lagosTime(b.scheduled_time)}</b> · Arrived: <b>${lagosTime(b.arrival_time)}</b> · Started: <b>${lagosTime(b.service_start)}</b> · Completed: <b>${lagosTime(b.service_complete)}</b></div>
       ${relBadge(b.customer.reliability)}${b.note_to_barber ? `<div class="cnote small" style="margin-top:8px">${ic('pencil', 'sm')} <b>Customer note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="cnote priv small" style="margin-top:8px">${ic('shield', 'sm')} <b>Your private note:</b> ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted" style="margin-top:6px">Usual: ${esc(b.customer.usual.service_name)} (${b.customer.usual.times}×)</div>` : ''}
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
-    <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded automatically - the shop or admin will follow up with a refund or session credit'))}</div>` : ''}</div>`).join('')}</div></div>`;
+    <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded yet. The shop or admin will give a refund or a session credit.'))}</div>` : ''}</div>`).join('')}</div></div>`;
 }
 
 /* ---------- barber: customers ---------- */
@@ -896,7 +896,7 @@ async function customerProfile(id) {
     <div class="row between center"><div class="grow"><div style="font-size:26px;font-weight:800">${c.total_visits}</div><div class="small muted">Visits</div></div><div class="grow"><div style="font-size:16px;font-weight:800;padding:5px 0">${c.last_visit ? dateLabel(c.last_visit) : '—'}</div><div class="small muted">Last visit</div></div><div class="grow"><div style="font-size:16px;font-weight:800;padding:5px 0">${naira(c.total_spent_kobo)}</div><div class="small muted">Spent</div></div></div>
     ${c.no_shows ? `<div class="small" style="color:var(--red);margin-top:8px">${c.no_shows} no-show${c.no_shows > 1 ? 's' : ''}</div>` : ''}</div>
     ${r.insights && r.insights.reliability ? `<div style="margin-top:8px">${relBadge(r.insights.reliability)} <span class="small muted">${r.insights.reliability.completed} completed · ${r.insights.reliability.no_shows} no-show${r.insights.reliability.no_shows === 1 ? '' : 's'}</span></div>` : ''}
-    ${r.insights && r.insights.note !== undefined ? `<h2>Private notes</h2><div class="card"><div class="small muted" style="margin-bottom:6px">${ic('shield', 'sm')} Only you can see this. ${r.insights.usual ? `Usual: <b>${esc(r.insights.usual.service_name)}</b> (${r.insights.usual.times}×).` : ''}</div><textarea id="cnote" rows="3" maxlength="1000" placeholder="Style, preferences, allergies…">${esc(r.insights.note)}</textarea><div class="btns"><button class="btn sm" id="cnotesave">Save note</button></div></div>` : ''}
+    ${r.insights && r.insights.note !== undefined ? `<h2>Private notes</h2><div class="card"><div class="small muted" style="margin-bottom:6px">${ic('shield', 'sm')} Only you can see this. ${r.insights.usual ? `Usual: <b>${esc(r.insights.usual.service_name)}</b> (${r.insights.usual.times}×).` : ''}</div><textarea id="cnote" rows="3" maxlength="1000" placeholder="Style, likes, allergies…">${esc(r.insights.note)}</textarea><div class="btns"><button class="btn sm" id="cnotesave">Save note</button></div></div>` : ''}
     <h2>Booking history</h2>${r.bookings.map((b) => `<a class="card row between" style="color:inherit" href="#/b/${b.id}"><div><b>${esc(b.service_name)}</b><div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${naira(b.price_kobo)}</div></div>${statusBadge(b.status)}</a>`).join('')}`;
   const sv = $('#cnotesave'); if (sv) sv.onclick = async () => { sv.disabled = true; try { await api(`/barber/customers/${id}/note`, { method: 'PUT', body: { note: $('#cnote').value } }); toast('Note saved'); } catch (e) { fail(e); } sv.disabled = false; };
 }
@@ -906,17 +906,17 @@ async function barberReviews() {
   const r = await api('/barber/reviews');
   app.innerHTML = `<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Reviews</h1>${r.summary.count ? `<div class="card row between"><div><div style="font-size:30px;font-weight:800">${r.summary.average.toFixed(1)}</div>${stars(r.summary.average)}</div><div class="muted small">${r.summary.count} review${r.summary.count === 1 ? '' : 's'}</div></div>` : ''}
     ${r.reviews.length ? r.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}
-      ${x.reply ? `<div class="reply small"><b>Your reply</b><div>${esc(x.reply)}</div></div>` : `<div class="replyform"><input data-rt="${x.id}" maxlength="500" placeholder="Reply publicly…"><button class="btn sm" data-reply="${x.id}">Reply</button></div>`}</div>`).join('') : `<div class="empty">${ic('star')}<b>No reviews yet</b><span class="small muted">Customers can rate you after a completed visit.</span></div>`}`;
+      ${x.reply ? `<div class="reply small"><b>Your reply</b><div>${esc(x.reply)}</div></div>` : `<div class="replyform"><input data-rt="${x.id}" maxlength="500" placeholder="Write a public reply…"><button class="btn sm" data-reply="${x.id}">Reply</button></div>`}</div>`).join('') : `<div class="empty">${ic('star')}<b>No reviews yet</b><span class="small muted">Customers can rate you after a completed visit.</span></div>`}`;
   document.querySelectorAll('[data-reply]').forEach((el) => el.onclick = async () => { const id = el.dataset.reply; el.disabled = true; try { await api(`/barber/reviews/${id}/reply`, { method: 'POST', body: { reply: $(`[data-rt="${id}"]`).value } }); toast('Reply posted'); barberReviews(); } catch (e) { fail(e); el.disabled = false; } });
 }
 
 /* ---------- barber: settings ---------- */
 /** Client-side downscale: longest side <= 1024px, JPEG, shrunk until it fits the server's 300 KB cap. */
 async function compressImage(file) {
-  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose an image file.');
+  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose a picture file.');
   const bmp = await (window.createImageBitmap ? createImageBitmap(file).catch(() => null) : null) || await new Promise((res, rej) => {
     const im = new Image(); const u = URL.createObjectURL(file);
-    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('That image could not be read.')); im.src = u;
+    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('We could not read that picture.')); im.src = u;
   });
   const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight;
   let scale = Math.min(1, 1024 / Math.max(w0, h0)), q = 0.85;
@@ -927,13 +927,13 @@ async function compressImage(file) {
     if (blob && blob.size <= 280 * 1024) return blob;
     if (q > 0.55) q -= 0.1; else scale *= 0.8;
   }
-  throw new Error('That photo is too large to compress. Try a different one.');
+  throw new Error('That photo is too big. Try a different one.');
 }
 async function uploadPhoto(file) {
   const blob = await compressImage(file);
   const r = await fetch('/api/barber/photo', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error?.message || 'Upload failed');
+  if (!r.ok) throw new Error(j.error?.message || 'The upload did not work');
   return j.photo_url;
 }
 /** A confirmation sheet listing bookings that a change would strand. Resolves true when the barber confirms. */
@@ -942,9 +942,9 @@ function confirmSheet(e) {
     const d = e.details || { count: 0, bookings: [] };
     const el = document.createElement('div'); el.className = 'scrim';
     el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true"><div class="notice"><div class="logo" style="background:var(--accent)">${ic('warn')}</div><div><h3 style="margin:0">This affects ${d.count} booking${d.count === 1 ? '' : 's'}</h3>
-      <p class="muted small" style="margin:4px 0 0">These customers will be notified. Nothing is cancelled automatically — they can keep, rebook or cancel.</p></div></div>
+      <p class="muted small" style="margin:4px 0 0">We will tell these customers. Nothing is cancelled for them. They can keep the booking, book again, or cancel.</p></div></div>
       <ul>${(d.bookings || []).map((b) => `<li>${esc(b.when)} · ${esc(b.service_name)}</li>`).join('')}${d.count > (d.bookings || []).length ? `<li>…and ${d.count - d.bookings.length} more</li>` : ''}</ul>
-      <div class="btns cta"><button class="btn sec" id="sh-no">Go back</button><button class="btn amber" id="sh-yes">Save &amp; notify</button></div></div>`;
+      <div class="btns cta"><button class="btn sec" id="sh-no">Go back</button><button class="btn amber" id="sh-yes">Save and tell them</button></div></div>`;
     document.body.appendChild(el);
     const done = (v) => { el.remove(); resolve(v); };
     el.querySelector('#sh-no').onclick = () => done(false); el.querySelector('#sh-yes').onclick = () => done(true);
@@ -955,7 +955,7 @@ function confirmSheet(e) {
 async function withConfirm(doSave) {
   try { return await doSave(false); } catch (e) {
     if (e.code !== 'AVAILABILITY_CONFLICT') throw e;
-    if (!(await confirmSheet(e))) throw new Error('Not saved — nothing was changed.');
+    if (!(await confirmSheet(e))) throw new Error('Not saved. Nothing changed.');
     return await doSave(true);
   }
 }
@@ -967,16 +967,16 @@ const wireDayRows = (root) => root.querySelectorAll('.dayrow .w').forEach((c) =>
 const photoBlock = (p) => `<div class="photo-up">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><div class="btns">
     <label class="btn sec sm" style="margin:0;cursor:pointer">${ic('camera', 'sm')} Take photo<input id="ph-cam" type="file" accept="image/*" capture="environment"></label>
     <label class="btn sec sm" style="margin:0;cursor:pointer">${ic('image', 'sm')} Choose<input id="ph-file" type="file" accept="image/*"></label></div>
-    <div class="small muted" style="margin-top:6px" id="ph-msg">${p.photo_url ? 'Tap to replace your shop photo.' : 'Add a photo so customers recognise your shop.'}</div></div></div>`;
+    <div class="small muted" style="margin-top:6px" id="ph-msg">${p.photo_url ? 'Tap to change your shop photo.' : 'Add a photo so customers know your shop.'}</div></div></div>`;
 function wirePhoto(p, onDone) {
-  const go1 = async (f) => { if (!f) return; const m = $('#ph-msg'); m.textContent = 'Compressing & uploading…'; try { p.photo_url = await uploadPhoto(f); toast('Photo saved'); onDone && onDone(); } catch (e) { m.textContent = e.message; fail(e); } };
+  const go1 = async (f) => { if (!f) return; const m = $('#ph-msg'); m.textContent = 'Making it smaller and uploading…'; try { p.photo_url = await uploadPhoto(f); toast('Photo saved'); onDone && onDone(); } catch (e) { m.textContent = e.message; fail(e); } };
   ['#ph-cam', '#ph-file'].forEach((sel) => { const el = $(sel); if (el) el.onchange = () => go1(el.files[0]); });
 }
 const svcLine = (s) => `<div class="svcline" data-id="${s.id}"><div><b>${esc(s.name)}</b><div class="small muted">${s.duration_min} min · ${naira(s.price_kobo)}</div></div>
   <div class="row" style="gap:6px"><button class="mini ed" aria-label="Edit">${ic('pencil', 'sm')}</button><button class="mini red del" aria-label="Remove">${ic('trash', 'sm')}</button></div>
   <form class="svcedit svcf" style="grid-column:1/-1"><div class="row wrap"><input name="name" value="${esc(s.name)}" style="flex:2 1 140px"><input name="price_naira" type="number" min="0" step="50" value="${s.price_kobo / 100}" style="flex:1 1 80px" aria-label="Price ₦"><input name="duration_min" type="number" min="5" step="5" value="${s.duration_min}" style="flex:1 1 70px" aria-label="Minutes"></div>
   <div class="btns" style="margin-top:8px"><button class="btn sm">Save</button></div></form></div>`;
-const addSvcForm = () => `<form id="addsvc"><div class="row wrap"><input name="name" placeholder="e.g. Fade" style="flex:2 1 140px" required><input name="price_naira" type="number" min="0" step="50" placeholder="₦ price" style="flex:1 1 80px" required><input name="duration_min" type="number" min="5" step="5" placeholder="Min" style="flex:1 1 70px" required></div><div style="height:8px"></div><button class="btn sec sm">${ic('plus', 'sm')} Add service</button></form>`;
+const addSvcForm = () => `<form id="addsvc"><div class="row wrap"><input name="name" placeholder="e.g. Fade" style="flex:2 1 140px" required><input name="price_naira" type="number" min="0" step="50" placeholder="Price in ₦" style="flex:1 1 80px" required><input name="duration_min" type="number" min="5" step="5" placeholder="Minutes" style="flex:1 1 70px" required></div><div style="height:8px"></div><button class="btn sec sm">${ic('plus', 'sm')} Add service</button></form>`;
 const planForm = (id, pl, services, limits) => `<form class="planf" ${id ? `data-id="${id}"` : 'id="addplan"'}>
   <label>Plan name</label><input name="name" value="${esc(pl ? pl.name : '')}" placeholder="e.g. Monthly 4 cuts" required>
   <div class="row wrap" style="gap:8px"><div style="flex:1 1 90px"><label>Price ₦</label><input name="price_naira" type="number" min="0" step="50" value="${pl ? pl.price_kobo / 100 : ''}" required></div>
@@ -986,7 +986,7 @@ const planForm = (id, pl, services, limits) => `<form class="planf" ${id ? `data
   <div class="btns" style="margin-top:10px"><button class="btn sm ${id ? '' : 'sec'}">${id ? 'Save plan' : ic('plus', 'sm') + ' Create plan'}</button></div></form>`;
 function plansBody(po, services) {
   const L = po.limits;
-  const rules = `<div class="info small" style="margin:10px 0">Platform rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · valid up to ${L.max_validity_days} days. Missed paid sessions become a same-barber credit (${L.credit_expiry_days} days, not cashable).</div>`;
+  const rules = `<div class="info small" style="margin:10px 0">Rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · lasts up to ${L.max_validity_days} days. If a customer misses a paid session, they get a credit with you. It lasts ${L.credit_expiry_days} days. They cannot cash it out.</div>`;
   const list = po.plans.map((pl) => `<div class="svcline plnline" data-id="${pl.id}"><div><b>${esc(pl.name)}</b><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div><div class="small muted">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div>${pl.needs_review ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}<div class="small muted">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold</div></div>
     <div class="row" style="gap:6px"><button class="mini ed" aria-label="Edit">${ic('pencil', 'sm')}</button><button class="mini red del" aria-label="Stop selling">${ic('trash', 'sm')}</button></div>
     <div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`).join('') || '<p class="muted small">No plans yet.</p>';
@@ -1003,7 +1003,7 @@ function wirePlans(po, guard) {
     const l = f.closest('.svcline');
     l.querySelector('.ed').onclick = () => l.classList.toggle('editing');
     f.onsubmit = guard(() => api('/barber/plans/' + f.dataset.id, { method: 'PUT', body: body(f) }), 'Plan saved');
-    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan removed from sale');
+    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');
   });
 }
 const acc = (id, icon, title, sub, body) => `<details class="acc" data-k="${id}" ${state.open.has(id) ? 'open' : ''}><summary><span class="ico">${ic(icon)}</span><span>${title}<span class="sub">${sub}</span></span><span class="chev">${ic('chev')}</span></summary><div class="body">${body}</div></details>`;
@@ -1020,21 +1020,21 @@ async function settings() {
       <label>Your name</label><input name="name" value="${esc(state.user.name)}"><label>Shop name</label><input name="shop_name" value="${esc(p.shop_name)}">
       <label>Location</label><input name="location" value="${esc(p.location || '')}"><label>About</label><textarea name="about" rows="3">${esc(p.about || '')}</textarea>
       <div class="btns cta"><button class="btn">Save profile</button></div></form>`)}
-    ${acc('services', 'tag', 'Services', `${r.services.length} service${r.services.length === 1 ? '' : 's'}`, `<p class="small muted" style="margin:10px 0 0">Price changes only affect future bookings.</p>${r.services.map(svcLine).join('')}<h3 style="margin-top:14px">Add a service</h3>${addSvcForm()}`)}
-    ${acc('hours', 'clock', 'Weekly hours', hoursSub, `<p class="small muted" style="margin:10px 0">Leave break empty for no break. If a change affects existing bookings you'll be asked to confirm and those customers are notified.</p><div class="days-grid">${scheduleRows(r.schedule)}</div><div class="btns cta"><button class="btn" id="savesch">Save hours</button></div>`)}
-    ${acc('off', 'cal', 'Days off', r.days_off.length ? `${r.days_off.length} upcoming` : 'None upcoming', `${r.days_off.map((d) => `<div class="row between" style="margin:8px 0"><span>${dateLabel(d.date)}${d.reason ? ' · <span class="muted">' + esc(d.reason) + '</span>' : ''}</span><button class="mini red" data-rm="${d.id}" aria-label="Remove">${ic('off', 'sm')}</button></div>`).join('') || '<p class="muted small">None upcoming.</p>'}
+    ${acc('services', 'tag', 'Services', `${r.services.length} service${r.services.length === 1 ? '' : 's'}`, `<p class="small muted" style="margin:10px 0 0">A new price only counts for future bookings.</p>${r.services.map(svcLine).join('')}<h3 style="margin-top:14px">Add a service</h3>${addSvcForm()}`)}
+    ${acc('hours', 'clock', 'Weekly hours', hoursSub, `<p class="small muted" style="margin:10px 0">Leave the break empty if you have no break. If a change affects bookings you already have, we ask you to confirm. Then we tell those customers.</p><div class="days-grid">${scheduleRows(r.schedule)}</div><div class="btns cta"><button class="btn" id="savesch">Save hours</button></div>`)}
+    ${acc('off', 'cal', 'Days off', r.days_off.length ? `${r.days_off.length} upcoming` : 'Nothing coming up', `${r.days_off.map((d) => `<div class="row between" style="margin:8px 0"><span>${dateLabel(d.date)}${d.reason ? ' · <span class="muted">' + esc(d.reason) + '</span>' : ''}</span><button class="mini red" data-rm="${d.id}" aria-label="Remove">${ic('off', 'sm')}</button></div>`).join('') || '<p class="muted small">Nothing coming up.</p>'}
       <form id="off"><div class="row"><input type="date" name="date" required min="${state.cfg.today}"><input name="reason" placeholder="Reason (optional)"></div><div style="height:8px"></div><button class="btn sec sm">${ic('plus', 'sm')} Add day off</button></form>`)}`;
   document.querySelectorAll('.acc').forEach((d) => d.addEventListener('toggle', () => { d.open ? state.open.add(d.dataset.k) : state.open.delete(d.dataset.k); }));
   const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const refreshMe = async () => { const me = await api('/auth/me'); state.user = me.user; };
-  const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { const out = await fn(ev); await refreshMe(); const extra = out && out.notified_bookings ? ` ${out.notified_bookings} customer${out.notified_bookings === 1 ? '' : 's'} notified.` : ''; await settings(); msg(okmsg + extra); } catch (e) { msg(e.message, true); } };
+  const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { const out = await fn(ev); await refreshMe(); const extra = out && out.notified_bookings ? ` We told ${out.notified_bookings} customer${out.notified_bookings === 1 ? '' : 's'}.` : ''; await settings(); msg(okmsg + extra); } catch (e) { msg(e.message, true); } };
   wirePhoto(p, () => settings());
   wireDayRows(app);
   $('#pf').onsubmit = guard(() => api('/barber/profile', { method: 'PUT', body: Object.fromEntries(new FormData($('#pf'))) }), 'Profile saved');
   document.querySelectorAll('.svcline:not(.plnline)').forEach((l) => {
     l.querySelector('.ed').onclick = () => l.classList.toggle('editing');
     l.querySelector('.svcf').onsubmit = guard(() => api('/barber/services/' + l.dataset.id, { method: 'PUT', body: Object.fromEntries(new FormData(l.querySelector('.svcf'))) }), 'Service saved');
-    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Remove this service? Existing bookings are kept.')) throw new Error('Cancelled'); await api('/barber/services/' + l.dataset.id, { method: 'DELETE' }); }, 'Service removed');
+    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Remove this service? Bookings you already have stay.')) throw new Error('Cancelled'); await api('/barber/services/' + l.dataset.id, { method: 'DELETE' }); }, 'Service removed');
   });
   $('#addsvc').onsubmit = guard(() => api('/barber/services', { method: 'POST', body: Object.fromEntries(new FormData($('#addsvc'))) }), 'Service added');
   $('#savesch').onclick = guard(() => withConfirm((confirmed) => api('/barber/schedule', { method: 'PUT', body: { days: readSchedule(app), ...(confirmed ? { confirm: true } : {}) } })), 'Hours saved.');
@@ -1050,7 +1050,7 @@ function setupFlow(r) {
   const head = (t, sub) => `${pendingBanner()}<div class="setup-head"><div class="logo">${ic(st.step === 1 ? 'store' : st.step === 2 ? 'tag' : 'clock')}</div><div><div class="small muted">Step ${st.step} of 3</div><h1 style="margin:0;font-size:21px">${t}</h1></div></div>${dots}<p class="muted small" style="margin:0 0 4px">${sub}</p><div id="msg"></div>`;
   const err = (e) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="err">${esc(e.message)}</div>`; };
   if (st.step === 1) {
-    app.innerHTML = `${head('Your shop', 'Just the basics — you can change everything later.')}<div class="card setup-card"><form id="pf">${photoBlock(p)}
+    app.innerHTML = `${head('Your shop', 'Just the basics. You can change it all later.')}<div class="card setup-card"><form id="pf">${photoBlock(p)}
       <label>Shop name</label><input name="shop_name" value="${esc(p.shop_name)}" required><label>Location</label><input name="location" value="${esc(p.location || '')}" placeholder="Street, area, city">
       <label>About (optional)</label><textarea name="about" rows="2">${esc(p.about || '')}</textarea><div class="btns cta"><button class="btn">Continue</button></div></form></div>`;
     wirePhoto(p, () => { const f = $('#pf'); const keep = Object.fromEntries(new FormData(f)); r.profile = { ...p, ...keep }; setupFlow(r); });
@@ -1061,11 +1061,11 @@ function setupFlow(r) {
     $('#back').onclick = () => { st.step = 1; settings(); }; $('#next').onclick = () => { st.step = 3; settings(); };
     $('#addsvc').onsubmit = async (ev) => { ev.preventDefault(); try { await api('/barber/services', { method: 'POST', body: Object.fromEntries(new FormData(ev.target)) }); settings(); } catch (e) { err(e); } };
   } else {
-    app.innerHTML = `${head('When are you open?', 'We started you on Mon–Sat, 9am–6pm. Adjust anything, or keep it.')}<div class="card setup-card"><div class="days-grid">${scheduleRows(r.schedule)}</div></div>
+    app.innerHTML = `${head('When are you open?', 'We set Mon–Sat, 9am–6pm for you. Change it or keep it.')}<div class="card setup-card"><div class="days-grid">${scheduleRows(r.schedule)}</div></div>
       <div class="btns cta"><button class="btn ghost" id="back">Back</button><button class="btn" id="finish">Finish setup</button></div>`;
     wireDayRows(app);
     $('#back').onclick = () => { st.step = 2; settings(); };
-    $('#finish').onclick = async () => { try { await api('/barber/schedule', { method: 'PUT', body: { days: readSchedule(app) } }); st.done = true; state.open = new Set(); toast('You\'re all set'); settings(); } catch (e) { err(e); } };
+    $('#finish').onclick = async () => { try { await api('/barber/schedule', { method: 'PUT', body: { days: readSchedule(app) } }); st.done = true; state.open = new Set(); toast('You are all set'); settings(); } catch (e) { err(e); } };
   }
 }
 

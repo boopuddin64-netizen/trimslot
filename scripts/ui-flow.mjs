@@ -60,7 +60,7 @@ await barber.click('#off button');
 await barber.waitForSelector('.sheet'); await shot(barber, '18-barber-availability-confirm');
 await barber.click('#sh-yes'); await barber.waitForSelector('.ok');
 await c2.goto('/#/notifications'); await c2.waitForSelector('text=Availability updated'); await shot(c2, '19-customer-availability-notification');
-ok('customer notified of availability change', await c2.locator('.notif:has-text("Availability updated")').count() > 0);
+ok('customer notified of availability change', await c2.locator('.notif:has-text("Open times changed")').count() > 0);
 await c2.goto('/#/barber/1'); await c2.waitForSelector('text=Closed on'); await c2.waitForTimeout(300); await shot(c2, '20-barber-page-closed-note');
 // new barber: guided setup
 const nb = await mk();
