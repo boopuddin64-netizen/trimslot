@@ -454,8 +454,6 @@ export function createApp(db: Db) {
   api.get('/bookings/:id', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await ownBooking(req)) })));
   api.post('/bookings/:id/pay', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
-    // Money for this booking is already being sorted out (amount did not fit / refund on its way): a second payment would charge the customer twice.
-    if (b.payment_option === 'ONLINE' && b.status === 'PENDING_PAYMENT') { const pi = (await paymentIssues(db, [b.id])).get(b.id); if (pi && pi.refund_status !== 'REFUNDED') throw conflict('PAYMENT_ON_HOLD', 'We already have a payment for this booking and we are sorting it out. Please do not pay again.'); }
     const u = await db.one('SELECT email FROM users WHERE id=$1', [req.user!.id]);
     res.json(await initializePayment(db, b.id, u.email));
   }));
@@ -543,7 +541,7 @@ export function createApp(db: Db) {
     }
     if (target === me.id) throw badRequest('You cannot report yourself.');
     if (target && !(await db.maybeOne('SELECT 1 FROM users WHERE id=$1', [target]))) throw notFound('We could not find that user.');
-    if ((await db.one<any>(`SELECT COUNT(*)::int c FROM reports WHERE reporter_id=$1 AND created_at > now() - interval '1 day'`, [me.id])).c >= 10) throw new AppError(429, 'RATE_LIMITED', 'You sent many reports today. Please wait before you send more.');
+    if ((await db.one<any>(`SELECT COUNT(*)::int c FROM reports r WHERE r.reporter_id=$1 AND r.created_at > now() - interval '1 day' AND NOT EXISTS (SELECT 1 FROM help_requests hr WHERE hr.report_id=r.id)`, [me.id])).c >= 10) throw new AppError(429, 'RATE_LIMITED', 'You sent many reports today. Please wait before you send more.');
     const r = await db.one<any>(`INSERT INTO reports (reporter_id, target_user_id, booking_id, category, message, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [me.id, target, d.booking_id ?? null, d.category, d.message, isoNow()]);
     await audit(db, d.booking_id ?? null, { id: me.id, role: me.role }, 'REPORT_FILED', { report_id: r.id, category: d.category, target_user_id: target });
     res.status(201).json({ id: r.id, message: 'Thank you. The TrimSlot team got your report.' });

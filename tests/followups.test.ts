@@ -175,6 +175,5 @@ test('H: legal "In plain words" boxes say the credit comes when the barber marks
   assert.match(terms, /When your barber marks it a no-show, you get one credit with the same barber/);
   assert.match(plan, /When your barber marks it a no-show, you get one credit with the same barber/);
   assert.match(ref, /If the barber does not mark a no-show, there is no refund and no credit\./);
-  assert.match(ref, /A credit for a missed visit comes only when the barber marks a no-show\./);
-  for (const f of ['01-terms-of-service', '04-refund-cancellation-credit-policy', '05-plan-subscription-terms']) assert.doesNotMatch(fs.readFileSync(`legal/${f}.md`, 'utf8'), /A credit comes only when/);
+  assert.match(ref, /If you do not come and the barber marks a no-show, section 4 applies\. A credit comes only when the barber marks a no-show\./, 'section 2.2 keeps its PR #1 wording (not part of this change)');
 });

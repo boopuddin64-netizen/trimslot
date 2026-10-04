@@ -38,7 +38,7 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 
 2.1 You may cancel in the app **until {{cancel_cutoff_min}} minutes before your appointment starts.** The cut-off is a TrimSlot setting and is shown on the booking before you pay. [LAWYER/OWNER: confirm {{cancel_cutoff_min}} minutes is the policy to publish.]
 
-2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit for a missed visit comes only when the barber marks a no-show.
+2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit comes only when the barber marks a no-show.
 
 2.3 If a barber is removed or suspended, or a customer account is removed, upcoming bookings may be cancelled by us. Paid online bookings are then refunded (flagged for refund and requested from Paystack); plan sessions and credits are returned.
 

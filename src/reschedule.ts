@@ -6,6 +6,9 @@ import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, notify } from './helpers';
 import { generateSlots, loadSchedule, validateBookableDate } from './slots';
 import { getSettings } from './plans';
+import { assertBookable } from './ledger';
+import { barberEmailReadySql } from './emailOtp';
+import { closeWaitlistFor } from './smart';
 import { canCustomerCancel, getBooking, getBookingForUpdate, refreshQueueNotifications } from './bookingService';
 import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant } from './time';
 
@@ -29,7 +32,10 @@ export async function rescheduleBooking(db: Db, customerId: number, bookingId: n
     if (b.reschedule_count >= RESCHEDULE_MAX) throw new AppError(409, 'RESCHEDULE_LIMIT', `You already changed this booking ${RESCHEDULE_MAX} times. Please keep this time, or cancel it.`);
     const barber = await t.maybeOne<any>('SELECT b.id, b.user_id, b.booking_paused FROM barbers b WHERE b.id=$1 AND b.verified', [b.barber_id]);
     if (!barber) throw notFound('We could not find that barber.');
-    if (barber.booking_paused) throw new AppError(409, 'BARBER_PAUSED', 'This barber is not taking new times right now.');
+    // Same gates as a new booking: maintenance mode, a paused shop, a restricted account, a barber whose email is not verified yet.
+    await assertBookable(t, b.barber_id, 'RESCHEDULE');   // any word but ON_ARRIVAL: an existing booking can still move when pay-on-arrival is paused
+    if (!(await t.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
+    { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot book right now${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     const start = scheduledInstant(input.date, startMin);
     if (start.toISOString() === new Date(b.scheduled_at).toISOString()) throw badRequest('That is the time you already have. Pick another time.');
     // The new time must itself be at least the cut-off away, so a move cannot be used to dodge the cancel lock.
@@ -60,6 +66,7 @@ export async function rescheduleBooking(db: Db, customerId: number, bookingId: n
     const cust = await t.one<{ name: string }>('SELECT name FROM users WHERE id=$1', [customerId]);
     await notify(t, barber.user_id, 'BOOKING_RESCHEDULED', 'Booking moved', `${cust.name} moved ${b.service_name} from ${was} to ${now}. The old time is free again.`, b.id);
     await notify(t, customerId, 'BOOKING_RESCHEDULED', 'Booking moved', `Your ${b.service_name} is now on ${now}. Your payment stays the same.`, b.id);
+    await closeWaitlistFor(t, customerId, b.barber_id, nb.date);
     await refreshQueueNotifications(t, b.barber_id, b.date);
     if (nb.date !== b.date) await refreshQueueNotifications(t, b.barber_id, nb.date);
     return nb;
