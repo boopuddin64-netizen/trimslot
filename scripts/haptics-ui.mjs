@@ -16,7 +16,8 @@ const mk = async (w, o = {}) => {
   if (o.unsupported) await ctx.addInitScript(() => { try { delete Navigator.prototype.vibrate; } catch {} try { Object.defineProperty(navigator, 'vibrate', { value: undefined, configurable: true }); } catch {} });
   const p = await ctx.newPage(); p.__errs = []; p.on('pageerror', (e) => p.__errs.push(e.message)); return { ctx, p };
 };
-const login = async (p, id, pw) => { await p.goto('/#/login'); await p.fill('[name=identifier]', id); await p.fill('[name=password]', pw); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('login'), null, { timeout: 8000 }); await p.waitForTimeout(400); };
+const SESS = {};   // log in once per account, then reuse the cookie (the login rate limit is strict)
+const login = async (p, id, pw) => { if (SESS[id]) { await p.context().addCookies(SESS[id]); await p.goto('/'); await p.waitForTimeout(400); return; } await p.goto('/#/login'); await p.fill('[name=identifier]', id); await p.fill('[name=password]', pw); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('login'), null, { timeout: 8000 }); await p.waitForTimeout(400); SESS[id] = await p.context().cookies(); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---- unit-level, in the real page ---- */
