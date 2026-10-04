@@ -6,6 +6,7 @@ import { applyVerifiedPayment, assertPayoutReady, getBooking, PaymentOutcome } f
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow } from './time';
 import { applyNettingForPayment, inAppFeeKobo, planCheckoutSplit, reverseNettingForPayment } from './ledger';
+import { adminEvent, flushAdminPush } from './adminNotify';
 
 const PAYSTACK_API = 'https://api.paystack.co';
 
@@ -194,6 +195,10 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
     return 'requested';
   } catch (e: any) {
     await db.query(`UPDATE payments SET refund_error=$2 WHERE reference=$1`, [reference, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});
+    // alert the admin once per payment per 12 h (the sweeper retries every minute; one alert is enough)
+    await adminEvent(db, 'REFUND_FAILED', 'Refund failed at Paystack', `The refund for payment ${reference} did not go through (${String(e?.message || 'unknown error').slice(0, 120)}). It stays queued and is retried automatically; check Payments if it keeps failing.`,
+      { link: '/admin.html#/payments?filter=needs_refund', refKey: 'payment:' + reference, dedupeHours: 12 });
+    await flushAdminPush(db).catch(() => {});
     return 'failed';
   }
 }

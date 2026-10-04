@@ -27,6 +27,9 @@ function realSender(): Sender | null {
   return async (sub, payload) => { await webpush.sendNotification(sub, payload, { TTL: 3600, urgency: 'high', timeout: 8000 }); };
 }
 
+/** The active push sender (test fake, or the real VAPID one; null when push is not configured). Shared with admin alerts. */
+export const getPushSender = (): Sender | null => sender ?? realSender();
+
 export const subscribeSchema = z.object({
   endpoint: z.string().url().max(1000).refine((u) => u.startsWith('https://'), 'Push endpoint must be https'),
   keys: z.object({ p256dh: z.string().min(10).max(200), auth: z.string().min(6).max(100) }),

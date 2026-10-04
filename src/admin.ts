@@ -33,7 +33,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
         (SELECT COALESCE(SUM(fee_kobo),0) FROM payments WHERE status='SUCCESS')::bigint AS fees_kobo,
         (SELECT COALESCE(SUM(amount_kobo),0) FROM payments WHERE status='SUCCESS' AND plan_purchase_id IS NOT NULL)::bigint AS plan_sales_kobo,
         (SELECT COUNT(*) FROM payments WHERE refund_status IN ('NEEDS_REFUND','REFUND_REQUESTED'))::int AS refunds_open,
-        (SELECT COUNT(*) FROM bookings WHERE payment_status='CREDIT_PENDING')::int AS awaiting_decision,
+        (SELECT COUNT(*) FROM bookings WHERE payment_status IN ('CREDIT_PENDING','REFUND_PENDING'))::int AS awaiting_decision,
         (SELECT COUNT(*) FROM plan_purchases WHERE status='ACTIVE' AND expires_at > now() AND sessions_used < sessions_total)::int AS active_plans,
         (SELECT COUNT(*) FROM session_credits WHERE status='AVAILABLE' AND expires_at > now())::int AS live_credits,
         (SELECT COUNT(*) FROM reports WHERE status='OPEN')::int AS reports_open,

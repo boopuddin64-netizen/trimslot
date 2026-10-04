@@ -54,7 +54,7 @@ export async function pageOf(db: Db, cfg: Cfg, query: Request['query']) {
 
 const CFG: Record<string, Cfg> = {
   customers: {
-    select: `u.id, u.name, u.email, u.phone, u.account_status, u.warn_count, u.created_at,
+    select: `u.id, u.name, u.email, u.phone, u.avatar_url, u.account_status, u.warn_count, u.created_at, (u.deletion_requested_at IS NOT NULL AND u.anonymised_at IS NULL) AS deletion_requested,
       (SELECT COUNT(*)::int FROM bookings k WHERE k.customer_id=u.id) AS bookings, (SELECT COUNT(*)::int FROM bookings k WHERE k.customer_id=u.id AND k.status='NO_SHOW') AS no_shows`,
     from: 'users u', id: 'u.id',
     sorts: { newest: { expr: 'u.id', type: 'int' }, name: { expr: 'lower(u.name)', type: 'text' } }, defSort: 'newest',
@@ -76,14 +76,14 @@ const CFG: Record<string, Cfg> = {
     },
   },
   bookings: {
-    select: `k.id, k.date, k.start_min, k.service_name, k.price_kobo, k.status, k.payment_status, k.payment_option, k.barber_id, k.customer_id, b.shop_name, u.name AS customer_name`,
+    select: `k.id, k.date, k.start_min, k.service_name, k.price_kobo, k.status, k.payment_status, k.payment_option, k.barber_id, k.customer_id, b.shop_name, u.name AS customer_name, u.avatar_url AS customer_avatar`,
     from: 'bookings k JOIN barbers b ON b.id=k.barber_id JOIN users u ON u.id=k.customer_id', id: 'k.id',
     sorts: { newest: { expr: 'k.id', type: 'int' }, date: { expr: 'k.date', type: 'date' }, price: { expr: 'k.price_kobo', type: 'int' } }, defSort: 'date',
     where: (q, add) => {
       const s = String(q.q || '').trim().slice(0, 60);
       if (s) { if (/^#?\d+$/.test(s)) add('k.id=?', Number(s.replace('#', ''))); else add(`lower(u.name) LIKE lower(?)`, like(s)); }
       const st = String(q.status || ''); if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'NOT_SERVED'].includes(st)) add('k.status=?', st);
-      const ps = String(q.payment_status || ''); if (['PAID', 'PAYMENT_DUE', 'PENDING', 'CREDIT_PENDING', 'CREDITED', 'VOID'].includes(ps)) add('k.payment_status=?', ps);
+      const ps = String(q.payment_status || ''); if (['PAID', 'PAYMENT_DUE', 'PENDING', 'CREDIT_PENDING', 'CREDITED', 'VOID', 'REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(ps)) add('k.payment_status=?', ps);
       const bid = intQ(q.barber_id); if (bid) add('k.barber_id=?', bid);
       const cid = intQ(q.customer_id); if (cid) add('k.customer_id=?', cid);
       const d = dOk(q.date); if (d) add('k.date=?', d); const f = dOk(q.from); if (f) add('k.date>=?', f); const t = dOk(q.to); if (t) add('k.date<=?', t);
@@ -132,7 +132,7 @@ const CFG: Record<string, Cfg> = {
     where: (q, add) => { add('r.deleted_at IS NULL'); if (q.hidden === '1') add('r.hidden'); if (q.hidden === '0') add('NOT r.hidden'); const rt = intQ(q.rating); if (rt && rt <= 5) add('r.rating=?', rt); const bid = intQ(q.barber_id); if (bid) add('r.barber_id=?', bid); },
   },
   waitlist: {
-    select: `w.id, w.date, w.status, w.created_at, w.notified_at, b.shop_name, s.name AS service_name, u.name AS customer_name`,
+    select: `w.id, w.date, w.status, w.created_at, w.notified_at, w.customer_id, b.shop_name, s.name AS service_name, u.name AS customer_name, u.avatar_url AS customer_avatar`,
     from: 'waitlist w JOIN barbers b ON b.id=w.barber_id JOIN services s ON s.id=w.service_id JOIN users u ON u.id=w.customer_id', id: 'w.id', sorts: { newest: { expr: 'w.id', type: 'int' } }, defSort: 'newest',
     where: (q, add) => { const st = String(q.status || '').toUpperCase(); if (['WAITING', 'NOTIFIED', 'BOOKED', 'CANCELLED', 'EXPIRED'].includes(st)) add('w.status=?', st); },
   },
@@ -179,7 +179,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
         (SELECT COUNT(*) FROM bookings WHERE date=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE','COMPLETED'))::int AS bookings_today,
         (SELECT COALESCE(SUM(amount_kobo),0) FROM payments WHERE status='SUCCESS' AND verified_at >= now() - interval '30 days')::bigint AS revenue_30d_kobo,
         (SELECT COUNT(*) FROM payments WHERE refund_status IN ('NEEDS_REFUND','REFUND_REQUESTED'))::int AS refunds_open,
-        (SELECT COUNT(*) FROM bookings WHERE payment_status='CREDIT_PENDING')::int AS awaiting_decision,
+        (SELECT COUNT(*) FROM bookings WHERE payment_status IN ('CREDIT_PENDING','REFUND_PENDING'))::int AS awaiting_decision,
         (SELECT COUNT(*) FROM reports WHERE status='OPEN' AND deleted_at IS NULL)::int AS reports_open,
         (SELECT COUNT(DISTINCT barber_id) FROM commission_ledger WHERE status='ACCRUED' AND created_at < now() - interval '14 days')::int AS ledger_overdue,
         (SELECT COALESCE(SUM(remaining_kobo),0) FROM commission_ledger WHERE status='ACCRUED')::bigint AS ledger_owed_kobo,

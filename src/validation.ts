@@ -30,7 +30,11 @@ export const signupSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters').max(100),
   shop_name: z.string().trim().min(2).max(80).optional(),
   location: z.string().trim().max(160).optional(),
+  accept_terms: z.boolean().optional(),               // Terms of Service + Privacy Policy (everyone)
+  accept_barber_agreement: z.boolean().optional(),    // Barber Agreement (barbers)
 }).refine((d) => d.email || d.phone, { message: 'Provide an email or a phone number', path: ['email'] })
+  .refine((d) => d.accept_terms === true, { message: 'Please tick the box to accept the Terms of Service and Privacy Policy', path: ['accept_terms'] })
+  .refine((d) => d.role !== 'barber' || d.accept_barber_agreement === true, { message: 'Please tick the box to accept the Barber Agreement', path: ['accept_barber_agreement'] })
   .refine((d) => d.role !== 'barber' || !!d.shop_name, { message: 'Shop name is required for barbers', path: ['shop_name'] });
 
 export const loginSchema = z.object({ identifier: z.string().trim().min(3, 'Enter your email or phone'), password: z.string().min(1, 'Enter your password') });

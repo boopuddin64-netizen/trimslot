@@ -1,6 +1,7 @@
 import { Conn } from './db';
 import { addDays, isoNow, lagosDate, weekdayOf } from './time';
-import { MAX_ADVANCE_DAYS, CANCEL_CUTOFF_MIN } from './config';
+import { MAX_ADVANCE_DAYS } from './config';
+import { getSettingsCached } from './plans';
 import { audit, fmtTime12, fmtWhen, notify } from './helpers';
 import { barberVisible } from './bookingService';
 
@@ -56,6 +57,7 @@ export function conflictDetails(all: AffectedBooking[]) {
 
 /** In-app notification + audit entry for every affected booking. Never cancels anything. */
 export async function notifyAffected(t: Conn, barber: { userId: number; shop_name: string; name: string }, list: AffectedBooking[], reason: string) {
+  const CANCEL_CUTOFF_MIN = (await getSettingsCached(t)).cancel_cutoff_min;
   for (const b of list) {
     const body = `${barber.shop_name} (${barber.name}) updated availability: ${reason}. Your ${b.service_name} booking on ${fmtWhen(b.date, b.start_min)} is affected. `
       + `Nothing was cancelled - please check with the shop, or cancel it from My bookings (free cancellation applies until ${CANCEL_CUTOFF_MIN} minutes before the appointment).`;

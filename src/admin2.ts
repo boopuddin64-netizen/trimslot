@@ -1,5 +1,6 @@
 /** Admin power tools: customers, booking control, money, plan oversight, broadcasts, reports inbox, global controls, off-app commission ledger, analytics, search, CSV export, audit filters.
  *  Every route sits behind the admin guard; every write is audited (actor_role='admin') and the affected people are notified. */
+import { consentHistory, consentRequired } from './accountData';
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
@@ -35,7 +36,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const p: unknown[] = []; const w: string[] = [`u.role='customer'`];
     if (q) { p.push(like(q)); const n = Number(q); w.push(`(u.name ILIKE $${p.length} OR u.email ILIKE $${p.length} OR u.phone ILIKE $${p.length}${Number.isInteger(n) ? ` OR u.id=${n}` : ''})`); }
     if (['ACTIVE', 'SUSPENDED', 'BANNED'].includes(st)) { p.push(st); w.push(`u.account_status=$${p.length}`); }
-    const rows = await db.many(`SELECT u.id, u.name, u.email, u.phone, u.created_at, u.account_status, u.status_reason, u.warn_count,
+    const rows = await db.many(`SELECT u.id, u.name, u.email, u.phone, u.avatar_url, u.created_at, u.account_status, u.status_reason, u.warn_count,
         (SELECT COUNT(*) FROM bookings k WHERE k.customer_id=u.id)::int AS bookings,
         (SELECT COUNT(*) FROM bookings k WHERE k.customer_id=u.id AND k.status='COMPLETED')::int AS completed,
         (SELECT COUNT(*) FROM bookings k WHERE k.customer_id=u.id AND k.status='NO_SHOW')::int AS no_shows,
@@ -47,7 +48,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   get('/users/:id', async (req, res) => {
     const id = idOf(req.params.id);
-    const u = await db.maybeOne<any>('SELECT id, role, name, email, phone, created_at, account_status, status_reason, status_at, warn_count FROM users WHERE id=$1', [id]);
+    const u = await db.maybeOne<any>('SELECT id, role, name, email, phone, avatar_url, avatar_removed_at, created_at, account_status, status_reason, status_at, warn_count, deletion_requested_at, deletion_request_note, anonymised_at FROM users WHERE id=$1', [id]);
     if (!u) throw notFound('User not found');
     const barber = u.role === 'barber' ? await db.maybeOne<any>('SELECT id, shop_name, review_status, booking_paused FROM barbers WHERE user_id=$1', [id]) : null;
     const col = u.role === 'customer' ? 'k.customer_id' : 'k.barber_id'; const who = u.role === 'customer' ? id : barber?.id ?? -1;
@@ -59,7 +60,8 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const reports = await db.many(`SELECT r.id, r.category, r.status, r.message, r.created_at, r.reporter_id, r.target_user_id FROM reports r WHERE r.reporter_id=$1 OR r.target_user_id=$1 ORDER BY r.id DESC LIMIT 20`, [id]);
     const history = await db.many(`SELECT id, action, details, created_at FROM audit_log WHERE booking_id IS NULL AND actor_role='admin' AND (details->>'user_id')=$1::text ORDER BY id DESC LIMIT 30`, [String(id)]);
     const balance = barber ? { owed_kobo: await outstandingKobo(db, barber.id) } : null;
-    res.json({ user: u, barber, stats, bookings, payments, credits, plans, reports, history, balance });
+    const consents = await consentHistory(db, id); const consent_missing = await consentRequired(db, u);
+    res.json({ user: u, barber, stats, bookings, payments, credits, plans, reports, history, balance, consents, consent_missing });
   });
   const restrict = (to: 'SUSPENDED' | 'BANNED'): H => async (req, res) => {
     const id = idOf(req.params.id); const { reason } = parseB(reasonZ, req.body);
@@ -109,7 +111,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   /* ================= booking control ================= */
   get('/bookings/:id', async (req, res) => {
     const id = idOf(req.params.id);
-    const b = await db.maybeOne<any>(`SELECT k.*, b.shop_name, cu.name AS customer_name, cu.email AS customer_email, bu.name AS barber_name FROM bookings k JOIN barbers b ON b.id=k.barber_id JOIN users cu ON cu.id=k.customer_id JOIN users bu ON bu.id=b.user_id WHERE k.id=$1`, [id]);
+    const b = await db.maybeOne<any>(`SELECT k.*, b.shop_name, cu.name AS customer_name, cu.email AS customer_email, cu.avatar_url AS customer_avatar, bu.name AS barber_name FROM bookings k JOIN barbers b ON b.id=k.barber_id JOIN users cu ON cu.id=k.customer_id JOIN users bu ON bu.id=b.user_id WHERE k.id=$1`, [id]);
     if (!b) throw notFound('Booking not found');
     const payments = await db.many(`SELECT reference, amount_kobo, fee_kobo, debt_netted_kobo, status, refund_status, refund_reason, disputed, dispute_note, created_at, verified_at FROM payments WHERE booking_id=$1 ORDER BY id DESC`, [id]);
     const history = await db.many(`SELECT id, actor_role, action, details, created_at FROM audit_log WHERE booking_id=$1 ORDER BY id DESC LIMIT 40`, [id]);

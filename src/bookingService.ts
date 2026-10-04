@@ -5,6 +5,7 @@ import { assertTransition, QUEUE_ACTIVE, Status } from './stateMachine';
 import { Actor, audit, fmtWhen, naira, notify } from './helpers';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { claimEntitlement, getSettings, issueCredit, restoreEntitlement } from './plans';
+import { openRefundRequest } from './refundFlow';
 import { accrueCommission, assertBookable } from './ledger';
 import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
@@ -16,7 +17,7 @@ export interface BookingRow {
   date: string; start_min: number; end_min: number; scheduled_at: string; ends_at: string;
   service_name: string; price_kobo: number; duration_min: number;
   status: Status; payment_option: 'ONLINE' | 'ON_ARRIVAL' | 'PLAN' | 'CREDIT';
-  payment_status: 'PENDING' | 'PAYMENT_DUE' | 'PAID' | 'CREDIT_PENDING' | 'CREDITED' | 'VOID';
+  payment_status: 'PENDING' | 'PAYMENT_DUE' | 'PAID' | 'CREDIT_PENDING' | 'CREDITED' | 'VOID' | 'REFUND_PENDING' | 'REFUNDED' | 'REFUND_DECLINED';
   plan_purchase_id: number | null; credit_id: number | null;
   paid_via: string | null; paid_at: string | null; hold_expires_at: string | null;
   arrival_time: string | null; arrival_source: string | null;
@@ -39,12 +40,13 @@ const barberUserId = async (c: Conn, barberId: number) => (await c.one<{ user_id
 const customerName = async (c: Conn, id: number) => (await c.maybeOne<{ name: string }>('SELECT name FROM users WHERE id=$1', [id]))?.name ?? 'Customer';
 
 /* ---------------- cancellation rule (pure) ---------------- */
-export function cancelCutoff(scheduledAtIso: string): Date {
-  return new Date(new Date(scheduledAtIso).getTime() - CANCEL_CUTOFF_MIN * 60000);
+/** The cut-off minutes are an admin setting (`cancel_cutoff_min`, default 30); callers pass the live value. */
+export function cancelCutoff(scheduledAtIso: string, cutoffMin: number = CANCEL_CUTOFF_MIN): Date {
+  return new Date(new Date(scheduledAtIso).getTime() - cutoffMin * 60000);
 }
-/** Customer may cancel until exactly 30 minutes before the appointment (inclusive). */
-export function canCustomerCancel(scheduledAtIso: string, now: Date): boolean {
-  return now.getTime() <= cancelCutoff(scheduledAtIso).getTime();
+/** Customer may cancel until exactly `cutoffMin` minutes before the appointment (inclusive). */
+export function canCustomerCancel(scheduledAtIso: string, now: Date, cutoffMin: number = CANCEL_CUTOFF_MIN): boolean {
+  return now.getTime() <= cancelCutoff(scheduledAtIso, cutoffMin).getTime();
 }
 
 /* ---------------- attempt expiry ----------------
@@ -114,7 +116,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     if (mine.some((m) => m.start_min < endMin && startMin < m.end_min)) throw conflict('CUSTOMER_OVERLAP', 'You already have a booking that overlaps this time.');
     const online = input.payment_option === 'ONLINE';
     const start = scheduledInstant(input.date, startMin);
-    const holdUntil = online ? new Date(clock.now().getTime() + config.paymentHoldMin * 60000).toISOString() : null;
+    const holdUntil = online ? new Date(clock.now().getTime() + (await getSettings(t)).payment_hold_min * 60000).toISOString() : null;
     // Plan session / credit: spent atomically in THIS transaction (conditional UPDATE => no double spend); booking is complete immediately.
     const ent = input.payment_option === 'PLAN' || input.payment_option === 'CREDIT'
       ? await claimEntitlement(t, { customerId, barberId: input.barber_id, serviceId: svc.id, priceKobo: svc.price_kobo, startAt: start, option: input.payment_option, id: input.payment_option === 'PLAN' ? input.plan_purchase_id : input.credit_id })
@@ -188,7 +190,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
     await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We received ${naira(b.price_kobo)} for your ${b.service_name}. Your slot is now secured.`, b.id);
     return 'confirmed';
   }
-  if (b.payment_status === 'PAID' || b.payment_status === 'CREDIT_PENDING' || b.payment_status === 'CREDITED') {
+  if (['PAID', 'CREDIT_PENDING', 'CREDITED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
     await flagRefund(t, b, reference, 'Duplicate payment for an already-paid booking');
     await audit(t, b.id, { id: null, role: 'system' }, 'DUPLICATE_PAYMENT', { via, note: 'extra successful payment on an already-paid booking - flagged NEEDS_REFUND' });
     return 'already_paid';
@@ -265,30 +267,32 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     if (!['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status)) {
       throw new AppError(409, 'ILLEGAL_TRANSITION', `This booking is ${b.status} and cannot be cancelled.`);
     }
-    if (!canCustomerCancel(b.scheduled_at, clock.now())) {
-      throw new AppError(403, 'CANCEL_LOCKED', `Cancellation closed ${CANCEL_CUTOFF_MIN} minutes before your appointment, so this time stays booked for you. If you don't make it, it counts as a missed session: no refund, but a paid session becomes one credit with this barber. Please contact your barber if something came up.`);
+    const set = await getSettings(t);
+    if (!canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min)) {
+      throw new AppError(403, 'CANCEL_LOCKED', `Cancellation closed ${set.cancel_cutoff_min} minutes before your appointment, so this time stays booked for you. If you don't make it, it counts as a missed session: no refund, but a paid session becomes one credit with this barber. Please contact your barber if something came up.`);
     }
     const now = isoNow();
     const abandoned = isIncomplete({ ...b, status: 'PENDING_PAYMENT' });   // walked away from an unpaid Pay-now attempt: barber never hears about it
-    let payStatus: string = b.payment_status === 'PAID' ? 'CREDIT_PENDING' : 'VOID';
+    let payStatus: string = 'VOID';
     let note = '';
+    let refundDue: Awaited<ReturnType<typeof openRefundRequest>> | null = null;
     if (b.payment_status === 'PAID' && (b.plan_purchase_id || b.credit_id)) {
       // Cancelled in time: the plan session / credit simply goes back to the customer (same expiry rules still apply).
       await restoreEntitlement(t, b);
-      payStatus = 'VOID'; note = b.plan_purchase_id ? 'Your plan session has been returned.' : 'Your session credit has been returned.';
-    } else if (b.payment_status === 'PAID') {
-      const s = await getSettings(t);
-      if (s.credit_on_early_cancel_prepaid) { await issueCredit(t, b, 'EARLY_CANCEL', s); payStatus = 'CREDITED'; note = 'You have a session credit with this barber (see My plans & credits).'; }
+      note = b.plan_purchase_id ? 'Your plan session has been returned.' : 'Your session credit has been returned.';
+    } else if (b.payment_status === 'PAID' && b.payment_option === 'ONLINE') {
+      // Prepaid and cancelled in time => a REFUND (never a credit). It waits for admin approval and auto-approves after the admin's hold time.
+      refundDue = await openRefundRequest(t, b, 'customer cancelled in time');
+      payStatus = 'REFUND_PENDING';
+      note = `Your ${naira(b.price_kobo)} refund has been requested. It is approved within ${refundDue.hours} hour${refundDue.hours === 1 ? '' : 's'} and then sent back to your original payment method.`;
     }
     await setStatus(t, b, 'CANCELLED', { payment_status: payStatus, cancelled_at: now, cancelled_by: 'customer', hold_expires_at: null });
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'CANCELLED', {
       payment_status: payStatus,
-      ...(payStatus === 'CREDIT_PENDING' ? { note: 'Not refunded automatically - the shop or admin will follow up with a refund or session credit' } : note ? { note } : {}),
+      ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : note ? { note } : {}),
     });
     if (!abandoned) await notify(t, await barberUserId(t, b.barber_id), 'BOOKING_CANCELLED', 'Booking cancelled', `${await customerName(t, customerId)} cancelled ${b.service_name} on ${fmtWhen(b.date, b.start_min)}. The slot is open again.`, b.id);
-    await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left this booking before paying, so it was marked incomplete. You have not been charged.' : payStatus === 'CREDIT_PENDING'
-      ? `Your booking was cancelled. Your payment of ${naira(b.price_kobo)} is marked credit pending - it is not refunded automatically; the shop will follow up.`
-      : `Your booking was cancelled and the slot has been released. ${note}`.trim(), b.id);
+    await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left this booking before paying, so it was marked incomplete. You have not been charged.' : `Your booking was cancelled and the slot has been released. ${note}`.trim(), b.id);
     await refreshQueueNotifications(t, b.barber_id, b.date);
     return (await getBooking(t, b.id))!;
   });
@@ -382,11 +386,12 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
       case 'not-served': {
         if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `Cannot mark a ${b.status} booking as not served.`);
         const entitlement = b.payment_status === 'PAID' && !!(b.plan_purchase_id || b.credit_id);   // the barber's fault: plan session / credit goes straight back
-        const credit = b.payment_status === 'PAID' && !entitlement;
+        const credit = b.payment_status === 'PAID' && !entitlement && b.payment_option === 'ONLINE';   // (name kept: "refund due")
         if (entitlement) await restoreEntitlement(t, b);
-        await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'CREDIT_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
-        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(credit ? { note: 'Not refunded automatically - the shop or admin will follow up with a refund or session credit' } : entitlement ? { note: 'plan session / credit returned' } : {}) });
-        await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ' Your payment is marked credit pending.' : entitlement ? ' Your session has been returned.' : ''}`, b.id);
+        const refundDue = credit ? await openRefundRequest(t, b, 'barber could not serve the booking') : null;
+        await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'REFUND_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
+        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : entitlement ? { note: 'plan session / credit returned' } : {}) });
+        await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` Your ${naira(b.price_kobo)} refund has been requested and is approved within ${refundDue!.hours} hour${refundDue!.hours === 1 ? '' : 's'}.` : entitlement ? ' Your session has been returned.' : ''}`, b.id);
         break;
       }
       case 'skip': {

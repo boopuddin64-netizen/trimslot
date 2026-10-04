@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import helmet from 'helmet';
 import { Db, isUniqueViolation } from './db';
-import { config, CANCEL_CUTOFF_MIN, TIMEZONE } from './config';
+import { config, TIMEZONE } from './config';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { authenticate, requireAuth, requireRole, setAuthCookie, signToken } from './auth';
 import * as V from './validation';
@@ -31,6 +31,13 @@ import { vapidPublicKey, pushAvailable, flushPush } from './push';
 import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
 import { getSettingsCached } from './plans';
 import { runSweep } from './sweep';
+import { registerRefundAdmin } from './refundFlow';
+import { registerAdminAlerts } from './adminNotify';
+import { registerAccountData, recordConsent, consentRequired, consentHistory, docsFor } from './accountData';
+import { registerAvatars, avatarUploadHandler, MAX_AVATAR_BYTES } from './avatars';
+import { loadPublicSettings } from './publicSettings';
+import { runRetention } from './retention';
+import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 
@@ -43,7 +50,7 @@ const barberReview = async (db: Db, userId: number) => {
   return { verified: !!r?.verified, review_status: r?.review_status ?? 'PENDING', review_reason: r && r.review_status !== 'VERIFIED' && r.review_status !== 'PENDING' ? r.review_reason : null };
 };
 const publicUser = async (db: Db, u: any) => {
-  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null };
+  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null, consent_required: await consentRequired(db, u) };
   if (u.role === 'barber') Object.assign(out, await barberReview(db, u.id));
   return out;
 };
@@ -57,6 +64,7 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   let barberP: Promise<any>;
   if (memo) { barberP = memo.barbers.get(b.barber_id) ?? barberQ(); memo.barbers.set(b.barber_id, barberP); } else barberP = barberQ();
   const barber = await barberP;
+  const cutoffMin = (await getSettingsCached(db)).cancel_cutoff_min;
   const incomplete = isIncomplete(b);
   const out: any = {
     id: b.id, customer_id: b.customer_id, barber_id: b.barber_id, service_id: b.service_id,
@@ -69,14 +77,18 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     plan_purchase_id: b.plan_purchase_id, credit_id: b.credit_id,
     hold_expires_at: b.hold_expires_at, barber_hold: !!b.barber_hold, skipped: !!b.skipped_at,
     barber_name: barber?.barber_name, shop_name: barber?.shop_name, location: barber?.location,
-    cancel_deadline: cancelCutoff(b.scheduled_at).toISOString(),
-    can_cancel: ['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status) && canCustomerCancel(b.scheduled_at, clock.now()),
+    cancel_deadline: cancelCutoff(b.scheduled_at, cutoffMin).toISOString(),
+    can_cancel: ['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status) && canCustomerCancel(b.scheduled_at, clock.now(), cutoffMin),
     can_check_in: b.status === 'CONFIRMED' && b.date === lagosDate(),
     allowed_next: TRANSITIONS[b.status],
     created_at: b.created_at,
   };
   // Customer-facing only: an unpaid Pay-now booking that expired/was abandoned is "Incomplete" (no credit/refund implications).
   if (!opts.forBarber) out.incomplete = incomplete && b.status !== 'PENDING_PAYMENT';
+  if (!opts.forBarber && ['REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
+    const rf = await db.maybeOne<any>(`SELECT refund_status, refund_due_at FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1`, [b.id]);
+    out.refund = { status: b.payment_status, gateway: rf?.refund_status ?? null, due_at: b.payment_status === 'REFUND_PENDING' ? rf?.refund_due_at ?? null : null };
+  }
   if (b.date === lagosDate() || b.status === 'IN_SERVICE') {
     let q = opts.queue;
     if (!q && memo) { const k = b.barber_id + '|' + b.date; const p = memo.queues.get(k) ?? orderedQueue(db, b.barber_id, b.date); memo.queues.set(k, p); q = await p; }
@@ -94,8 +106,8 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     if (st.feature_reviews) { const rv = await db.maybeOne<any>('SELECT rating, comment, reply FROM reviews WHERE booking_id=$1', [b.id]); out.review = rv ?? null; out.can_review = !rv; }
   }
   if (opts.forBarber) {
-    const c = await db.one('SELECT id, name, phone, email FROM users WHERE id=$1', [b.customer_id]);
-    out.customer = { id: c.id, name: c.name, phone: c.phone, email: c.email };
+    const c = await db.one('SELECT id, name, phone, email, avatar_url FROM users WHERE id=$1', [b.customer_id]);
+    out.customer = { id: c.id, name: c.name, phone: c.phone, email: c.email, avatar_url: c.avatar_url ?? null };
     const st = await getSettingsCached(db);
     if (st.feature_reliability && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) out.customer.reliability = await reliabilityFor(db, b.customer_id);
     if (st.feature_barber_notes && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) { const ins = await getCustomerInsights(db, b.barber_id, b.customer_id); out.customer.note = ins.note || null; out.customer.usual = ins.usual || null; }
@@ -178,6 +190,9 @@ export function createApp(db: Db) {
     res.json({ ok: true, photo_url: (await db.one('SELECT photo_url FROM barbers WHERE id=$1', [id])).photo_url });
   }));
 
+  // Customer profile picture upload: raw image bytes (client-compressed square JPEG, <= 120 KB). Same pattern as the shop photo above.
+  app.put('/api/me/avatar', limits.api, cookieParser(), authenticate, requireRole('customer'), express.raw({ type: 'image/*', limit: `${MAX_AVATAR_BYTES + 2048}b` }), avatarUploadHandler(db));
+
   app.use(express.json({ limit: '50kb' }));
   // Serverless (api/index.ts) pre-reads the body and marks the request as parsed; turn those bytes into req.body for JSON routes.
   app.use((req, _res, next) => {
@@ -218,11 +233,19 @@ export function createApp(db: Db) {
   registerAdminPower(api, db, adminGuard, wrap);
   registerAdmin3(api, db, adminGuard, wrap);
   registerAdminDelete(api, db, adminGuard, wrap);
+  registerRefundAdmin(api, db, adminGuard, wrap);
+  registerAdminAlerts(api, db, adminGuard, wrap);
+  registerAvatars(api, db, wrap, requireAuth, adminGuard);
+  registerAccountData(api, db, wrap, requireAuth, (res) => res.clearCookie('trimslot_token', { path: '/' }));
+  /** Admin: run the retention clean-up now (the cron does it hourly). Deletes data, so it needs the PIN. */
+  api.post('/admin/retention/run', adminGuard, wrap(async (req, res) => { await requirePin(db, req); res.json({ ok: true, result: await runRetention(db) }); }));
 
   /* ---------- meta ---------- */
+  /** Published policy numbers for the legal pages (cancel lock, credit expiry, fee, ...). Public and cacheable for a minute. */
+  api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
-    cancel_cutoff_min: CANCEL_CUTOFF_MIN, plans: true, today: lagosDate(), now: clock.now().toISOString(),
+    cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: true, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));
 
@@ -242,6 +265,7 @@ export function createApp(db: Db) {
           }
           await audit(t, null, { id: uid, role: 'barber' }, 'BARBER_SIGNUP', { note: 'awaiting admin verification' });
         }
+        await recordConsent(t, uid, docsFor(d.role), await getSettings(t), 'signup', req.ip, req.headers['user-agent'] as string | undefined);
         return uid;
       });
     } catch (e: any) {
@@ -275,7 +299,7 @@ export function createApp(db: Db) {
     const u = req.user;
     const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [u.id])).c;
     const payoutOk = u.role === 'barber' ? (!config.requirePayout || !!(await db.maybeOne<any>('SELECT 1 AS x FROM barbers WHERE user_id=$1 AND paystack_subaccount IS NOT NULL', [u.id]))) : undefined;
-    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
+    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: (await db.maybeOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [u.id]))?.avatar_url ?? null, consent_required: await consentRequired(db, u), deletion_requested: !!(await db.maybeOne('SELECT 1 AS x FROM users WHERE id=$1 AND deletion_requested_at IS NOT NULL', [u.id])), ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
   }));
 
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
@@ -632,7 +656,7 @@ export function createApp(db: Db) {
   barberR.get('/customers', wrap(async (req, res) => {
     const q = String(req.query.q || '').trim().toLowerCase();
     const rows = await db.many(`
-      SELECT u.id, u.name, u.phone, u.email,
+      SELECT u.id, u.name, u.phone, u.email, u.avatar_url,
         COUNT(*) FILTER (WHERE b.status='COMPLETED')::int AS total_visits,
         MAX(b.date) FILTER (WHERE b.status='COMPLETED') AS last_visit,
         COUNT(*)::int AS total_bookings
@@ -646,7 +670,7 @@ export function createApp(db: Db) {
     const cid = Number(req.params.id);
     const has = Number.isInteger(cid) ? await db.maybeOne(`SELECT 1 FROM bookings WHERE barber_id=$1 AND customer_id=$2 AND ${barberVisible()} LIMIT 1`, [bid(req), cid]) : undefined;
     if (!has) throw notFound('Customer not found'); // barbers only see their own customers
-    const u = await db.one('SELECT id, name, phone, email, created_at FROM users WHERE id=$1', [cid]);
+    const u = await db.one('SELECT id, name, phone, email, avatar_url, created_at FROM users WHERE id=$1', [cid]);
     const hist = await db.many<BookingRow>(`SELECT * FROM bookings WHERE barber_id=$1 AND customer_id=$2 AND ${barberVisible()} ORDER BY date DESC, start_min DESC`, [bid(req), cid]);
     const completed = hist.filter((h) => h.status === 'COMPLETED');
     res.json({

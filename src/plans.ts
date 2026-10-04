@@ -14,10 +14,14 @@ export interface Settings {
   commission_enabled: boolean; commission_factor: number; min_barber_payout_percent: number; ledger_max_debt_kobo: number; ledger_max_age_days: number;
   feature_push: boolean; feature_favourites: boolean; feature_rebook: boolean; feature_reminders: boolean; feature_waitlist: boolean; feature_reviews: boolean; feature_barber_notes: boolean; feature_quick_actions: boolean; feature_reliability: boolean; feature_daily_summary: boolean; feature_booking_note: boolean; feature_loyalty: boolean;
   loyalty_every_n: number; loyalty_credit_kobo: number;
+  cancel_cutoff_min: number; payment_hold_min: number; refund_auto_approve_hours: number; liability_cap_kobo: number;
+  retention_events_days: number; retention_bad_events_days: number; retention_notifications_days: number; retention_push_stale_days: number; retention_deleted_days: number;
+  retention_checkout_days: number; retention_rate_limit_hours: number; retention_admin_alerts_days: number; retention_last_run_at: string | null;
+  terms_version: string; privacy_version: string; barber_agreement_version: string;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
-  return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor) };
+  return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor), liability_cap_kobo: Number(r.liability_cap_kobo) };
 }
 /** Feature-flag reads on hot paths (every decorated booking): a 3-second per-database cache; any settings update invalidates all of it. */
 let flagGen = 0;
@@ -34,17 +38,23 @@ export const settingsView = (s: Settings) => ({
   max_plan_validity_days: s.max_plan_validity_days, max_plan_sessions: s.max_plan_sessions,
   platform_fee_percent: s.platform_fee_percent, platform_fee_naira: s.platform_fee_kobo / 100,
   credit_expiry_days: s.credit_expiry_days, credit_on_missed_session: s.credit_on_missed_session,
-  credit_on_early_cancel_prepaid: s.credit_on_early_cancel_prepaid, plan_refund_policy: s.plan_refund_policy, updated_at: s.updated_at,
+  plan_refund_policy: s.plan_refund_policy, updated_at: s.updated_at,
   maintenance_mode: s.maintenance_mode, maintenance_message: s.maintenance_message, feature_plans: s.feature_plans, feature_credits: s.feature_credits, feature_pay_on_arrival: s.feature_pay_on_arrival,
   commission_enabled: s.commission_enabled, commission_factor: s.commission_factor, min_barber_payout_percent: s.min_barber_payout_percent,
   ledger_max_debt_naira: s.ledger_max_debt_kobo / 100, ledger_max_age_days: s.ledger_max_age_days,
   feature_push: s.feature_push, feature_favourites: s.feature_favourites, feature_rebook: s.feature_rebook, feature_reminders: s.feature_reminders, feature_waitlist: s.feature_waitlist, feature_reviews: s.feature_reviews, feature_barber_notes: s.feature_barber_notes, feature_quick_actions: s.feature_quick_actions, feature_reliability: s.feature_reliability, feature_daily_summary: s.feature_daily_summary, feature_booking_note: s.feature_booking_note, feature_loyalty: s.feature_loyalty,
   loyalty_every_n: s.loyalty_every_n, loyalty_credit_naira: s.loyalty_credit_kobo / 100,
+  cancel_cutoff_min: s.cancel_cutoff_min, payment_hold_min: s.payment_hold_min, refund_auto_approve_hours: s.refund_auto_approve_hours, liability_cap_naira: s.liability_cap_kobo / 100,
+  retention_events_days: s.retention_events_days, retention_bad_events_days: s.retention_bad_events_days, retention_notifications_days: s.retention_notifications_days, retention_push_stale_days: s.retention_push_stale_days,
+  retention_deleted_days: s.retention_deleted_days, retention_checkout_days: s.retention_checkout_days, retention_rate_limit_hours: s.retention_rate_limit_hours, retention_admin_alerts_days: s.retention_admin_alerts_days,
+  terms_version: s.terms_version, privacy_version: s.privacy_version, barber_agreement_version: s.barber_agreement_version,
 });
 export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions', 'platform_fee_percent', 'platform_fee_naira',
-  'credit_expiry_days', 'credit_on_missed_session', 'credit_on_early_cancel_prepaid', 'plan_refund_policy',
+  'credit_expiry_days', 'credit_on_missed_session', 'plan_refund_policy',
   'maintenance_mode', 'maintenance_message', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days',
-  'feature_push', 'feature_favourites', 'feature_rebook', 'feature_reminders', 'feature_waitlist', 'feature_reviews', 'feature_barber_notes', 'feature_quick_actions', 'feature_reliability', 'feature_daily_summary', 'feature_booking_note', 'feature_loyalty', 'loyalty_every_n', 'loyalty_credit_naira'] as const;
+  'feature_push', 'feature_favourites', 'feature_rebook', 'feature_reminders', 'feature_waitlist', 'feature_reviews', 'feature_barber_notes', 'feature_quick_actions', 'feature_reliability', 'feature_daily_summary', 'feature_booking_note', 'feature_loyalty', 'loyalty_every_n', 'loyalty_credit_naira',
+  'cancel_cutoff_min', 'payment_hold_min', 'refund_auto_approve_hours', 'liability_cap_naira', 'retention_events_days', 'retention_bad_events_days', 'retention_notifications_days', 'retention_push_stale_days',
+  'retention_deleted_days', 'retention_checkout_days', 'retention_rate_limit_hours', 'retention_admin_alerts_days', 'terms_version', 'privacy_version', 'barber_agreement_version'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
@@ -54,7 +64,7 @@ export const settingsPatchSchema = z.object({
   platform_fee_naira: z.coerce.number().min(0).max(1_000_000),
   credit_expiry_days: z.coerce.number().int().min(1).max(365),
   credit_on_missed_session: z.boolean(),
-  credit_on_early_cancel_prepaid: z.boolean(),
+  credit_on_early_cancel_prepaid: z.boolean(),   // deprecated and ignored: an in-time cancellation of a prepaid booking is always a (pending) refund, never a credit
   plan_refund_policy: z.enum(['NONE', 'MANUAL']),
   maintenance_mode: z.boolean(), maintenance_message: z.string().trim().min(3).max(200),
   feature_plans: z.boolean(), feature_credits: z.boolean(), feature_pay_on_arrival: z.boolean(), commission_enabled: z.boolean(),
@@ -62,6 +72,13 @@ export const settingsPatchSchema = z.object({
   ledger_max_debt_naira: z.coerce.number().min(0).max(100_000_000), ledger_max_age_days: z.coerce.number().int().min(0).max(3650),
   feature_push: z.boolean(), feature_favourites: z.boolean(), feature_rebook: z.boolean(), feature_reminders: z.boolean(), feature_waitlist: z.boolean(), feature_reviews: z.boolean(), feature_barber_notes: z.boolean(), feature_quick_actions: z.boolean(), feature_reliability: z.boolean(), feature_daily_summary: z.boolean(), feature_booking_note: z.boolean(), feature_loyalty: z.boolean(),
   loyalty_every_n: z.coerce.number().int().min(2).max(100), loyalty_credit_naira: z.coerce.number().min(0).max(1_000_000),
+  cancel_cutoff_min: z.coerce.number().int().min(0).max(1440), payment_hold_min: z.coerce.number().int().min(1).max(180),
+  refund_auto_approve_hours: z.coerce.number().int().min(0).max(168), liability_cap_naira: z.coerce.number().min(0).max(1_000_000_000),
+  retention_events_days: z.coerce.number().int().min(30).max(3650), retention_bad_events_days: z.coerce.number().int().min(1).max(3650),
+  retention_notifications_days: z.coerce.number().int().min(7).max(3650), retention_push_stale_days: z.coerce.number().int().min(7).max(3650),
+  retention_deleted_days: z.coerce.number().int().min(1).max(3650), retention_checkout_days: z.coerce.number().int().min(1).max(365),
+  retention_rate_limit_hours: z.coerce.number().int().min(1).max(720), retention_admin_alerts_days: z.coerce.number().int().min(7).max(3650),
+  terms_version: z.string().trim().min(1).max(30), privacy_version: z.string().trim().min(1).max(30), barber_agreement_version: z.string().trim().min(1).max(30),
 }).partial().strict();
 
 const FEATS = ['push', 'favourites', 'rebook', 'reminders', 'waitlist', 'reviews', 'barber_notes', 'quick_actions', 'reliability', 'daily_summary', 'booking_note', 'loyalty'] as const;
@@ -72,17 +89,25 @@ export async function updateSettings(c: Conn, patch: unknown) {
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
   if (next.min_plan_price_naira > next.max_plan_price_naira) throw badRequest('min_plan_price_naira cannot be above max_plan_price_naira');
   await c.query(`UPDATE platform_settings SET min_plan_price_kobo=$1, max_plan_price_kobo=$2, max_plan_validity_days=$3, max_plan_sessions=$4, platform_fee_percent=$5,
-      platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, credit_on_early_cancel_prepaid=$9, plan_refund_policy=$10, updated_at=$11,
-      maintenance_mode=$12, maintenance_message=$13, feature_plans=$14, feature_credits=$15, feature_pay_on_arrival=$16, commission_enabled=$17, commission_factor=$18,
-      min_barber_payout_percent=$19, ledger_max_debt_kobo=$20, ledger_max_age_days=$21 WHERE id=1`,
+      platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, plan_refund_policy=$9, updated_at=$10,
+      maintenance_mode=$11, maintenance_message=$12, feature_plans=$13, feature_credits=$14, feature_pay_on_arrival=$15, commission_enabled=$16, commission_factor=$17,
+      min_barber_payout_percent=$18, ledger_max_debt_kobo=$19, ledger_max_age_days=$20 WHERE id=1`,
     [Math.round(next.min_plan_price_naira * 100), Math.round(next.max_plan_price_naira * 100), next.max_plan_validity_days, next.max_plan_sessions, next.platform_fee_percent,
-      Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.credit_on_early_cancel_prepaid, next.plan_refund_policy, isoNow(),
+      Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.plan_refund_policy, isoNow(),
       next.maintenance_mode, next.maintenance_message, next.feature_plans, next.feature_credits, next.feature_pay_on_arrival, next.commission_enabled, next.commission_factor,
       next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days]);
   await c.query(`UPDATE platform_settings SET ${FEATS.map((f, i) => `feature_${f}=$${i + 1}`).join(', ')}, loyalty_every_n=$${FEATS.length + 1}, loyalty_credit_kobo=$${FEATS.length + 2} WHERE id=1`,
     [...FEATS.map((f) => next['feature_' + f]), next.loyalty_every_n, Math.round(next.loyalty_credit_naira * 100)]);
+  await c.query(`UPDATE platform_settings SET cancel_cutoff_min=$1, payment_hold_min=$2, refund_auto_approve_hours=$3, liability_cap_kobo=$4, retention_events_days=$5, retention_bad_events_days=$6,
+      retention_notifications_days=$7, retention_push_stale_days=$8, retention_deleted_days=$9, retention_checkout_days=$10, retention_rate_limit_hours=$11, retention_admin_alerts_days=$12,
+      terms_version=$13, privacy_version=$14, barber_agreement_version=$15 WHERE id=1`,
+    [next.cancel_cutoff_min, next.payment_hold_min, next.refund_auto_approve_hours, Math.round(next.liability_cap_naira * 100), next.retention_events_days, next.retention_bad_events_days,
+      next.retention_notifications_days, next.retention_push_stale_days, next.retention_deleted_days, next.retention_checkout_days, next.retention_rate_limit_hours, next.retention_admin_alerts_days,
+      next.terms_version, next.privacy_version, next.barber_agreement_version]);
   clearSettingsCache(c);
-  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p });
+  // audit: before/after of every changed key (the audit log is the record of who changed a published number and from what)
+  const before: Record<string, unknown> = {}; for (const k of Object.keys(p)) before[k] = (cur as any)[k];
+  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p, before });
   return settingsView(await getSettings(c));
 }
 
@@ -207,6 +232,8 @@ export async function restoreEntitlement(t: Conn, b: { plan_purchase_id: number 
 /** A paid session that was missed: no refund, ONE credit with the SAME barber, not cashable, expires after `credit_expiry_days`. Idempotent per booking. */
 export async function issueCredit(t: Conn, b: { id: number; customer_id: number; barber_id: number; price_kobo: number; service_name: string; date: string; start_min: number }, reason: 'NO_SHOW' | 'LATE_CANCEL' | 'EARLY_CANCEL', settings?: Settings) {
   const s = settings ?? await getSettings(t);
+  // One outcome per booking: a booking that has (or had) a refund never also gets a credit.
+  if (await t.maybeOne(`SELECT 1 FROM payments WHERE booking_id=$1 AND refund_status IN ('PENDING_APPROVAL','NEEDS_REFUND','REFUND_REQUESTED','REFUNDED')`, [b.id])) return null;
   const expires = new Date(new Date(isoNow()).getTime() + s.credit_expiry_days * 86400000).toISOString();
   const r = await t.maybeOne<{ id: number }>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (source_booking_id) DO NOTHING RETURNING id`, [b.customer_id, b.barber_id, b.id, reason, b.price_kobo, expires, isoNow()]);

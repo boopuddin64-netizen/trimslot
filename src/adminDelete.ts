@@ -49,7 +49,7 @@ async function cancelUpcoming(t: Conn, where: string, params: unknown[], who: 'c
 }
 
 /** Hard delete engine. Deletes children first, in dependency order. Returns counts. */
-async function purgeCore(t: Conn, o: { users?: number[]; barbers?: number[]; bookings?: number[]; plans?: number[] }, allowPaid: boolean) {
+export async function purgeCore(t: Conn, o: { users?: number[]; barbers?: number[]; bookings?: number[]; plans?: number[] }, allowPaid: boolean) {
   const U = o.users ?? [], B = o.barbers ?? [];
   const bookingIds = (await t.many<{ id: number }>(`SELECT id FROM bookings WHERE id = ANY($1::int[]) OR customer_id = ANY($2::int[]) OR barber_id = ANY($3::int[])`, [o.bookings ?? [], U, B])).map((r) => r.id);
   const planIds = (await t.many<{ id: number }>(`SELECT id FROM plans WHERE id = ANY($1::int[]) OR barber_id = ANY($2::int[])`, [o.plans ?? [], B])).map((r) => r.id);
@@ -62,6 +62,7 @@ async function purgeCore(t: Conn, o: { users?: number[]; barbers?: number[]; boo
   const creditIds = (await t.many<{ id: number }>(`SELECT id FROM session_credits WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[]) OR source_booking_id = ANY($3::int[])`, [U, B, bookingIds])).map((r) => r.id);
   const q = (sql: string, ...p: unknown[]) => t.query(sql, p);
   await q(`DELETE FROM push_subscriptions WHERE user_id = ANY($1::int[])`, U);
+  await q(`DELETE FROM consent_log WHERE user_id = ANY($1::int[])`, U);
   await q(`DELETE FROM favourites WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[])`, U, B);
   await q(`DELETE FROM waitlist WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[])`, U, B);
   await q(`DELETE FROM barber_customer_notes WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[])`, U, B);
