@@ -51,7 +51,7 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
 /* ---------- refund approval queue (replaces the old "convert to credit / refund" page) ---------- */
 const left = (iso) => {
   if (!iso) return 'no deadline';
-  const ms = new Date(iso).getTime() - Date.now(); if (ms <= 0) return 'auto-approves on the next sweep';
+  const ms = new Date(iso).getTime() - Date.now(); if (ms <= 0) return 'approved by itself on the next check';
   const m = Math.ceil(ms / 60000); return 'auto-approves in ' + (m >= 90 ? Math.round(m / 60 * 10) / 10 + ' h' : m + ' min');
 };
 async function decisions5() {
@@ -69,15 +69,15 @@ async function decisions5() {
     ['Paid', (b) => naira(b.price_kobo), 'num'],
     ['', (b) => act('Convert to credit', 'sec', `data-do="credit" data-id="${b.id}"`) + act('Refund', '', `data-do="refund" data-id="${b.id}"`), 'act'],
   ];
-  app.innerHTML = head('Refund decisions', `A paid booking cancelled in time (or that the barber could not serve) is refunded to the customer's card. Nothing is lost if you do nothing: after ${r.auto_approve_hours} hour${r.auto_approve_hours === 1 ? '' : 's'} an undecided refund is approved automatically. A missed (no-show) booking gets a ${r.credit_expiry_days}-day same-barber credit instead, never both.`, refreshBtn) +
-    table(cols, r.pending, 'No refunds are waiting for a decision.') +
-    (r.legacy.length ? `<h2 style="margin-top:24px">Older cancellations (before automatic refunds)</h2><p class="muted small">These were cancelled under the previous rule and still need a decision: a credit or a refund.</p>` + table(legacyCols, r.legacy, '') : '');
+  app.innerHTML = head('Refund decisions', `If a customer cancels a paid booking in time, or the barber could not serve them, the money goes back to their card. If you do nothing, no one loses out. After ${r.auto_approve_hours} hour${r.auto_approve_hours === 1 ? '' : 's'}, we approve a refund nobody decided. If a customer misses a booking (no-show), they get a ${r.credit_expiry_days}-day credit with that barber instead. They never get both.`, refreshBtn) +
+    table(cols, r.pending, 'No refunds need a decision.') +
+    (r.legacy.length ? `<h2 style="margin-top:24px">Older cancellations (before refunds became automatic)</h2><p class="muted small">These were cancelled under the old rule. They still need a decision: a credit or a refund.</p>` + table(legacyCols, r.legacy, '') : '');
   wireReload(decisions5);
   wireActions(app, {
-    approve: async (d) => { if (!confirm('Approve and send this refund to Paystack now?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/refund-decision`, { method: 'POST', body: { action: 'approve' } }); toast(x.refund === 'failed' ? 'Approved; the gateway call failed, retry it from Payments' : 'Refund approved and sent'); await decisions5(); },
-    reject: async (d) => { A.formModal({ title: 'Reject refund #' + d.id, help: 'The customer gets neither a refund nor a credit and sees your reason. Use this only when the service was delivered or the claim is wrong.', go: 'Reject refund', cls: 'red', fields: [A.REASON('Reason (the customer sees this)')], submit: async (v) => { await A.post(`/bookings/${d.id}/refund-decision`, { action: 'reject', reason: v.reason }); return 'Refund rejected'; }, after: decisions5 }); const b = app.querySelector(`[data-do="reject"][data-id="${d.id}"]`); if (b) b.disabled = false; },
+    approve: async (d) => { if (!confirm('Approve this refund and send it to Paystack now?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/refund-decision`, { method: 'POST', body: { action: 'approve' } }); toast(x.refund === 'failed' ? 'Approved. Paystack did not take the request. Try again in Payments.' : 'Refund approved and sent'); await decisions5(); },
+    reject: async (d) => { A.formModal({ title: 'Reject refund #' + d.id, help: 'The customer gets no refund and no credit. They see your reason. Use this only if the service was done or the claim is wrong.', go: 'Reject refund', cls: 'red', fields: [A.REASON('Reason (the customer sees this)')], submit: async (v) => { await A.post(`/bookings/${d.id}/refund-decision`, { action: 'reject', reason: v.reason }); return 'Refund rejected'; }, after: decisions5 }); const b = app.querySelector(`[data-do="reject"][data-id="${d.id}"]`); if (b) b.disabled = false; },
     credit: async (d) => { await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'credit' } }); toast('Converted to a session credit'); await decisions5(); },
-    refund: async (d) => { if (!confirm('Refund this payment to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund; the gateway call failed, retry from Payments' : 'Refund requested'); await decisions5(); },
+    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions5(); },
   });
 }
 ROUTES.decisions = decisions5;
@@ -87,9 +87,9 @@ const b64 = (s) => { const p = '='.repeat((4 - s.length % 4) % 4); const r = ato
 const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 async function deviceSub() { if (!pushOk()) return null; const reg = await navigator.serviceWorker.getRegistration('/'); return reg ? reg.pushManager.getSubscription() : null; }
 async function enablePush(key) {
-  if (!pushOk() || !key) throw new Error('Push is not available on this device, or the server has no push keys.');
+  if (!pushOk() || !key) throw new Error('Push does not work on this device, or the server has no push keys.');
   const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Notifications are blocked. Allow them in the browser settings, then try again.');
+  if (perm !== 'granted') throw new Error('Alerts are blocked. Allow them in your browser settings. Then try again.');
   const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
   await api('/alerts/subscribe', { method: 'POST', body: sub.toJSON() });
@@ -98,10 +98,10 @@ const hhmm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m
 async function alertsPage() {
   const [list, prefs] = await Promise.all([api('/alerts'), api('/alerts/prefs')]); alertsUnread = list.unread; drawNav('alerts');
   const sub = await deviceSub().catch(() => null);
-  const state = !pushOk() ? 'This browser cannot receive push notifications.' : !prefs.push.available ? 'The server has no push keys, so only in-app alerts work.' : Notification.permission === 'denied' ? 'Notifications are blocked in this browser.' : sub ? 'Push is ON for this device.' : 'Push is off on this device.';
+  const state = !pushOk() ? 'This browser cannot get push alerts.' : !prefs.push.available ? 'The server has no push keys, so only alerts in the app work.' : Notification.permission === 'denied' ? 'Alerts are blocked in this browser.' : sub ? 'Push is ON for this device.' : 'Push is off on this device.';
   const q = prefs.quiet;
   const items = list.items.length ? list.items.map((n) => `<a class="kv alrt${n.read_at ? '' : ' unread'}" href="${esc(n.link || '#/alerts')}" data-read="${n.id}"><span><b>${esc(n.title)}</b><small class="muted" style="display:block">${esc(n.body)}</small></span><b class="small">${stamp(n.created_at)}</b></a>`).join('') : '<div class="empty">No alerts yet.</div>';
-  app.innerHTML = head('Alerts', 'Refunds waiting for you, automatic approvals and refund failures. Choose what reaches you and how.', `<button class="btn sm sec" id="readall">Mark all read</button>`) +
+  app.innerHTML = head('Alerts', 'Refunds that need you, refunds approved by themselves, and refunds that failed. Choose which alerts you get and how.', `<button class="btn sm sec" id="readall">Mark all read</button>`) +
     `<div class="card">${items}</div>
     <div class="card"><form id="apf"><h2 style="margin-top:0">What to tell me</h2>
       <table class="tbl"><thead><tr><th>Event</th><th>In the app</th><th>Push</th></tr></thead><tbody>${prefs.events.map((e) => `<tr><td data-l="Event">${esc(e.label)}</td><td data-l="In the app"><input type="checkbox" name="${e.event}:in_app" aria-label="${esc(e.label)} in the app" ${e.in_app ? 'checked' : ''}></td><td data-l="Push"><input type="checkbox" name="${e.event}:push" aria-label="${esc(e.label)} by push" ${e.push ? 'checked' : ''}></td></tr>`).join('')}</tbody></table>
@@ -127,34 +127,34 @@ ROUTES.alerts = alertsPage;
 /* ---------- Controls: the published numbers ---------- */
 const NUMS = [
   ['Cancelling, holds and credits', [
-    ['cancel_cutoff_min', 'Cancel lock (minutes before the booking)', 1, 0, 1440, 'Customers cannot cancel inside this window.'],
-    ['payment_hold_min', 'Pay-now hold (minutes)', 1, 1, 180, 'How long a slot is held while the customer pays.'],
-    ['credit_expiry_days', 'Credit expiry (days)', 1, 1, 3650, 'A missed-booking credit is valid this long.'],
-    ['refund_auto_approve_hours', 'Refund auto-approve after (hours)', 1, 0, 168, 'An undecided refund is approved automatically after this. 0 = on the next sweep.']]],
-  ['Who pays the card-payment fee (must add up to 100%)', [
-    ['fee_share_customer_pct', 'Customer share (%)', 0.01, 0, 100, 'Shown to the customer as a small "booking fee".'],
-    ['fee_share_barber_pct', 'Barber share (%)', 0.01, 0, 100, 'Taken from the barber payout.'],
+    ['cancel_cutoff_min', 'Cancel lock (minutes before the booking)', 1, 0, 1440, 'Customers cannot cancel inside this time.'],
+    ['payment_hold_min', 'Pay-now hold (minutes)', 1, 1, 180, 'How long we hold a time while the customer pays.'],
+    ['credit_expiry_days', 'Credit expiry (days)', 1, 1, 3650, 'A credit for a missed booking lasts this long.'],
+    ['refund_auto_approve_hours', 'Refund auto-approve after (hours)', 1, 0, 168, 'If nobody decides, we approve the refund after this time. 0 means on the next check.']]],
+  ['Who pays the card fee (must add up to 100%)', [
+    ['fee_share_customer_pct', 'Customer share (%)', 0.01, 0, 100, 'The customer sees this as a small "booking fee".'],
+    ['fee_share_barber_pct', 'Barber share (%)', 0.01, 0, 100, 'Taken from the barber\'s payout.'],
     ['fee_share_platform_pct', 'Platform share (%)', 0.01, 0, 100, 'TrimSlot pays this part.']]],
-  ['Paystack rate (we use it to estimate the fee)', [
+  ['Paystack rate (we use it to work out the fee)', [
     ['ps_percent', 'Percent of the payment (%)', 0.001, 0, 20, ''],
     ['ps_flat_naira', 'Flat part (₦)', 1, 0, 100000, ''],
     ['ps_flat_waived_below_naira', 'No flat part below (₦)', 1, 0, 10000000, ''],
-    ['ps_cap_naira', 'Fee cap (₦)', 1, 0, 10000000, 'The cap is applied before VAT.'],
-    ['ps_vat_percent', 'VAT on the fee (%)', 0.01, 0, 50, 'When Paystack reports the real fee, we record that too.']]],
+    ['ps_cap_naira', 'Fee cap (₦)', 1, 0, 10000000, 'The cap applies before VAT.'],
+    ['ps_vat_percent', 'VAT on the fee (%)', 0.01, 0, 50, 'When Paystack tells us the real fee, we save that too.']]],
   ['TrimSlot charge on each booking', [
     ['charge_percent', 'Percent of the price (%)', 0.01, 0, 50, ''],
     ['charge_flat_naira', 'Flat part (₦)', 1, 0, 1000000, ''],
-    ['charge_min_naira', 'Minimum charge (₦)', 1, 0, 1000000, 'Taken from the barber payout. Pay on arrival carries this charge only.'],
-    ['commission_pct', 'Pay-on-arrival: share of the charge that is owed (%)', 1, 0, 100, 'Saved as the commission factor. 100 = the whole charge.']]],
+    ['charge_min_naira', 'Minimum charge (₦)', 1, 0, 1000000, 'Taken from the barber\'s payout. Pay on arrival has only this charge.'],
+    ['commission_pct', 'Pay on arrival: part of the charge the barber owes (%)', 1, 0, 100, 'We save this as the commission factor. 100 means the whole charge.']]],
   ['Liability', [
-    ['liability_cap_naira', 'Liability cap (₦, 0 = not set)', 1, 0, 1000000000, 'Shown in the Terms once set.']]],
+    ['liability_cap_naira', 'Liability cap (₦, 0 = not set)', 1, 0, 1000000000, 'Shown in the Terms once you set it.']]],
   ['Plan limits', [
     ['min_plan_price_naira', 'Minimum plan price (₦)', 1, 0, 100000000, ''], ['max_plan_price_naira', 'Maximum plan price (₦)', 1, 0, 100000000, ''],
     ['max_plan_validity_days', 'Maximum plan duration (days)', 1, 1, 3650, ''], ['max_plan_sessions', 'Maximum sessions per plan', 1, 1, 1000, '']]],
-  ['Data retention (shown in the Privacy Policy)', [
+  ['How long we keep data (shown in the Privacy Policy)', [
     ['retention_events_days', 'Payment webhook records (days)', 1, 30, 3650, ''], ['retention_bad_events_days', 'Rejected webhook records (days)', 1, 1, 3650, ''],
     ['retention_notifications_days', 'In-app notifications (days)', 1, 7, 3650, ''], ['retention_push_stale_days', 'Unused push devices (days)', 1, 7, 3650, ''],
-    ['retention_deleted_days', 'Deleted accounts kept before removal (days)', 1, 1, 3650, ''], ['retention_checkout_days', 'Unfinished plan checkouts (days)', 1, 1, 365, ''],
+    ['retention_deleted_days', 'Days we keep deleted accounts before we remove them', 1, 1, 3650, ''], ['retention_checkout_days', 'Unfinished plan checkouts (days)', 1, 1, 365, ''],
     ['retention_rate_limit_hours', 'Rate-limit counters (hours)', 1, 1, 720, ''], ['retention_admin_alerts_days', 'Admin alerts (days)', 1, 7, 3650, '']]],
 ];
 const VERS = [['terms_version', 'Terms version'], ['privacy_version', 'Privacy Policy version'], ['barber_agreement_version', 'Barber Agreement version']];
@@ -172,7 +172,7 @@ async function addNumbersCard() {
     <div class="btns cta"><button class="btn" type="submit">Save published numbers</button><button class="btn sec" type="button" id="runret">Run data clean-up now</button></div></form></div>`;
   const host = app.querySelector('.card:last-of-type'); (host || app).insertAdjacentHTML(host ? 'afterend' : 'beforeend', html);
   const prev = await api('/fee-preview').catch(() => null);
-  if (prev) $('#feeprev').innerHTML = `<h3>What the saved numbers mean in naira</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>Price</th><th>Customer pays</th><th>Booking fee</th><th>Barber receives</th><th>TrimSlot keeps*</th><th>Pay on arrival charge</th></tr></thead><tbody>${prev.rows.map((r) => `<tr><td>${naira(r.price_kobo)}</td><td>${naira(r.total_kobo)}</td><td>${naira(r.booking_fee_kobo)}</td><td>${naira(r.payout_kobo)}</td><td>${naira(r.platform_net_kobo)}</td><td>${naira(r.cash)}</td></tr>`).join('')}</tbody></table></div><small class="muted">*After Paystack takes its fee (estimated from the rate above). Pay now only.</small>`;
+  if (prev) $('#feeprev').innerHTML = `<h3>What the saved numbers mean in Naira (₦)</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>Price</th><th>Customer pays</th><th>Booking fee</th><th>Barber receives</th><th>TrimSlot keeps*</th><th>Pay on arrival charge</th></tr></thead><tbody>${prev.rows.map((r) => `<tr><td>${naira(r.price_kobo)}</td><td>${naira(r.total_kobo)}</td><td>${naira(r.booking_fee_kobo)}</td><td>${naira(r.payout_kobo)}</td><td>${naira(r.platform_net_kobo)}</td><td>${naira(r.cash)}</td></tr>`).join('')}</tbody></table></div><small class="muted">*After Paystack takes its fee (worked out from the rate above). Pay now only.</small>`;
   // the three shares must add up: the platform share follows the other two
   const fr = $('#nf').elements; const sync = () => { fr.fee_share_platform_pct.value = String(Math.round((100 - Number(fr.fee_share_customer_pct.value) - Number(fr.fee_share_barber_pct.value)) * 10000) / 10000); };
   fr.fee_share_customer_pct.addEventListener('input', sync); fr.fee_share_barber_pct.addEventListener('input', sync);
@@ -185,11 +185,11 @@ async function addNumbersCard() {
     if (body.commission_pct !== undefined) { body.commission_factor = Math.round(body.commission_pct * 10) / 1000; delete body.commission_pct; }
     for (const [k] of VERS) if (f[k].value.trim() !== String(s[k])) body[k] = f[k].value.trim();
     if (!Object.keys(body).length) { toast('Nothing changed'); return; }
-    if (body.terms_version || body.privacy_version || body.barber_agreement_version) if (!confirm('Raising a document version asks every user to accept it again. Continue?')) return;
+    if (body.terms_version || body.privacy_version || body.barber_agreement_version) if (!confirm('A new document version asks every user to accept it again. Go on?')) return;
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
     try { await api('/settings', { method: 'PUT', body }); toast('Published numbers saved'); await ROUTES.controls(); } catch (e) { toast(e.message, true); b.disabled = false; }
   };
-  $('#runret').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/retention/run', { method: 'POST', body: {} }); const t = Object.values(r.result).reduce((a, n) => a + (Number(n) || 0), 0); toast(`Clean-up done: ${t} item${t === 1 ? '' : 's'} removed`); } catch (er) { toast(er.message, true); } e.target.disabled = false; };
+  $('#runret').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/retention/run', { method: 'POST', body: {} }); const t = Object.values(r.result).reduce((a, n) => a + (Number(n) || 0), 0); toast(`Clean-up done. ${t} item${t === 1 ? '' : 's'} removed.`); } catch (er) { toast(er.message, true); } e.target.disabled = false; };
 }
 const _controls = ROUTES.controls;
 ROUTES.controls = async () => {
@@ -210,13 +210,13 @@ userSheet = async function (id, reload) {
     if (isC && badgeRow) badgeRow.insertAdjacentHTML('beforebegin', `<div class="avatar-edit">${avHtml(u.avatar_url, u.name, 'xl')}<div><small>${u.avatar_url ? 'Profile photo' : u.avatar_removed_at ? 'Photo removed by admin' : 'No profile photo'}</small></div></div>`);
     if (u.deletion_requested_at && badgeRow) badgeRow.insertAdjacentHTML('afterend', `<div class="note"><b>Deletion requested ${esc(dshort(u.deletion_requested_at))}</b>${esc(u.deletion_request_note || '')}</div>`);
     const cons = (r.consents || []).length ? r.consents.map((c) => `<div class="kv"><span>${esc(String(c.document).replace('_', ' '))} <small class="muted">v${esc(c.version)} · ${esc(c.source)}</small></span><b class="small">${stamp(c.accepted_at || c.created_at)}</b></div>`).join('') : '<div class="muted small">No acceptance recorded.</div>';
-    const need = (r.consent_missing || []).length ? `<div class="note"><b>Has not accepted the current ${r.consent_missing.map((c) => esc(String(c.document).replace('_', ' '))).join(', ')}</b>They are asked at their next visit.</div>` : '';
+    const need = (r.consent_missing || []).length ? `<div class="note"><b>Has not accepted the latest ${r.consent_missing.map((c) => esc(String(c.document).replace('_', ' '))).join(', ')}</b>We ask them the next time they visit.</div>` : '';
     const rep = [...sh.querySelectorAll('h3')].find((h) => h.textContent.trim() === 'Reports');
     if (rep) rep.insertAdjacentHTML('beforebegin', `<h3>Documents accepted</h3>${need}${cons}`);
     const bar = sh.querySelector('.btns.sticky');
     if (isC && u.avatar_url && bar) {
       bar.insertAdjacentHTML('afterbegin', act('Remove photo', 'red', 'data-rmav="1"'));
-      bar.querySelector('[data-rmav]').onclick = () => { sh.querySelector('[data-close]')?.click(); A.formModal({ title: 'Remove ' + u.name + "'s photo", help: 'The photo is deleted and the customer is told why.', fields: [A.REASON('Reason (the customer sees this)', 'e.g. Not a photo of you')], go: 'Remove photo', cls: 'red', submit: async (x) => { await A.post(`/users/${id}/avatar/remove`, x); return 'Photo removed'; }, after: async () => { reload && reload(); } }); };
+      bar.querySelector('[data-rmav]').onclick = () => { sh.querySelector('[data-close]')?.click(); A.formModal({ title: 'Remove ' + u.name + "'s photo", help: 'We delete the photo and tell the customer why.', fields: [A.REASON('Reason (the customer sees this)', 'e.g. Not a photo of you')], go: 'Remove photo', cls: 'red', submit: async (x) => { await A.post(`/users/${id}/avatar/remove`, x); return 'Photo removed'; }, after: async () => { reload && reload(); } }); };
     }
     scanAv();
   } catch { /* the original sheet is already usable */ }

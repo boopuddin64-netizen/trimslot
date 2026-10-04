@@ -103,7 +103,7 @@ function listPage(cfg) {
     if (cfg.sorts) { $('#lsort').onchange = (e) => { st.sort = e.target.value; load(true); }; $('#ldir').onclick = (e) => { sortDir = sortDir === 'asc' ? 'desc' : 'asc'; st.dir = sortDir; e.target.textContent = sortDir === 'asc' ? '↑' : '↓'; load(true); }; }
     $('#lsaved').onchange = (e) => { const s = saved()[Number(e.target.value)]; $('#ldel').classList.toggle('hidden', !s); if (!s) return; st = STATE[cfg.key] = { ...base, ...s.params }; sortDir = st.dir || 'desc'; window.QS = new URLSearchParams(); (cfg.reopen || ROUTES[cfg.key])(); };
     $('#ldel').onclick = () => { const i = Number($('#lsaved').value); const s = saved(); s.splice(i, 1); lsSet('adm_sf_' + cfg.key, s); toast('Saved view deleted'); drawSaved(); };
-    $('#lsave').onclick = () => formModal({ title: 'Save this view', help: 'Keeps the current search, filters and sort so you can come back to it in one click. Saved in this browser.', go: 'Save view', fields: [{ name: 'name', label: 'Name', required: true, max: 40, ph: 'e.g. Pending this week' }],
+    $('#lsave').onclick = () => formModal({ title: 'Save this view', help: 'Saves your search, filters and sort so you can open them again with one click. It is saved in this browser.', go: 'Save view', fields: [{ name: 'name', label: 'Name', required: true, max: 40, ph: 'e.g. Pending this week' }],
       submit: async (v) => { if (!v.name) throw new Error('Give it a name.'); const s = saved().filter((x) => x.name !== v.name); s.push({ name: v.name.slice(0, 40), params: { ...st, dir: sortDir } }); lsSet('adm_sf_' + cfg.key, s.slice(-12)); drawSaved(); return 'View saved'; } });
     wireReload(() => load(true));
     await load(true);
@@ -126,20 +126,20 @@ const custCols = [
 ];
 const LISTS = {
   customers: {
-    key: 'customers', list: 'customers', title: 'Customers', sub: 'Everyone who books. Click a row for their full profile and actions.', search: 'Search name, email, phone or #id', counts: '/counts/customers',
+    key: 'customers', list: 'customers', title: 'Customers', sub: 'Everyone who books. Click a row to see their profile and what you can do.', search: 'Search name, email, phone or #id', counts: '/counts/customers',
     params: ['q', 'status', 'sort'], defaults: () => ({ q: '', status: '' }), cols: custCols, empty: 'No customers match.',
     pills: { param: 'status', count: true, items: [['', 'All'], ['ACTIVE', 'Active'], ['SUSPENDED', 'Suspended'], ['BANNED', 'Banned']] },
     sorts: [['newest', 'Newest'], ['name', 'Name']], open: (u, rl) => userSheet(u.id, rl),
     bulk: [
-      { label: 'Message', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Message customers', help: 'Sent as an in-app notification (and a push if they enabled it).', go: 'Send', path: '/bulk/notify', done: 'Sent to', after: done, fields: [{ name: 'title', label: 'Title', required: true, max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], body: (ids, v) => ({ ids, title: v.title, body: v.body }) }) },
-      { label: 'Warn', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Warn customers', help: 'Adds a warning and tells each customer your reason.', go: 'Send warnings', path: '/bulk/customers/warn', done: 'Warned', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) },
-      { label: 'Suspend', cls: 'red', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Suspend customers', help: 'They can sign in but cannot book. Reversible.', go: 'Suspend', cls: 'red', path: '/bulk/customers/suspend', done: 'Suspended', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) },
+      { label: 'Message', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Message customers', help: 'We send this as an alert in the app. If they turned on push, they get that too.', go: 'Send', path: '/bulk/notify', done: 'Sent to', after: done, fields: [{ name: 'title', label: 'Title', required: true, max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], body: (ids, v) => ({ ids, title: v.title, body: v.body }) }) },
+      { label: 'Warn', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Warn customers', help: 'Adds a warning. Each customer sees your reason.', go: 'Send warnings', path: '/bulk/customers/warn', done: 'Warned', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) },
+      { label: 'Suspend', cls: 'red', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Suspend customers', help: 'They can sign in but cannot book. You can undo this.', go: 'Suspend', cls: 'red', path: '/bulk/customers/suspend', done: 'Suspended', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) },
       { label: 'Reinstate', run: (rows, done) => bulkConfirm({ rows, noun: 'customer', label: (r) => r.name, title: 'Reinstate customers', help: 'Restores full access.', go: 'Reinstate', path: '/bulk/customers/reinstate', done: 'Reinstated', after: done, fields: [], body: (ids) => ({ ids }) }) },
     ],
   },
   barbers: {
-    key: 'barbers', list: 'barbers', title: 'Barbers', sub: 'Only verified shops are visible and bookable. Review signups, ask for information, reject, or suspend (reversible).', search: 'Search shop, owner or email', counts: '/counts/barbers',
-    params: ['q', 'status', 'sort'], defaults: (c) => ({ q: '', status: c && (c.PENDING || c.NEEDS_INFO) ? 'PENDING' : '' }), empty: 'No shops in this view.',
+    key: 'barbers', list: 'barbers', title: 'Barbers', sub: 'Customers only see shops you have verified. Check sign-ups, ask for information, reject, or suspend. You can undo a suspension.', search: 'Search shop, owner or email', counts: '/counts/barbers',
+    params: ['q', 'status', 'sort'], defaults: (c) => ({ q: '', status: c && (c.PENDING || c.NEEDS_INFO) ? 'PENDING' : '' }), empty: 'No shops here.',
     pills: { param: 'status', count: true, items: [['PENDING', 'Pending'], ['NEEDS_INFO', 'Needs info'], ['VERIFIED', 'Verified'], ['SUSPENDED', 'Suspended'], ['REJECTED', 'Rejected'], ['', 'All']] },
     sorts: [['newest', 'Newest'], ['name', 'Shop name']], open: (b, rl) => barberDetail(b.id, rl),
     cols: [
@@ -153,12 +153,12 @@ const LISTS = {
       reinstate: async (b, rl) => { await api(`/barbers/${b.id}/reinstate`, { method: 'POST', body: {} }); toast('Barber reinstated'); await rl(); },
     },
     bulk: [
-      { label: 'Approve', run: (rows, done) => bulkConfirm({ rows, noun: 'shop', label: (r) => r.shop_name, title: 'Approve shops', help: 'Each shop goes live and its owner is told. Shops already verified are skipped. Check details first if unsure.', go: 'Approve', path: '/bulk/barbers/approve', done: 'Approved', after: done, fields: [], body: (ids) => ({ ids }) }) },
-      { label: 'Message', run: (rows, done) => bulkConfirm({ rows, noun: 'shop', label: (r) => r.shop_name, idOf: (r) => r.user_id, title: 'Message barbers', help: 'Sent as an in-app notification (and a push if enabled).', go: 'Send', path: '/bulk/notify', done: 'Sent to', after: done, fields: [{ name: 'title', label: 'Title', required: true, max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], body: (ids, v) => ({ ids, title: v.title, body: v.body }) }) },
+      { label: 'Approve', run: (rows, done) => bulkConfirm({ rows, noun: 'shop', label: (r) => r.shop_name, title: 'Approve shops', help: 'Each shop goes live and we tell its owner. We skip shops that are already verified. If you are not sure, check the details first.', go: 'Approve', path: '/bulk/barbers/approve', done: 'Approved', after: done, fields: [], body: (ids) => ({ ids }) }) },
+      { label: 'Message', run: (rows, done) => bulkConfirm({ rows, noun: 'shop', label: (r) => r.shop_name, idOf: (r) => r.user_id, title: 'Message barbers', help: 'We send this as an alert in the app. If push is on, they get that too.', go: 'Send', path: '/bulk/notify', done: 'Sent to', after: done, fields: [{ name: 'title', label: 'Title', required: true, max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], body: (ids, v) => ({ ids, title: v.title, body: v.body }) }) },
     ],
   },
   bookings: {
-    key: 'bookings', list: 'bookings', title: 'Bookings', sub: 'Every booking, newest date first. Filter by status, date or shop; click a row for the full record and admin actions.', search: 'Search #id or customer name',
+    key: 'bookings', list: 'bookings', title: 'Bookings', sub: 'Every booking, newest date first. Filter by status, date or shop. Click a row to see the whole booking and what you can do.', search: 'Search #id or customer name',
     params: ['q', 'status', 'payment_status', 'date', 'from', 'to', 'barber_id', 'customer_id', 'sort'], defaults: () => ({ q: '', status: '', payment_status: '', date: '' }), empty: 'No bookings match.',
     pills: { param: 'status', items: [['', 'All'], ['CONFIRMED', 'Confirmed'], ['ARRIVED', 'Arrived'], ['IN_SERVICE', 'In service'], ['COMPLETED', 'Completed'], ['CANCELLED', 'Cancelled'], ['NO_SHOW', 'No-show'], ['PENDING_PAYMENT', 'Awaiting payment']] },
     selects: [{ param: 'payment_status', label: 'Payment', options: [['', 'Any payment'], ['PAID', 'Paid'], ['PAYMENT_DUE', 'Pay on arrival'], ['PENDING', 'Pending'], ['CREDIT_PENDING', 'Awaiting decision'], ['REFUND_PENDING', 'Refund pending'], ['REFUNDED', 'Refunded'], ['REFUND_DECLINED', 'Refund declined'], ['CREDITED', 'Credited'], ['VOID', 'Void']] }],
@@ -169,8 +169,8 @@ const LISTS = {
     ],
   },
   payments: {
-    key: 'payments', list: 'payments', title: 'Payments', sub: 'Refunds are requested from Paystack automatically. Retry or mark refunded from a payment\'s drawer.', search: 'Search reference',
-    params: ['q', 'filter', 'sort'], defaults: () => ({ q: '', filter: 'all' }), empty: 'No payments in this view.',
+    key: 'payments', list: 'payments', title: 'Payments', sub: 'We ask Paystack for refunds by ourselves. Open a payment to try again or to mark it as refunded.', search: 'Search reference',
+    params: ['q', 'filter', 'sort'], defaults: () => ({ q: '', filter: 'all' }), empty: 'No payments here.',
     pills: { param: 'filter', items: [['needs_refund', 'Needs refund'], ['paid', 'Paid'], ['failed', 'Failed'], ['initiated', 'Not paid'], ['refunds', 'All refunds'], ['disputed', 'Disputed'], ['all', 'All']] },
     sorts: [['newest', 'Newest'], ['amount', 'Amount']], open: (p, rl) => paymentSheet(p.reference, rl),
     cols: [
@@ -179,7 +179,7 @@ const LISTS = {
     ],
   },
   credits: {
-    key: 'credits', list: 'credits', title: 'Credits', sub: 'Same-barber session credits. Never cashable. Issue one from a customer\'s profile.', search: 'Search customer',
+    key: 'credits', list: 'credits', title: 'Credits', sub: 'Session credits for one barber. People cannot cash them out. To give one, open the customer\'s profile.', search: 'Search customer',
     params: ['q', 'status'], defaults: () => ({ q: '', status: '' }), empty: 'No credits match.',
     pills: { param: 'status', items: [['', 'All'], ['AVAILABLE', 'Available'], ['USED', 'Used'], ['REVOKED', 'Revoked']] },
     cols: [
@@ -189,11 +189,11 @@ const LISTS = {
       ['', (c) => c.status === 'AVAILABLE' ? act('Revoke', 'sec', 'data-act="rev"') : '', 'act'],
     ],
     handlers: { rev: (c, rl) => formModal({ title: 'Revoke credit #' + c.id, help: 'The customer is told their credit was removed.', go: 'Revoke credit', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/credits/${c.id}/revoke`, v); return 'Credit revoked'; }, after: rl }) },
-    bulk: [{ label: 'Revoke', cls: 'red', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'AVAILABLE'), noun: 'credit', label: (r) => r.customer_name, title: 'Revoke credits', help: 'Each customer is told. Only available credits are affected.', go: 'Revoke', cls: 'red', path: '/bulk/credits/revoke', done: 'Revoked', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) }],
+    bulk: [{ label: 'Revoke', cls: 'red', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'AVAILABLE'), noun: 'credit', label: (r) => r.customer_name, title: 'Revoke credits', help: 'We tell each customer. Only credits that are still free are removed.', go: 'Revoke', cls: 'red', path: '/bulk/credits/revoke', done: 'Revoked', after: done, body: (ids, v) => ({ ids, reason: v.reason }) }) }],
   },
   reports: {
-    key: 'reports', list: 'reports', title: 'Reports', sub: 'Complaints from customers and barbers. Resolve with a note; the reporter is told.', counts: '/counts/reports', search: 'Filter by status or category below',
-    params: ['status', 'category'], defaults: () => ({ status: 'OPEN', category: '' }), empty: 'No reports in this view.',
+    key: 'reports', list: 'reports', title: 'Reports', sub: 'Complaints from customers and barbers. Close each one with a note. We tell the person who reported it.', counts: '/counts/reports', search: 'Filter by status or type below',
+    params: ['status', 'category'], defaults: () => ({ status: 'OPEN', category: '' }), empty: 'No reports here.',
     pills: { param: 'status', count: true, items: [['OPEN', 'Open'], ['RESOLVED', 'Resolved'], ['DISMISSED', 'Dismissed'], ['', 'All']] },
     selects: [{ param: 'category', label: 'Category', options: [['', 'Any category'], ['NO_SHOW', 'No-show'], ['BEHAVIOUR', 'Behaviour'], ['PAYMENT', 'Payment'], ['QUALITY', 'Quality'], ['SAFETY', 'Safety'], ['OTHER', 'Other']] }],
     cols: [
@@ -205,20 +205,20 @@ const LISTS = {
       del: (x, rl) => ADM4.deleteDialog({ type: 'report', id: x.id, name: '#' + x.id, after: rl }), res: (x, rl) => reportForm(x, 'RESOLVED', rl), dis: (x, rl) => reportForm(x, 'DISMISSED', rl),
     },
     bulk: [
-      { label: 'Resolve', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'OPEN'), noun: 'report', label: (r) => r.category, title: 'Resolve reports', help: 'One note is sent to every reporter.', go: 'Resolve', path: '/bulk/reports/resolve', done: 'Resolved', after: done, fields: [{ name: 'reason', label: 'Resolution note', type: 'textarea', required: true }], body: (ids, v) => ({ ids, status: 'RESOLVED', note: v.reason }) }) },
-      { label: 'Dismiss', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'OPEN'), noun: 'report', label: (r) => r.category, title: 'Dismiss reports', help: 'One note is sent to every reporter.', go: 'Dismiss', path: '/bulk/reports/resolve', done: 'Dismissed', after: done, fields: [{ name: 'reason', label: 'Note', type: 'textarea', required: true }], body: (ids, v) => ({ ids, status: 'DISMISSED', note: v.reason }) }) },
+      { label: 'Resolve', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'OPEN'), noun: 'report', label: (r) => r.category, title: 'Resolve reports', help: 'We send one note to every person who reported.', go: 'Resolve', path: '/bulk/reports/resolve', done: 'Resolved', after: done, fields: [{ name: 'reason', label: 'Resolution note', type: 'textarea', required: true }], body: (ids, v) => ({ ids, status: 'RESOLVED', note: v.reason }) }) },
+      { label: 'Dismiss', run: (rows, done) => bulkConfirm({ rows: rows.filter((r) => r.status === 'OPEN'), noun: 'report', label: (r) => r.category, title: 'Dismiss reports', help: 'We send one note to every person who reported.', go: 'Dismiss', path: '/bulk/reports/resolve', done: 'Dismissed', after: done, fields: [{ name: 'reason', label: 'Note', type: 'textarea', required: true }], body: (ids, v) => ({ ids, status: 'DISMISSED', note: v.reason }) }) },
     ],
   },
   ledger: {
-    key: 'ledger', list: 'ledger', title: 'Off-app ledger', sub: 'Commission on bookings paid outside the app. It is netted from the barber\'s next online payments.', search: 'Search shop',
-    params: ['q', 'overdue', 'sort'], defaults: () => ({ q: '', overdue: '', sort: 'owed' }), empty: 'No commission has accrued yet.',
+    key: 'ledger', list: 'ledger', title: 'Off-app ledger', sub: 'Commission on bookings paid outside the app. We take it out of the barber\'s next online payments.', search: 'Search shop',
+    params: ['q', 'overdue', 'sort'], defaults: () => ({ q: '', overdue: '', sort: 'owed' }), empty: 'No commission yet.',
     pills: { param: 'overdue', items: [['', 'All owing'], ['1', 'Overdue (14+ days)']] }, sorts: [['owed', 'Amount owed'], ['newest', 'Newest']], open: (b, rl) => ledgerSheet(b.id, rl),
     headRight: '<button class="btn sm sec" id="remind-all">Send reminders</button>',
     cols: [['Barber', (b) => `${esc(b.shop_name)}<span class="sub">${b.oldest ? 'Oldest entry ' + dshort(b.oldest) : ''}</span>`], ['Owed now', (b) => `<b style="color:var(--red)">${naira(b.owed_kobo)}</b>`, 'num'], ['Open entries', (b) => b.open_entries, 'num'], ['', (b) => act('Ledger', 'sec', 'data-act="open"'), 'act']],
     handlers: { open: (b, rl) => ledgerSheet(b.id, rl) },
   },
   reviews: {
-    key: 'reviews', list: 'reviews', title: 'Reviews', sub: 'Customer ratings. Hide anything abusive; hidden reviews leave the shop\'s rating.', search: 'Filter using the controls below',
+    key: 'reviews', list: 'reviews', title: 'Reviews', sub: 'Customer ratings. Hide rude ones. Hidden reviews do not count in the shop\'s rating.', search: 'Use the filters below',
     params: ['hidden', 'rating', 'sort'], defaults: () => ({ hidden: '', rating: '' }), empty: 'No reviews yet.',
     pills: { param: 'hidden', items: [['', 'All'], ['0', 'Visible'], ['1', 'Hidden']] },
     selects: [{ param: 'rating', label: 'Rating', options: [['', 'Any rating'], ['1', '1 star'], ['2', '2 stars'], ['3', '3 stars'], ['4', '4 stars'], ['5', '5 stars']] }], sorts: [['newest', 'Newest'], ['rating', 'Rating']],
@@ -229,7 +229,7 @@ const LISTS = {
     ],
     handlers: {
       del: (r, rl) => ADM4.deleteDialog({ type: 'review', id: r.id, name: r.customer_name + ' → ' + r.shop_name, after: rl }),
-      hide: (r, rl) => formModal({ title: 'Hide review', help: 'It stops showing on the shop page and in its rating. Reversible.', go: 'Hide review', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/reviews/${r.id}/hide`, { hidden: true, reason: v.reason }); return 'Review hidden'; }, after: rl }),
+      hide: (r, rl) => formModal({ title: 'Hide review', help: 'It no longer shows on the shop page or in its rating. You can undo this.', go: 'Hide review', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/reviews/${r.id}/hide`, { hidden: true, reason: v.reason }); return 'Review hidden'; }, after: rl }),
       show: (r, rl) => formModal({ title: 'Restore review', go: 'Restore', fields: [REASON()], submit: async (v) => { await post(`/reviews/${r.id}/hide`, { hidden: false, reason: v.reason }); return 'Review restored'; }, after: rl }),
     },
     bulk: [
@@ -238,14 +238,14 @@ const LISTS = {
     ],
   },
   waitlist: {
-    key: 'waitlist', list: 'waitlist', title: 'Waitlist', sub: 'Customers waiting for a slot on a full day. They are told automatically when one opens.', search: 'Filter by status',
+    key: 'waitlist', list: 'waitlist', title: 'Waitlist', sub: 'Customers waiting for a time on a full day. We tell them by ourselves when one is free.', search: 'Filter by status',
     params: ['status'], defaults: () => ({ status: 'WAITING' }), empty: 'Nobody is waiting.',
     pills: { param: 'status', items: [['WAITING', 'Waiting'], ['NOTIFIED', 'Notified'], ['BOOKED', 'Booked'], ['EXPIRED', 'Expired'], ['CANCELLED', 'Cancelled'], ['', 'All']] },
     cols: [['Customer', (w) => `${esc(w.customer_name)}<span class="sub">${esc(w.service_name)}</span>`], ['Shop', (w) => esc(w.shop_name)], ['Day', (w) => dlabel(w.date)], ['Status', (w) => bd({ WAITING: 'b-amber', NOTIFIED: 'b-blue', BOOKED: 'b-green' }[w.status] || 'b-gray', w.status)], ['Joined', (w) => stamp(w.created_at)]],
   },
 };
 function reportForm(x, status, rl) {
-  return formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'Your note is saved and (optionally) sent to the person who filed it.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
+  return formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'We save your note. You can also send it to the person who reported.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
     fields: [{ name: 'note', label: 'Resolution note', type: 'textarea', required: true, ph: 'What was done?' }, { name: 'notify_reporter', label: 'Tell the reporter', type: 'checkbox', value: true }], submit: async (v) => { await post(`/reports/${x.id}/resolve`, { status, note: v.note, notify_reporter: v.notify_reporter }); return 'Report ' + status.toLowerCase(); }, after: rl });
 }
 
@@ -275,8 +275,8 @@ const PURCHASES = {
   cols: [['Customer', (p) => `${esc(p.customer_name)}<span class="sub">${esc(p.plan_name)} · ${esc(p.shop_name)}</span>`], ['Price', (p) => naira(p.price_kobo), 'num'], ['Sessions used', (p) => `${p.sessions_used}/${p.sessions_total}`, 'num'], ['Expires', (p) => dshort(p.expires_at)], ['Status', (p) => p.status === 'ACTIVE' ? bd(p.live ? 'b-green' : 'b-gray', p.live ? 'ACTIVE' : 'ENDED') : bd('b-gray', p.status)],
     ['', (p) => p.status === 'ACTIVE' ? act('Adjust', 'sec', 'data-act="adj"') + act('Cancel', 'red', 'data-act="can"') : '', 'act']],
   handlers: {
-    adj: (p, rl) => formModal({ title: 'Adjust plan purchase #' + p.id, help: 'Add or remove sessions and/or extend the expiry. The customer is told.', go: 'Apply', fields: [{ name: 'delta', label: 'Sessions to add (negative removes)', type: 'number', step: 1, ph: '0' }, { name: 'extend_days', label: 'Extend expiry by (days)', type: 'number', step: 1, ph: '0' }, REASON()], submit: async (v) => { await post(`/plan-purchases/${p.id}/adjust`, { reason: v.reason, delta: v.delta || undefined, extend_days: v.extend_days || undefined }); return 'Plan purchase updated'; }, after: rl }),
-    can: (p, rl) => formModal({ title: 'Cancel plan purchase #' + p.id, help: 'Ends the plan. Tick refund to flag the payment for a refund.', go: 'Cancel purchase', cls: 'red', fields: [{ name: 'refund', label: 'Also refund the payment', type: 'checkbox' }, REASON()], submit: async (v) => { const o = await post(`/plan-purchases/${p.id}/cancel`, { reason: v.reason, refund: v.refund }); return 'Purchase cancelled' + (o.refund === 'requested' ? ' · refund requested' : ''); }, after: rl }),
+    adj: (p, rl) => formModal({ title: 'Adjust plan purchase #' + p.id, help: 'Add or remove sessions, or make the plan last longer. We tell the customer.', go: 'Apply', fields: [{ name: 'delta', label: 'Sessions to add (use a minus to remove)', type: 'number', step: 1, ph: '0' }, { name: 'extend_days', label: 'Extend expiry by (days)', type: 'number', step: 1, ph: '0' }, REASON()], submit: async (v) => { await post(`/plan-purchases/${p.id}/adjust`, { reason: v.reason, delta: v.delta || undefined, extend_days: v.extend_days || undefined }); return 'Plan purchase updated'; }, after: rl }),
+    can: (p, rl) => formModal({ title: 'Cancel plan purchase #' + p.id, help: 'This ends the plan. Tick refund to mark the payment for a refund.', go: 'Cancel purchase', cls: 'red', fields: [{ name: 'refund', label: 'Also refund the payment', type: 'checkbox' }, REASON()], submit: async (v) => { const o = await post(`/plan-purchases/${p.id}/cancel`, { reason: v.reason, refund: v.refund }); return 'Purchase cancelled' + (o.refund === 'requested' ? ' · refund requested' : ''); }, after: rl }),
   },
 };
 PURCHASES.row = (p) => ({ t: esc(p.customer_name), p: p.status === 'ACTIVE' ? bd(p.live ? 'b-green' : 'b-gray', p.live ? 'ACTIVE' : 'ENDED') : bd('b-gray', p.status), m: esc(ell('exp ' + dnoy(p.expires_at), p.plan_name, p.shop_name)), r: `${p.sessions_used}/${p.sessions_total} used` });
@@ -289,7 +289,7 @@ const PLANS = {
     ['', (p) => act(p.active ? 'Hide' : 'Restore', 'sec', 'data-act="vis"') + act('Delete', 'red', 'data-act="del"'), 'act']],
   handlers: {
     del: (p, rl) => ADM4.deleteDialog({ type: 'plan', id: p.id, name: p.name, after: rl }),
-    vis: (p, rl) => { const on = !p.active; return formModal({ title: (on ? 'Restore plan ' : 'Hide plan ') + p.name, help: on ? 'The plan goes back on sale.' : 'Customers can no longer buy it. Existing purchases keep working. The barber is told.', go: on ? 'Restore' : 'Hide plan', fields: [REASON()], submit: async (v) => { await post(`/plans/${p.id}/visibility`, { active: on, reason: v.reason }); return on ? 'Plan restored' : 'Plan hidden'; }, after: rl }); },
+    vis: (p, rl) => { const on = !p.active; return formModal({ title: (on ? 'Restore plan ' : 'Hide plan ') + p.name, help: on ? 'The plan is for sale again.' : 'Customers can no longer buy it. People who already bought it keep their plan. We tell the barber.', go: on ? 'Restore' : 'Hide plan', fields: [REASON()], submit: async (v) => { await post(`/plans/${p.id}/visibility`, { active: on, reason: v.reason }); return on ? 'Plan restored' : 'Plan hidden'; }, after: rl }); },
   },
 };
 PLANS.row = (p) => ({ t: esc(p.name), p: p.active ? bd('b-green', 'ON SALE') : bd('b-gray', 'HIDDEN'), m: esc(ell(p.shop_name, p.sessions + ' sessions', p.validity_days + ' d', p.buyers + ' buyer' + (p.buyers === 1 ? '' : 's'))), r: naira(p.price_kobo) });
@@ -331,11 +331,11 @@ async function paymentSheet(ref, reload) {
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = async () => {
     const k = x.dataset.k;
     if (k === 'bk') { m.close(); return bookingSheet(p.booking_id, reload); }
-    if (k === 'reverify') { x.disabled = true; try { const o = await api(`/payments/${enc}/reverify`, { method: 'POST', body: {} }); const R = { processed: 'Payment confirmed', already_processed: 'Already confirmed', refund_due: 'Slot was gone: refund requested from Paystack', slot_taken: 'Slot was taken: refund requested', not_paid: 'Paystack says this was not paid', amount_mismatch: 'Paystack amount does not match' }; toast(R[o.result] || o.result, o.result === 'not_paid' || o.result === 'amount_mismatch'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
+    if (k === 'reverify') { x.disabled = true; try { const o = await api(`/payments/${enc}/reverify`, { method: 'POST', body: {} }); const R = { processed: 'Payment confirmed', already_processed: 'Already confirmed', refund_due: 'The time was gone: we asked Paystack for a refund', slot_taken: 'The time was taken: we asked for a refund', not_paid: 'Paystack says this was not paid', amount_mismatch: 'The amount Paystack got is not the same' }; toast(R[o.result] || o.result, o.result === 'not_paid' || o.result === 'amount_mismatch'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
     if (k === 'flag') { m.close(); if (p.disputed) { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return done(); }
-      return formModal({ title: 'Flag payment as disputed', help: 'A private marker for follow-up. It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: done }); }
+      return formModal({ title: 'Flag payment as disputed', help: 'A private mark so you remember to follow up. It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: done }); }
     if (k === 'retry') { x.disabled = true; try { const o = await api(`/payments/${enc}/retry-refund`, { method: 'POST', body: {} }); toast(o.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (o.refund_error || 'try again later'), o.result !== 'requested'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
-    if (k === 'mark') { m.close(); return formModal({ title: 'Mark as refunded', help: 'Only do this after the customer has been paid back.', go: 'Mark refunded', fields: [], submit: async () => { await api(`/payments/${enc}/mark-refunded`, { method: 'POST', body: {} }); return 'Marked as refunded'; }, after: done }); }
+    if (k === 'mark') { m.close(); return formModal({ title: 'Mark as refunded', help: 'Do this only after you paid the customer back.', go: 'Mark refunded', fields: [], submit: async () => { await api(`/payments/${enc}/mark-refunded`, { method: 'POST', body: {} }); return 'Marked as refunded'; }, after: done }); }
   });
 }
 
@@ -350,7 +350,7 @@ async function home() {
     (h.maintenance_mode ? '<div class="warnbox"><b>Maintenance mode is ON.</b> Customers cannot book. <a href="#/controls">Change</a></div>' : '') +
     `<div class="tiles">${tile('Bookings today', n.bookings_today)}${tile('Revenue, 30 days', naira(n.revenue_30d_kobo))}${tile('Customers', n.customers.toLocaleString())}${tile('Live shops', n.barbers_live)}</div>
     <h2>Needs attention</h2>` + (items.length ? `<div class="attn">${items.map((a) => `<a class="acard ${a.tone}" href="${a.href}"><b>${a.n}</b><span>${esc(a.label)}</span>${a.sub ? `<small>${naira(a.sub)} owed</small>` : ''}<i aria-hidden="true">›</i></a>`).join('')}</div>`
-      : '<div class="empty"><b>All clear.</b><div class="small">Nothing needs your attention right now.</div></div>') +
+      : '<div class="empty"><b>All done.</b><div class="small">Nothing needs you right now.</div></div>') +
     `<h2>Jump to</h2><div class="quick">${[['customers', 'Customers'], ['barbers', 'Barbers'], ['bookings', 'Bookings'], ['payments', 'Payments'], ['broadcast', 'Broadcast'], ['controls', 'Controls']].map(([k, l]) => `<a href="#/${k}">${ic(IC[k])}${l}</a>`).join('')}</div>
     <p class="muted small" style="margin-top:16px">Tip: press <kbd>Ctrl</kbd> <kbd>K</kbd> (<kbd>⌘</kbd> <kbd>K</kbd> on Mac) to search anything or jump to a page. <kbd>/</kbd> focuses a list's search.</p>`;
   wireReload(home);
@@ -361,7 +361,7 @@ let pal = null;
 const NAV = GROUPS.flatMap(([g, items]) => items.map(([k, l]) => ({ k, label: l, group: g || 'Home' })));
 function openPalette() {
   if (pal || !getKey()) return;
-  const el = document.createElement('div'); el.className = 'pal'; el.innerHTML = `<div class="palbox" role="dialog" aria-modal="true" aria-label="Command palette"><input id="palq" type="text" placeholder="Search people, shops, bookings, payments — or jump to a page" autocomplete="off" spellcheck="false" aria-label="Command palette"><div id="palr" class="palr" role="listbox"></div><div class="palh"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div></div>`;
+  const el = document.createElement('div'); el.className = 'pal'; el.innerHTML = `<div class="palbox" role="dialog" aria-modal="true" aria-label="Command palette"><input id="palq" type="text" placeholder="Search people, shops, bookings or payments, or go to a page" autocomplete="off" spellcheck="false" aria-label="Command palette"><div id="palr" class="palr" role="listbox"></div><div class="palh"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></div></div>`;
   document.body.appendChild(el); pal = el;
   const input = $('#palq', el), out = $('#palr', el); let items = [], idx = 0, seq = 0;
   const close = () => { el.remove(); pal = null; };

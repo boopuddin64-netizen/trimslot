@@ -48,7 +48,7 @@ async function customers() {
     ['Bookings', (c) => c.bookings, 'num'], ['No-shows', (c) => c.no_shows, 'num'], ['Spent', (c) => naira(c.spent_kobo), 'num'], ['Joined', (c) => dshort(c.created_at)],
     ['', (c) => act('Open', 'sec', `data-do="open" data-id="${c.id}"`), 'act'],
   ];
-  app.innerHTML = head('Customers', 'Search by name, email, phone or id. Warn, suspend, ban or message a customer. Suspended and banned customers cannot log in or book.', refreshBtn) +
+  app.innerHTML = head('Customers', 'Search by name, email, phone or id. You can warn, suspend, ban or message a customer. Suspended and banned customers cannot log in or book.', refreshBtn) +
     `<div class="filters"><input type="search" id="cq" placeholder="Search customers" value="${esc(cq)}" aria-label="Search customers"><select id="cs" aria-label="Status"><option value="">Any status</option>${['ACTIVE', 'SUSPENDED', 'BANNED'].map((s) => `<option ${s === cst ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
      <p class="small muted">${r.counts.ALL} customers · ${r.counts.SUSPENDED} suspended · ${r.counts.BANNED} banned</p>` + table(cols, r.customers, 'No customers match.');
   let t; $('#cq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { cq = e.target.value.trim(); customers().then(() => { const i = $('#cq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }); }, 350); };
@@ -73,7 +73,7 @@ async function userSheet(id, reload) {
   if (isC) btns.push(act('Delete…', 'red', 'data-k="delete"'));
   const m = modal(`<div class="sh-h"><div><h2 style="margin:0">${esc(u.name)}</h2><div class="muted small">${esc(u.role)} · user #${u.id}</div></div><button class="btn sm sec" data-close>Close</button></div>
     <div class="row-badges">${acctBadge(u.account_status)} ${u.warn_count ? bd('b-gray', u.warn_count + ' warning' + (u.warn_count > 1 ? 's' : '')) : ''}</div>
-    ${u.status_reason ? `<div class="note"><b>Reason shown to the user</b>${esc(u.status_reason)}</div>` : ''}
+    ${u.status_reason ? `<div class="note"><b>The user sees this reason</b>${esc(u.status_reason)}</div>` : ''}
     <h3>Contact</h3>${kvr('Email', esc(u.email || '—'))}${kvr('Phone', esc(u.phone || '—'))}${kvr('Joined', dshort(u.created_at))}
     <h3>Activity</h3>${kvr('Bookings', r.stats.total)}${kvr('Completed', r.stats.completed)}${kvr('No-shows', r.stats.no_shows)}${kvr('Cancelled', r.stats.cancelled)}${r.balance ? kvr('Platform balance owed', naira(r.balance.owed_kobo)) : ''}
     <h3>Bookings</h3>${bk}${isC ? `<h3>Payments</h3>${pay}<h3>Session credits</h3>${cr}<h3>Plans</h3>${pl}` : ''}<h3>Reports</h3>${rp}<h3>Admin history</h3>${hist}
@@ -85,11 +85,11 @@ async function userSheet(id, reload) {
     const k = b.dataset.k; m.close();
     if (k === 'delete') { ADM4.deleteDialog({ type: 'customer', id, name: u.name, after: async () => { again(); } }); return; }
     const cfg = {
-      warn: { title: 'Warn ' + u.name, help: 'They get a notification with your message.', go: 'Send warning', fields: [REASON('Warning message (the customer sees this)', 'e.g. Please arrive on time or cancel early.')], submit: async (v) => { const x = await post(`/users/${id}/warn`, v); return 'Warning sent (' + x.warn_count + ' total)'; } },
-      suspend: { title: 'Suspend ' + u.name, help: 'They cannot log in or book until reinstated. Existing bookings are not touched.', go: 'Suspend', cls: 'red', fields: [REASON('Reason (the customer sees this)')], submit: async (v) => { await post(`/users/${id}/suspend`, v); return 'Customer suspended'; } },
-      ban: { title: 'Ban ' + u.name, help: 'A ban is for serious abuse. You can still reinstate later.', go: 'Ban customer', cls: 'red', fields: [REASON('Reason (the customer sees this)')], submit: async (v) => { await post(`/users/${id}/ban`, v); return 'Customer banned'; } },
-      notify: { title: 'Message ' + u.name, help: 'Appears in their in-app notifications.', go: 'Send message', fields: [{ name: 'title', label: 'Title (optional)', max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], submit: async (v) => { await post(`/users/${id}/notify`, v); return 'Message sent'; } },
-      credit: { title: 'Issue a session credit to ' + u.name, help: 'A same-barber credit, never cashable.', go: 'Issue credit', fields: [{ name: 'barber_id', label: 'Barber (shop id)', type: 'number', required: true, min: 1, ph: 'Shop id from the Barbers list' }, { name: 'value_naira', label: 'Value (₦)', type: 'number', required: true, step: 'any', min: 1 }, REASON()], submit: async (v) => { await post('/credits/issue', { customer_id: id, barber_id: v.barber_id, value_naira: v.value_naira, reason: v.reason }); return 'Credit issued'; } },
+      warn: { title: 'Warn ' + u.name, help: 'They get an alert with your message.', go: 'Send warning', fields: [REASON('Warning (the customer sees this)', 'For example: Please arrive on time or cancel early.')], submit: async (v) => { const x = await post(`/users/${id}/warn`, v); return 'Warning sent (' + x.warn_count + ' total)'; } },
+      suspend: { title: 'Suspend ' + u.name, help: 'They cannot log in or book until you reinstate them. Their bookings stay as they are.', go: 'Suspend', cls: 'red', fields: [REASON('Reason (the customer sees this)')], submit: async (v) => { await post(`/users/${id}/suspend`, v); return 'Customer suspended'; } },
+      ban: { title: 'Ban ' + u.name, help: 'Use a ban for serious abuse. You can still reinstate them later.', go: 'Ban customer', cls: 'red', fields: [REASON('Reason (the customer sees this)')], submit: async (v) => { await post(`/users/${id}/ban`, v); return 'Customer banned'; } },
+      notify: { title: 'Message ' + u.name, help: 'They see it in their alerts in the app.', go: 'Send message', fields: [{ name: 'title', label: 'Title (optional)', max: 80 }, { name: 'body', label: 'Message', type: 'textarea', required: true }], submit: async (v) => { await post(`/users/${id}/notify`, v); return 'Message sent'; } },
+      credit: { title: 'Issue a session credit to ' + u.name, help: 'A credit for one barber. It cannot be cashed out.', go: 'Issue credit', fields: [{ name: 'barber_id', label: 'Barber (shop id)', type: 'number', required: true, min: 1, ph: 'Shop id from the Barbers list' }, { name: 'value_naira', label: 'Value (₦)', type: 'number', required: true, step: 'any', min: 1 }, REASON()], submit: async (v) => { await post('/credits/issue', { customer_id: id, barber_id: v.barber_id, value_naira: v.value_naira, reason: v.reason }); return 'Credit issued'; } },
       reinstate: { title: 'Reinstate ' + u.name, help: 'They can log in and book again.', go: 'Reinstate', fields: [], submit: async () => { await post(`/users/${id}/reinstate`); return 'Customer reinstated'; } },
     }[k];
     formModal({ ...cfg, after: async () => { again(); } });
@@ -117,14 +117,14 @@ async function bookingSheet(id, reload) {
     const k = x.dataset.k; m.close();
     if (k === 'delete') { ADM4.deleteDialog({ type: 'booking', id, name: '#' + id, after }); return; }
     const cfg = {
-      cancel: { title: `Cancel booking #${id}`, help: 'Both the customer and the barber are notified with your reason.', go: 'Cancel booking', cls: 'red',
-        fields: [REASON('Reason (both sides see this)'), ...(b.payment_status === 'PAID' && b.payment_option === 'ONLINE' ? [{ name: 'refund', label: 'Paid online: what happens to the money?', type: 'select', options: [['refund', 'Refund to the customer'], ['credit', 'Give a session credit'], ['none', 'Neither (handle manually)']], value: 'refund' }] : [])],
+      cancel: { title: `Cancel booking #${id}`, help: 'We tell the customer and the barber. They both see your reason.', go: 'Cancel booking', cls: 'red',
+        fields: [REASON('Reason (the customer and barber see this)'), ...(b.payment_status === 'PAID' && b.payment_option === 'ONLINE' ? [{ name: 'refund', label: 'Paid online: what should happen to the money?', type: 'select', options: [['refund', 'Refund to the customer'], ['credit', 'Give a session credit'], ['none', 'Neither (handle manually)']], value: 'refund' }] : [])],
         submit: async (v) => { await post(`/bookings/${id}/cancel`, v); return 'Booking cancelled'; } },
-      reschedule: { title: `Reschedule booking #${id}`, help: 'Both sides are notified. The new time is checked against the barber\'s hours and other bookings.', go: 'Move booking',
-        fields: [{ name: 'date', label: 'New date', type: 'date', required: true, value: b.date.slice(0, 10) }, { name: 'time', label: 'New time', type: 'time', required: true }, { name: 'force', label: 'Allow outside working hours (overlaps are never allowed)', type: 'checkbox' }, REASON('Reason (both sides see this)')],
+      reschedule: { title: `Reschedule booking #${id}`, help: 'We tell both of them. We check the new time against the barber\'s hours and other bookings.', go: 'Move booking',
+        fields: [{ name: 'date', label: 'New date', type: 'date', required: true, value: b.date.slice(0, 10) }, { name: 'time', label: 'New time', type: 'time', required: true }, { name: 'force', label: 'Allow outside work hours (two bookings at one time are never allowed)', type: 'checkbox' }, REASON('Reason (the customer and barber see this)')],
         submit: async (v) => { await post(`/bookings/${id}/reschedule`, v); return 'Booking moved'; } },
-      noshow: { title: `Mark booking #${id} as no-show`, help: 'Paid sessions give the customer a credit (per the platform rules).', go: 'Mark no-show', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/bookings/${id}/no-show`, v); return 'Marked as no-show'; } },
-      complete: { title: `Force-complete booking #${id}`, help: 'Use when the barber forgot to finish it. Off-app bookings marked paid accrue the platform commission.', go: 'Complete booking',
+      noshow: { title: `Mark booking #${id} as no-show`, help: 'If the customer paid, they get a credit (as the platform rules say).', go: 'Mark no-show', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/bookings/${id}/no-show`, v); return 'Marked as no-show'; } },
+      complete: { title: `Force-complete booking #${id}`, help: 'Use this when the barber forgot to finish it. If the customer paid outside the app, we add the platform commission.', go: 'Complete booking',
         fields: [...(b.payment_status === 'PAYMENT_DUE' ? [{ name: 'paid', label: 'Pay on arrival: did the customer pay?', type: 'select', options: [['true', 'Yes, paid outside the app'], ['false', 'No, unpaid']], value: 'true' }] : []), REASON()],
         submit: async (v) => { const body = { reason: v.reason }; if (v.paid !== undefined) body.paid = v.paid === 'true'; const o = await post(`/bookings/${id}/complete`, body); return 'Booking completed' + (o.ledger_id ? ' · commission added to the barber\'s balance' : ''); } },
     }[k];
@@ -142,12 +142,12 @@ async function earnings() {
     ['Barber share', (b) => naira(b.barber_share_kobo), 'num'], ['Off-app bookings', (b) => `${b.offapp_bookings} · ${naira(b.offapp_value_kobo)}`, 'num'], ['Owed to platform', (b) => b.owed_kobo ? `<b style="color:var(--red)">${naira(b.owed_kobo)}</b>` : '—', 'num'],
   ];
   const t = r.totals;
-  app.innerHTML = head('Earnings', 'Online payments per barber for the period, what the platform kept, and what is still owed for off-app bookings.', refreshBtn) +
+  app.innerHTML = head('Earnings', 'Online payments for each barber in this time, what the platform kept, and what is still owed for bookings paid outside the app.', refreshBtn) +
     `<div class="filters"><input type="date" id="e-from" value="${er.from}" aria-label="From"><input type="date" id="e-to" value="${er.to}" aria-label="To"><button class="btn sm sec" id="e-go">Apply</button></div>
      <div class="tiles"><div class="tile"><span>Prices paid online</span><b>${naira(t.gross_kobo)}</b></div><div class="tile"><span>TrimSlot keeps (after Paystack)</span><b>${naira(t.platform_net_kobo)}</b></div><div class="tile"><span>Commission netted</span><b>${naira(t.netted_kobo)}</b></div><div class="tile ${t.owed_kobo ? 'alert' : ''}"><span>Owed (off-app)</span><b>${naira(t.owed_kobo)}</b></div></div>
      <p class="small muted">Example: a ₦3,000 pay-now booking has a ${naira(r.rules.example.booking_fee_kobo)} booking fee. The barber gets ${naira(r.rules.example.payout_kobo)}. The same booking paid on arrival owes ${naira(r.rules.example_commission_kobo)} (${Math.round(nn(r.rules.commission_factor) * 100)}% of the ${naira(r.rules.example_fee_kobo)} TrimSlot charge).</p>` +
     table(cols, r.barbers, 'No barbers yet.') +
-    `<h2>Export CSV</h2><div class="btns"><button class="btn sm sec" data-x="bookings">Bookings</button><button class="btn sm sec" data-x="payments">Payments</button><button class="btn sm sec" data-x="barbers">Barbers</button></div><p class="small muted">Bookings and payments use the date range above. Exports are logged.</p>`;
+    `<h2>Export CSV</h2><div class="btns"><button class="btn sm sec" data-x="bookings">Bookings</button><button class="btn sm sec" data-x="payments">Payments</button><button class="btn sm sec" data-x="barbers">Barbers</button></div><p class="small muted">Bookings and payments use the dates above. We keep a record of every export.</p>`;
   $('#e-go').onclick = () => { er = { from: $('#e-from').value || er.from, to: $('#e-to').value || er.to }; earnings(); };
   app.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { b.disabled = true; try { const n = b.dataset.x; await downloadCsv(`/export/${n}.csv?from=${er.from}&to=${er.to}`, `trimslot-${n}.csv`); toast('Export ready'); } catch (e) { toast(e.message, true); } b.disabled = false; });
   wireReload(earnings);
@@ -162,10 +162,10 @@ async function ledger() {
     ['Owed now', (b) => b.owed_kobo ? `<b style="color:var(--red)">${naira(b.owed_kobo)}</b>` : '₦0', 'num'], ['Accrued in total', (b) => naira(b.accrued_total_kobo), 'num'], ['Pay on arrival', (b) => b.blocked ? bd('b-red', 'DISABLED') : bd('b-green', 'ON')],
     ['', (b) => act('Ledger', 'sec', `data-do="open" data-id="${b.id}"`), 'act'],
   ];
-  app.innerHTML = head('Off-app commission ledger', 'Commission on bookings paid outside the app accrues here when the barber completes them. It is deducted automatically from the barber\'s next online payments (bookings and plan sales).', refreshBtn) +
+  app.innerHTML = head('Off-app commission ledger', 'Commission on bookings paid outside the app is added here when the barber completes them. We take it out of the barber\'s next online payments (bookings and plan sales).', refreshBtn) +
     `<div class="tiles"><div class="tile ${r.total_owed_kobo ? 'alert' : ''}"><span>Total owed to the platform</span><b>${naira(r.total_owed_kobo)}</b></div><div class="tile"><span>Commission rule</span><b>${Math.round(nn(ru.commission_factor) * 100)}%</b><small>of the in-app fee${ru.commission_enabled ? '' : ' (SWITCHED OFF)'}</small></div>
       <div class="tile"><span>Barber keeps at least</span><b>${ru.min_payout_percent}%</b><small>of each netted payment</small></div><div class="tile"><span>Pay-on-arrival limit</span><b>${ru.max_debt_kobo ? naira(ru.max_debt_kobo) : 'None'}</b><small>${ru.max_age_days ? 'or ' + ru.max_age_days + ' days old' : 'no age limit'} · <a href="#/controls">change</a></small></div></div>
-    <div class="btns"><button class="btn sm sec" id="remind-all">Send reminders now</button></div>` + table(cols, r.barbers, 'No commission has accrued yet.');
+    <div class="btns"><button class="btn sm sec" id="remind-all">Send reminders now</button></div>` + table(cols, r.barbers, 'No commission yet.');
   wireReload(ledger);
   $('#remind-all').onclick = async (e) => { e.target.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er2) { toast(er2.message, true); } e.target.disabled = false; };
   wireActions(app, { open: async (d) => { await ledgerSheet(Number(d.id), ledger); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); } });
@@ -184,11 +184,11 @@ async function ledgerSheet(id, reload) {
     const k = x.dataset.k;
     if (k === 'remind') { x.disabled = true; try { const o = await post('/ledger/remind', { barber_id: id }); toast(o.reminded ? 'Reminder sent' : 'Nothing owed'); } catch (e) { toast(e.message, true); } x.disabled = false; return; }
     m.close();
-    const amt = { name: 'amount_naira', label: 'Amount (₦)', type: 'number', step: 'any', min: 0.01, ph: 'Leave empty to use the full balance' };
+    const amt = { name: 'amount_naira', label: 'Amount (₦)', type: 'number', step: 'any', min: 0.01, ph: 'Leave empty to use the whole balance' };
     const copy = {
-      settle: ['Mark as settled', 'Use when the barber paid the platform outside the app (e.g. bank transfer). Oldest entries are cleared first.', 'Mark settled', ''],
-      waive: ['Waive balance', 'Forgive part or all of the balance. This is recorded and the barber is told.', 'Waive', 'red'],
-      adjust: ['Add adjustment', 'Adds a debit to the barber\'s balance (for example a correction or a fee).', 'Add to balance', ''],
+      settle: ['Mark as settled', 'Use this when the barber paid the platform outside the app (for example by bank transfer). We clear the oldest items first.', 'Mark settled', ''],
+      waive: ['Waive balance', 'Cancel part or all of the balance. We record this and tell the barber.', 'Waive', 'red'],
+      adjust: ['Add adjustment', 'Adds money the barber owes (for example to fix a mistake, or a fee).', 'Add to balance', ''],
     }[k];
     formModal({ title: copy[0] + ' — ' + (b.shop_name || ''), help: copy[1], go: copy[2], cls: copy[3], fields: [amt, REASON()], after: async () => { if (reload) await reload(); },
       submit: async (v) => { const body = { reason: v.reason }; if (v.amount_naira) body.amount_naira = v.amount_naira; else if (k === 'adjust') throw new Error('Enter the amount to add.'); else body.all = true; const o = await post(`/ledger/${id}/${k}`, body); return `${naira(o.applied_kobo)} ${k === 'adjust' ? 'added' : k === 'settle' ? 'settled' : 'waived'} · now owed ${naira(o.owed_kobo)}`; } });
@@ -198,7 +198,7 @@ async function ledgerSheet(id, reload) {
 /* ---------- broadcasts ---------- */
 async function broadcast() {
   const r = await api('/broadcasts'); drawNav('broadcast');
-  app.innerHTML = head('Broadcast', 'Send an in-app announcement to everyone in a group, or to one person. Suspended and banned users are skipped.') +
+  app.innerHTML = head('Broadcast', 'Send a message in the app to a whole group or to one person. Suspended and banned users do not get it.') +
     `<div class="card"><form id="bf"><div class="formgrid"><div><label>Send to</label><select name="audience"><option value="customers">All customers</option><option value="barbers">All barbers</option><option value="user">One user (by id)</option></select></div>
       <div id="uidbox" class="hidden"><label>User id</label><input name="user_id" type="number" min="1" placeholder="e.g. 12 (see Customers)"></div></div>
       <label>Title</label><input name="title" maxlength="80" required><label>Message</label><textarea name="body" rows="4" maxlength="500" required></textarea>
@@ -224,13 +224,13 @@ async function reports() {
     ['Booking', (x) => x.booking_id ? `<a href="#" data-b="${x.booking_id}">#${x.booking_id}</a>` : '—'], ['Filed', (x) => stamp(x.created_at)],
     ['', (x) => x.status === 'OPEN' ? act('Resolve', '', `data-do="res" data-id="${x.id}"`) + act('Dismiss', 'sec', `data-do="dis" data-id="${x.id}"`) : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), 'act'],
   ];
-  app.innerHTML = head('Reports', 'Complaints from customers and barbers. Resolve with a note; the reporter is told unless you uncheck it.', refreshBtn) +
+  app.innerHTML = head('Reports', 'Complaints from customers and barbers. Close each one with a note. We tell the person who reported it, unless you untick the box.', refreshBtn) +
     `<div class="pills">${['OPEN', 'RESOLVED', 'DISMISSED', 'ALL'].map((k) => `<button data-st="${k}" class="${rstat === k ? 'on' : ''}">${k[0] + k.slice(1).toLowerCase()} <span class="c">${k === 'ALL' ? r.counts.OPEN + r.counts.RESOLVED + r.counts.DISMISSED : r.counts[k]}</span></button>`).join('')}</div>` + table(cols, r.reports, rstat === 'OPEN' ? 'No open reports. 🎉' : 'Nothing here.');
   app.querySelectorAll('[data-st]').forEach((b) => b.onclick = () => { rstat = b.dataset.st; reports(); });
   app.querySelectorAll('[data-u]').forEach((a) => a.onclick = (e) => { e.preventDefault(); userSheet(Number(a.dataset.u), reports); });
   app.querySelectorAll('[data-b]').forEach((a) => a.onclick = (e) => { e.preventDefault(); bookingSheet(Number(a.dataset.b), reports); });
   wireReload(reports);
-  const close = (status) => (d) => { formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'Your note is saved and (optionally) sent to the person who filed it.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
+  const close = (status) => (d) => { formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'We save your note. You can also send it to the person who reported.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
     fields: [{ name: 'note', label: 'Resolution note', type: 'textarea', required: true, ph: 'What was done?' }, { name: 'notify_reporter', label: 'Tell the reporter', type: 'checkbox', value: true }], submit: async (v) => { await post(`/reports/${d.id}/resolve`, { status, note: v.note, notify_reporter: v.notify_reporter }); return 'Report ' + status.toLowerCase(); }, after: reports }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); };
   wireActions(app, { res: close('RESOLVED'), dis: close('DISMISSED') });
 }
@@ -244,45 +244,45 @@ const chart = (series, key, fmt, cls) => {
 };
 async function analytics() {
   const r = await api('/analytics?days=' + adays); drawNav('analytics'); const x = r.rates;
-  app.innerHTML = head('Analytics', `${dlabel(r.from)} to ${dlabel(r.to)}. Revenue counts confirmed online payments; bookings exclude abandoned checkouts.`, refreshBtn) +
+  app.innerHTML = head('Analytics', `${dlabel(r.from)} to ${dlabel(r.to)}. Revenue counts confirmed online payments. Bookings do not count checkouts that were left.`, refreshBtn) +
     `<div class="pills"><button data-d="7" class="${adays === 7 ? 'on' : ''}">Last 7 days</button><button data-d="30" class="${adays === 30 ? 'on' : ''}">Last 30 days</button></div>
      <div class="tiles"><div class="tile"><span>Bookings</span><b>${r.totals.bookings}</b></div><div class="tile"><span>Revenue</span><b>${naira(r.totals.revenue_kobo)}</b></div><div class="tile"><span>No-show rate</span><b>${x.no_show_pct}%</b><small>${x.no_show} of ${x.completed + x.no_show} served or missed</small></div><div class="tile"><span>Cancellation rate</span><b>${x.cancellation_pct}%</b><small>${x.cancelled} cancelled</small></div></div>
      <div class="tiles" style="grid-template-columns:repeat(2,1fr)"><div class="tile"><span>Incomplete payments</span><b>${x.incomplete_payment_pct}%</b><small>${x.online_incomplete} of ${x.online_attempts} online attempts</small></div><div class="tile"><span>Completed</span><b>${x.completed}</b></div></div>
      <h2>Bookings per day</h2><div class="card">${chart(r.series, 'bookings', (v) => v + ' booking' + (v === 1 ? '' : 's'))}</div>
      <h2>Revenue per day</h2><div class="card">${chart(r.series, 'revenue_kobo', naira, 'alt')}</div>
-     <h2>Top barbers</h2>` + table([['Shop', (b) => esc(b.shop_name)], ['Completed', (b) => b.completed, 'num'], ['Revenue', (b) => naira(b.revenue_kobo), 'num']], r.top_barbers, 'No activity in this period.', { row: (b) => ({ t: esc(b.shop_name), m: b.completed + ' completed', r: naira(b.revenue_kobo) }), title: (b) => b.shop_name });
+     <h2>Top barbers</h2>` + table([['Shop', (b) => esc(b.shop_name)], ['Completed', (b) => b.completed, 'num'], ['Revenue', (b) => naira(b.revenue_kobo), 'num']], r.top_barbers, 'Nothing happened in this time.', { row: (b) => ({ t: esc(b.shop_name), m: b.completed + ' completed', r: naira(b.revenue_kobo) }), title: (b) => b.shop_name });
   app.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { adays = Number(b.dataset.d); analytics(); });
   wireReload(analytics);
 }
 
 /* ---------- controls: maintenance, feature switches, commission ---------- */
 const SMART = [
-  ['feature_push', 'Push notifications', 'Real phone/desktop alerts for bookings, reminders, waitlist and messages. Off = in-app bell only.'],
-  ['feature_reminders', 'Reminders and "leave now" nudges', '2 hours and 30 minutes before, plus a nudge based on the live queue.'],
-  ['feature_favourites', 'Favourites', 'Customers can save barbers; they appear first.'],
-  ['feature_rebook', 'Book again', 'One-tap rebook suggestions on the customer home.'],
-  ['feature_waitlist', 'Waitlist', 'Customers can ask to be told when a slot opens on a full day.'],
-  ['feature_reviews', 'Ratings and reviews', 'Customers rate completed visits; barbers can reply.'],
-  ['feature_booking_note', 'Note to barber', 'Customers can add a short note when booking.'],
+  ['feature_push', 'Push notifications', 'Real alerts on phones and computers for bookings, reminders, the waitlist and messages. If it is off, people only see the bell in the app.'],
+  ['feature_reminders', 'Reminders and "leave now" nudges', 'Alerts 2 hours and 30 minutes before, and a reminder to leave based on the live line.'],
+  ['feature_favourites', 'Favourites', 'Customers can save barbers. Saved barbers show first.'],
+  ['feature_rebook', 'Book again', 'Quick "book again" ideas on the customer home page.'],
+  ['feature_waitlist', 'Waitlist', 'Customers can ask us to tell them when a time is free on a full day.'],
+  ['feature_reviews', 'Ratings and reviews', 'Customers rate finished visits. Barbers can reply.'],
+  ['feature_booking_note', 'Note to barber', 'Customers can add a short note when they book.'],
   ['feature_barber_notes', 'Barber private customer notes', 'Barbers keep private notes and see a customer\'s usual service.'],
-  ['feature_reliability', 'Customer reliability badge', 'Barbers see New / Reliable / Often misses based on past bookings.'],
-  ['feature_quick_actions', 'Barber quick actions', 'Running-late delay and one-tap queue messages.'],
-  ['feature_daily_summary', 'Barber daily summary', 'Today tiles: bookings, earnings, no-shows.'],
-  ['feature_loyalty', 'Loyalty credits (off by default)', 'Every Nth completed visit earns the customer a same-barber credit (values below).'],
+  ['feature_reliability', 'Customer reliability badge', 'Barbers see New, Reliable or Often misses, based on past bookings.'],
+  ['feature_quick_actions', 'Barber quick actions', '"I am late" delay and quick messages to the line.'],
+  ['feature_daily_summary', 'Barber daily summary', 'Today boxes: bookings, earnings, no-shows.'],
+  ['feature_loyalty', 'Loyalty credits (off by default)', 'Every Nth finished visit earns the customer a credit with that barber (amounts below).'],
 ];
 async function controls() {
   const [{ settings: s }, earn] = await Promise.all([api('/settings'), api('/earnings?from=' + today0() + '&to=' + today0())]); drawNav('controls');
   const sw = (k, l, sub) => `<label class="chk tog"><input type="checkbox" name="${k}" ${s[k] ? 'checked' : ''}> <span><b>${esc(l)}</b><small class="muted" style="display:block">${esc(sub)}</small></span></label>`;
-  app.innerHTML = head('Controls', 'Global switches take effect immediately. Per-barber pause, fee and ledger controls are in each barber\'s sheet.') +
+  app.innerHTML = head('Controls', 'These switches work at once for everyone. Pause, fee and balance controls for one barber are in that barber\'s sheet.') +
     `<div class="card ${s.maintenance_mode ? 'warnbox' : ''}"><form id="cf"><h2 style="margin-top:0">Platform</h2>
-      ${sw('maintenance_mode', 'Maintenance mode', 'Pauses ALL new bookings and plan purchases. Existing bookings and the barbers\' tools keep working. A banner is shown to customers.')}
+      ${sw('maintenance_mode', 'Maintenance mode', 'Stops ALL new bookings and plan purchases. Bookings you already have and the barbers\' tools keep working. Customers see a banner.')}
       <label>Maintenance message (shown to customers)</label><input name="maintenance_message" maxlength="200" value="${esc(s.maintenance_message)}">
-      <h2>Features</h2>${sw('feature_plans', 'Plans', 'Customers can buy and use session plans.')}${sw('feature_credits', 'Credits', 'Customers can spend session credits.')}${sw('feature_pay_on_arrival', 'Pay on arrival', 'Customers can book and pay cash or transfer at the shop.')}
+      <h2>Features</h2>${sw('feature_plans', 'Plans', 'Customers can buy and use session plans.')}${sw('feature_credits', 'Credits', 'Customers can use session credits.')}${sw('feature_pay_on_arrival', 'Pay on arrival', 'Customers can book and pay with cash or transfer at the shop.')}
       <h2>Notifications and smart features</h2><p class="small muted" style="margin:0 0 4px">Each one can be switched off instantly; nothing else changes. Push also needs the VAPID keys on the server (set).</p>
       ${SMART.map(([k, l, sub]) => sw(k, l, sub)).join('')}
       <div class="formgrid"><div><label>Loyalty: every Nth completed visit earns a credit</label><input type="number" name="loyalty_every_n" step="1" min="2" max="100" value="${esc(s.loyalty_every_n)}"></div>
       <div><label>Loyalty credit value (₦)</label><input type="number" name="loyalty_credit_naira" step="any" min="0" value="${esc(s.loyalty_credit_naira)}"></div></div>
-      <h2>Off-app commission</h2>${sw('commission_enabled', 'Charge commission on off-app bookings', 'Accrues when a pay-on-arrival booking is completed; netted against the barber\'s next online payments.')}
+      <h2>Off-app commission</h2>${sw('commission_enabled', 'Charge commission on off-app bookings', 'We add it when a pay-on-arrival booking is completed. We take it out of the barber\'s next online payments.')}
       <div class="formgrid"><div><label>Commission factor (0–1)</label><input type="number" name="commission_factor" step="0.05" min="0" max="1" value="${esc(s.commission_factor)}"><small class="muted">0.5 = half of the in-app platform fee. A ₦3,000 booking: in-app fee ${naira(earn.rules.example_fee_kobo)}.</small></div>
       <div><label>Barber keeps at least (% of a netted payment)</label><input type="number" name="min_barber_payout_percent" step="1" min="0" max="100" value="${esc(s.min_barber_payout_percent)}"></div>
       <div><label>Turn off pay on arrival above this debt (₦, 0 = no limit)</label><input type="number" name="ledger_max_debt_naira" step="any" min="0" value="${esc(s.ledger_max_debt_naira)}"></div>
@@ -294,7 +294,7 @@ async function controls() {
     for (const k of ['maintenance_mode', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', ...SMART.map((x) => x[0])]) body[k] = f[k].checked;
     body.maintenance_message = f.maintenance_message.value.trim();
     for (const k of ['loyalty_every_n', 'loyalty_credit_naira', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days']) body[k] = Number(f[k].value);
-    if (body.maintenance_mode && !s.maintenance_mode && !confirm('Turn maintenance mode ON? Customers will not be able to book until you turn it off.')) return;
+    if (body.maintenance_mode && !s.maintenance_mode && !confirm('Turn maintenance mode ON? Customers cannot book until you turn it off.')) return;
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
     try { await api('/settings', { method: 'PUT', body }); toast('Controls saved'); await controls(); } catch (e) { toast(e.message, true); b.disabled = false; }
   };
@@ -303,11 +303,11 @@ async function controls() {
 /* ---------- per-barber controls (called from the barber sheet) ---------- */
 function barberPause(b, reload) {
   if (b.booking_paused) return post(`/barbers/${b.id}/pause`, { paused: false }).then(() => { toast('Bookings resumed'); return reload(); });
-  formModal({ title: 'Pause new bookings — ' + b.shop_name, help: 'The shop stays visible but nobody can make a new booking. Existing bookings are not affected.', go: 'Pause bookings', cls: 'red', fields: [REASON('Reason (the barber sees this)')], submit: async (v) => { await post(`/barbers/${b.id}/pause`, { paused: true, reason: v.reason }); return 'New bookings paused'; }, after: reload });
+  formModal({ title: 'Pause new bookings — ' + b.shop_name, help: 'Customers still see the shop, but nobody can make a new booking. Bookings you already have stay the same.', go: 'Pause bookings', cls: 'red', fields: [REASON('Reason (the barber sees this)')], submit: async (v) => { await post(`/barbers/${b.id}/pause`, { paused: true, reason: v.reason }); return 'New bookings paused'; }, after: reload });
 }
 function barberFee(b, reload) {
   const has = b.fee_percent_override != null || b.fee_flat_kobo_override != null;
-  formModal({ title: 'Fee override — ' + b.shop_name, help: 'Replaces the platform fee for this barber (online payments, plan sales and the off-app commission base). Leave both empty to use the platform default.', go: 'Save fee', fields: [
+  formModal({ title: 'Fee override — ' + b.shop_name, help: 'Use these instead of the platform fee for this barber (for online payments, plan sales and commission on bookings paid outside the app). Leave both empty to use the usual platform fee.', go: 'Save fee', fields: [
     { name: 'percent', label: 'Fee percent (%)', type: 'number', step: 'any', min: 0, value: b.fee_percent_override ?? '' }, { name: 'flat_naira', label: 'Flat fee (₦)', type: 'number', step: 'any', min: 0, value: b.fee_flat_kobo_override != null ? b.fee_flat_kobo_override / 100 : '' },
     { name: 'reason', label: 'Reason (optional)', type: 'textarea', rows: 2 }], submit: async (v) => { await post(`/barbers/${b.id}/fee`, { percent: v.percent, flat_naira: v.flat_naira, reason: v.reason }); return has && v.percent == null && v.flat_naira == null ? 'Override cleared' : 'Fee saved'; }, after: reload });
 }
@@ -345,7 +345,7 @@ async function audit2(more) {
   const rows = r.entries.map((e) => `<div class="arow"><div><b>${esc(human(e.action))}</b> ${e.actor_role === 'admin' ? bd('b-blue', 'ADMIN') : bd('b-gray', String(e.actor_role).toUpperCase())}<div class="when">${stamp(e.created_at)}${e.booking_id ? ' · booking #' + e.booking_id : ''}</div></div>${e.details && Object.keys(e.details).length ? `<pre>${esc(JSON.stringify(e.details))}</pre>` : ''}</div>`).join('');
   const html = r.entries.length ? rows : '<div class="empty">No entries match.</div>';
   if (more) { $('#alist').insertAdjacentHTML('beforeend', html); const mb = $('#amore'); if (r.next_before) mb.dataset.before = r.next_before; else mb.remove(); return; }
-  app.innerHTML = head('Audit log', 'Everything an admin did, plus key platform events. Filter by action, text, person type or date.', refreshBtn) +
+  app.innerHTML = head('Audit log', 'Everything an admin did, plus key events. Filter by action, words, type of person or date.', refreshBtn) +
     `<div class="filters"><select id="a-action" aria-label="Action"><option value="">Any action</option>${r.actions.map((a) => `<option value="${esc(a)}" ${a === af.action ? 'selected' : ''}>${esc(human(a))}</option>`).join('')}</select>
       <input type="search" id="a-q" placeholder="Search text or booking #" value="${esc(af.q)}"><select id="a-actor" aria-label="Actor"><option value="">Any actor</option>${['admin', 'system', 'customer', 'barber'].map((a) => `<option ${a === af.actor ? 'selected' : ''}>${a}</option>`).join('')}</select>
       <input type="date" id="a-from" value="${esc(af.from)}" aria-label="From"><input type="date" id="a-to" value="${esc(af.to)}" aria-label="To">

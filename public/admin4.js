@@ -8,7 +8,7 @@ function pinDialog(message, o = {}) {
   return new Promise((resolve) => {
     let done = false; const fin = (v) => { if (done) return; done = true; m.close(); resolve(v); };
     const m = modal(`<form class="rform pinf" id="pinf" autocomplete="off" novalidate><h2 style="margin-top:0">${esc(o.title || 'Enter your admin PIN')}</h2>
-      <p class="muted small">${esc(o.help || 'This action cannot be undone, so it needs your 4-digit PIN.')}</p>
+      <p class="muted small">${esc(o.help || 'You cannot undo this, so we need your 4-digit PIN.')}</p>
       ${message ? `<div class="err" role="alert">${esc(message)}</div>` : ''}
       <label for="pinv">4-digit PIN</label><input id="pinv" class="pin" type="password" inputmode="numeric" pattern="\\d{4}" maxlength="4" autocomplete="one-time-code" aria-label="Admin PIN">
       <div class="btns end"><button type="button" class="btn sec" id="pinx">Cancel</button><button class="btn red" id="ping" type="submit" disabled>Confirm</button></div></form>`);
@@ -62,10 +62,10 @@ const LABEL = { customer: 'customer', barber: 'barber', booking: 'booking', plan
 function deleteDialog(o) {
   const hard = o.type === 'booking';
   const fields = [REASON('Reason (saved in the audit log)')];
-  if (o.type === 'customer' || o.type === 'barber') fields.push({ name: 'cancel_bookings', label: 'Also cancel their upcoming bookings (the other side is told, paid ones refunded)', type: 'checkbox' });
+  if (o.type === 'customer' || o.type === 'barber') fields.push({ name: 'cancel_bookings', label: 'Also cancel their upcoming bookings (we tell the other person, and paid ones get a refund)', type: 'checkbox' });
   return formModal({
     title: `Delete ${LABEL[o.type]}${o.name ? ' — ' + o.name : ''}`,
-    help: hard ? 'Bookings are removed permanently (only if nothing was paid and they are not live). Your PIN is required.' : 'Hidden everywhere right away. You can restore it for 30 days from Recently deleted. Your PIN is required.',
+    help: hard ? 'This deletes bookings for good. It only works if nothing was paid and they are not live. You need your PIN.' : 'Hidden everywhere right away. You can bring it back for 30 days from Recently deleted. You need your PIN.',
     go: hard ? 'Delete permanently' : 'Delete', cls: 'red', fields,
     submit: async (v) => { await post(`/delete/${o.type}/${o.id}`, { reason: v.reason, ...(v.cancel_bookings ? { cancel_bookings: true } : {}) }); return hard ? 'Booking deleted' : 'Deleted. Restorable for 30 days.'; },
     after: o.after,
@@ -77,9 +77,9 @@ window.ADM4 = { deleteDialog, pinDialog };
 const PIN_IC = '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>';
 async function pinPage() {
   const st = await _api('/pin/status'); drawNav('pin');
-  app.innerHTML = head('Admin PIN', 'A 4-digit PIN protects deletes, bans, refunds, ledger waive/adjust and other irreversible actions.') + (st.set ? `
+  app.innerHTML = head('Admin PIN', 'A 4-digit PIN protects deletes, bans, refunds, balance changes and other actions you cannot undo.') + (st.set ? `
     <div class="card"><div class="row between"><b>PIN is set</b><span class="badge b-green">ACTIVE</span></div>
-      <p class="small muted" style="margin:6px 0 0">Set ${esc(stamp(st.set_at))}. ${st.locked ? `<b>Locked for ${Math.ceil(st.retry_after_s / 60)} more minute(s)</b> after too many wrong tries.` : `${st.attempts_left} of 5 tries left before a 15-minute lock.`}</p></div>
+      <p class="small muted" style="margin:6px 0 0">Set ${esc(stamp(st.set_at))}. ${st.locked ? `<b>Locked for ${Math.ceil(st.retry_after_s / 60)} more minute(s)</b> after too many wrong tries.` : `${st.attempts_left} of 5 tries left. Then it locks for 15 minutes.`}</p></div>
     <form class="card rform" id="chg" autocomplete="off" novalidate><h2 style="margin-top:0">Change PIN</h2><div class="err hidden" id="cerr" role="alert"></div>
       <label for="p0">Current PIN</label><input id="p0" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off">
       <label for="p1">New PIN</label><input id="p1" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="new-password">
@@ -111,24 +111,24 @@ async function deletedPage() {
     ['Time left', (x) => x.days_left > 0 ? `${x.days_left} day${x.days_left === 1 ? '' : 's'} to restore` : bd('b-gray', 'RESTORE ENDED')],
     ['', (x) => (x.days_left > 0 ? act('Restore', '', `data-do="rs" data-t="${x.type}" data-id="${x.id}"`) : '') + act('Delete forever', 'red', `data-do="pg" data-t="${x.type}" data-id="${x.id}" data-n="${esc(x.label)}"`), 'act'],
   ];
-  app.innerHTML = head('Recently deleted', `Deleted customers, barbers, plans, reviews and reports can be restored for ${r.window_days} days. “Delete forever” needs your PIN and is refused when real payments are on record.`, refreshBtn) + table(cols, r.items, 'Nothing has been deleted.', { row: (x) => ({ t: esc(x.label), p: bd('b-gray', x.type), m: `Deleted ${dshort(x.deleted_at)} · ` + (x.days_left > 0 ? `${x.days_left} day${x.days_left === 1 ? '' : 's'} to restore` : 'restore ended') }), title: (x) => x.label });
+  app.innerHTML = head('Recently deleted', `You can bring back deleted customers, barbers, plans, reviews and reports for ${r.window_days} days. “Delete forever” needs your PIN. It does not work if there are real payments on record.`, refreshBtn) + table(cols, r.items, 'Nothing has been deleted.', { row: (x) => ({ t: esc(x.label), p: bd('b-gray', x.type), m: `Deleted ${dshort(x.deleted_at)} · ` + (x.days_left > 0 ? `${x.days_left} day${x.days_left === 1 ? '' : 's'} to restore` : 'restore ended') }), title: (x) => x.label });
   wireReload(deletedPage);
   wireActions(app, {
     rs: async (d) => { await post(`/restore/${d.t}/${d.id}`); toast('Restored'); deletedPage(); },
-    pg: async (d) => { formModal({ title: `Delete forever — ${d.n}`, help: 'This cannot be undone. Your PIN is required.', go: 'Delete forever', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/purge/${d.t}/${d.id}`, v); return 'Deleted forever'; }, after: deletedPage }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); },
+    pg: async (d) => { formModal({ title: `Delete forever — ${d.n}`, help: 'You cannot undo this. You need your PIN.', go: 'Delete forever', cls: 'red', fields: [REASON()], submit: async (v) => { await post(`/purge/${d.t}/${d.id}`, v); return 'Deleted forever'; }, after: deletedPage }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); },
   });
 }
 
 /* ---------- Test data ---------- */
 async function testDataPage() {
   const p = await _api('/testdata/preview'); drawNav('testdata');
-  app.innerHTML = head('Test data', 'Remove throwaway accounts (smoketest+…@example.com and perf…@perf.test) with everything they created. Real accounts can never match.', refreshBtn) + `
+  app.innerHTML = head('Test data', 'Remove test accounts (smoketest+…@example.com and perf…@perf.test) and everything they made. Real accounts never match.', refreshBtn) + `
     <div class="card"><h2 style="margin-top:0">Preview (nothing is deleted yet)</h2>
       ${kvr('Accounts', p.users)}${kvr('Customers', p.customers)}${kvr('Barbers', p.barbers)}${kvr('Bookings', p.bookings)}
       ${p.sample.length ? `<p class="small muted" style="margin:8px 0 0">e.g. ${p.sample.map(esc).join(', ')}</p>` : '<p class="small muted">No test data found.</p>'}
       <div class="btns end"><button class="btn red" id="tdgo" ${p.users ? '' : 'disabled'}>Delete test data…</button></div></div>`;
   wireReload(testDataPage);
-  const b = $('#tdgo'); if (b) b.onclick = () => formModal({ title: `Delete ${p.users} test account${p.users === 1 ? '' : 's'} forever`, help: `This also deletes ${p.bookings} booking${p.bookings === 1 ? '' : 's'} and their payments. Type DELETE TEST DATA to confirm; your PIN is asked next.`, go: 'Delete test data', cls: 'red', fields: [{ name: 'confirm', label: 'Type DELETE TEST DATA', required: true }], submit: async (v) => { if (v.confirm !== 'DELETE TEST DATA') throw new Error('Type DELETE TEST DATA exactly.'); const r = await post('/testdata/purge', { confirm: v.confirm }); return `Deleted ${r.users} account(s) and ${r.bookings} booking(s)`; }, after: testDataPage });
+  const b = $('#tdgo'); if (b) b.onclick = () => formModal({ title: `Delete ${p.users} test account${p.users === 1 ? '' : 's'} forever`, help: `This also deletes ${p.bookings} booking${p.bookings === 1 ? '' : 's'} and their payments. Type DELETE TEST DATA to confirm. Then we ask for your PIN.`, go: 'Delete test data', cls: 'red', fields: [{ name: 'confirm', label: 'Type DELETE TEST DATA', required: true }], submit: async (v) => { if (v.confirm !== 'DELETE TEST DATA') throw new Error('Type DELETE TEST DATA exactly.'); const r = await post('/testdata/purge', { confirm: v.confirm }); return `Deleted ${r.users} account(s) and ${r.bookings} booking(s)`; }, after: testDataPage });
 }
 
 IC.pin = PIN_IC; IC.deleted = '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'; IC.testdata = '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>';
@@ -136,4 +136,4 @@ GROUPS.find(([g]) => g === 'Settings')[1].push(['pin', 'Admin PIN'], ['deleted',
 Object.assign(ROUTES, { pin: pinPage, deleted: deletedPage, testdata: testDataPage });
 /* nudge on Home until a PIN exists */
 const _home = ROUTES.home || ROUTES.overview;
-ROUTES.home = async () => { await _home(); try { const s = await _api('/pin/status'); if (!s.set && location.hash.replace(/^#\/?/, '').split('?')[0] === 'home') app.insertAdjacentHTML('afterbegin', '<div class="warnbox card"><b>Set your admin PIN.</b> <span class="small">Deletes and other irreversible actions are blocked until you do. </span><a href="#/pin" class="btn sm">Set PIN</a></div>'); } catch { /* ignore */ } };
+ROUTES.home = async () => { await _home(); try { const s = await _api('/pin/status'); if (!s.set && location.hash.replace(/^#\/?/, '').split('?')[0] === 'home') app.insertAdjacentHTML('afterbegin', '<div class="warnbox card"><b>Set your admin PIN.</b> <span class="small">You cannot delete or do other final actions until you do. </span><a href="#/pin" class="btn sm">Set PIN</a></div>'); } catch { /* ignore */ } };

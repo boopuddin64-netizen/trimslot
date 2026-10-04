@@ -17,11 +17,11 @@ const ic = (d) => `<svg class="i sm" viewBox="0 0 24 24" aria-hidden="true">${d}
 async function api(path, opts = {}) {
   const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + getKey(), ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   let j = {}; try { j = await r.json(); } catch { /* empty */ }
-  if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Session ended. Sign in again.'); }
-  if (!r.ok) { const e = new Error(j.error?.message || 'Request failed'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
+  if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Your log-in ended. Please sign in again.'); }
+  if (!r.ok) { const e = new Error(j.error?.message || 'That did not work. Try again.'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
   return j;
 }
-function signOut(silent) { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } showLogin(silent ? 'Sign in again to continue.' : ''); }
+function signOut(silent) { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } showLogin(silent ? 'Sign in again to go on.' : ''); }
 
 /* ---------- badges ---------- */
 const bd = (cls, t) => `<span class="badge ${cls}">${esc(t)}</span>`;
@@ -45,7 +45,7 @@ function openRowSheet(cols, r, o) {
   const acts = o.acts || [];
   const m = modal(`<div class="sh-h"><div class="shtitle">${o.title ? esc(o.title) : f0(r)}</div><button class="btn sm sec" data-close>Close</button></div>
     ${o.pills ? `<div class="row-badges">${o.pills}</div>` : ''}<h3>Details</h3>${kv}
-    <div class="btns end sticky">${acts.map((a, i) => `<button class="btn ${a.cls}" data-ai="${i}">${esc(a.label)}</button>`).join('') || '<span class="muted small">No actions available.</span>'}</div>`);
+    <div class="btns end sticky">${acts.map((a, i) => `<button class="btn ${a.cls}" data-ai="${i}">${esc(a.label)}</button>`).join('') || '<span class="muted small">There is nothing you can do here.</span>'}</div>`);
   m.el.querySelectorAll('[data-ai]').forEach((x) => x.onclick = () => { m.close(); acts[Number(x.dataset.ai)].run(); });
   m.el.querySelectorAll('[data-u]').forEach((x) => x.onclick = (e) => { e.preventDefault(); m.close(); userSheet(Number(x.dataset.u), o.reload || (() => route())); });
   m.el.querySelectorAll('[data-b]').forEach((x) => x.onclick = (e) => { e.preventDefault(); m.close(); bookingSheet(Number(x.dataset.b), o.reload || (() => route())); });
@@ -125,7 +125,7 @@ async function overview() {
   const o = await api('/overview');
   badges = { ...badges, pending: o.barbers_pending, decisions: o.awaiting_decision, refunds: o.refunds_open, reports: o.reports_open || 0 }; drawNav('overview');
   const tile = (l, v, s, href, alert) => `<div class="tile ${alert ? 'alert' : ''}">${href ? `<a href="${href}">` : ''}<span>${l}</span><b>${v}</b>${s ? `<small>${s}</small>` : ''}${href ? '</a>' : ''}</div>`;
-  app.innerHTML = head('Overview', 'Today is ' + dlabel(o.today) + '. Amounts are in Nigerian naira.', refreshBtn) +
+  app.innerHTML = head('Overview', 'Today is ' + dlabel(o.today) + '. All money is in Naira (₦).', refreshBtn) +
     `<div class="tiles">${tile('Barbers', o.barbers_verified, 'verified and live')}${tile('Awaiting review', o.barbers_pending, o.barbers_pending ? 'Review now' : 'All caught up', '#/barbers', o.barbers_pending > 0)}
       ${tile('Customers', o.customers)}${tile('Bookings today', o.bookings_today, o.bookings_total + ' all time')}
       ${tile('Revenue', naira(o.revenue_kobo), naira(o.revenue_30d_kobo) + ' last 30 days')}${tile('Platform fees', naira(o.fees_kobo), 'of paid online payments')}
@@ -186,9 +186,9 @@ async function barberDetail(id, reload) {
     if (k === 'approve') { x.disabled = true; try { await call('approve'); await done('Barber approved'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
     if (k === 'reinstate') { x.disabled = true; try { await call('reinstate'); await done('Barber reinstated'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
     const cfg = {
-      reject: { title: 'Reject ' + b.shop_name, help: 'The barber sees this reason and can fix things and resubmit.', label: 'Reason (shown to the barber)', ph: 'e.g. Please add a clear shop photo and your real address.', go: 'Reject shop', cls: 'red', path: 'reject', key: 'reason', ok: 'Barber rejected' },
-      info: { title: 'Ask ' + b.shop_name + ' for more information', help: 'The barber gets a notification with your message and can resubmit once updated.', label: 'Message to the barber', ph: 'e.g. Please add at least one service with prices.', go: 'Send request', path: 'request-info', key: 'message', ok: 'Request sent' },
-      suspend: { title: 'Suspend ' + b.shop_name, help: 'The shop is hidden from customers and cannot take new bookings. You can reinstate it later.', label: 'Reason (shown to the barber)', ph: 'e.g. Complaints about no-shows.', go: 'Suspend shop', cls: 'red', path: 'suspend', key: 'reason', ok: 'Barber suspended' },
+      reject: { title: 'Reject ' + b.shop_name, help: 'The barber sees this reason. They can fix things and send their details again.', label: 'Reason (the barber sees this)', ph: 'For example: Please add a clear shop photo and your real address.', go: 'Reject shop', cls: 'red', path: 'reject', key: 'reason', ok: 'Barber rejected' },
+      info: { title: 'Ask ' + b.shop_name + ' for more information', help: 'The barber gets an alert with your message. They can send their details again after they update them.', label: 'Message to the barber', ph: 'For example: Please add at least one service with a price.', go: 'Send request', path: 'request-info', key: 'message', ok: 'Request sent' },
+      suspend: { title: 'Suspend ' + b.shop_name, help: 'Customers cannot see this shop or book it. You can reinstate it later.', label: 'Reason (the barber sees this)', ph: 'For example: Many complaints about no-shows.', go: 'Suspend shop', cls: 'red', path: 'suspend', key: 'reason', ok: 'Barber suspended' },
     }[k];
     m.close();
     const f = modal(reasonForm(cfg)); const txt = $('#rtxt', f.el); txt.focus();
@@ -203,7 +203,7 @@ async function barberDetail(id, reload) {
             <p class="small" style="margin:8px 0 0">Nothing is cancelled unless you choose it. Customers are notified either way.</p>
             <div class="btns end" style="margin-top:8px"><button type="button" class="btn sm sec" id="keepb">Suspend, keep bookings</button><button type="button" class="btn sm red" id="cancelb">Suspend and cancel ${n}</button></div></div>`;
           $('#keepb', f.el).onclick = () => send({ bookings: 'keep' });
-          $('#cancelb', f.el).onclick = () => { if (confirm(`Cancel ${n} booking${n === 1 ? '' : 's'}? Customers are told and paid ones are refunded.`)) send({ bookings: 'cancel' }); };
+          $('#cancelb', f.el).onclick = () => { if (confirm(`Cancel ${n} booking${n === 1 ? '' : 's'}? We tell the customers. Paid ones get a refund.`)) send({ bookings: 'cancel' }); };
           go.classList.add('hidden');
         } else { const er = $('#rerr', f.el); er.textContent = e.message; er.classList.remove('hidden'); }
       }
@@ -225,9 +225,9 @@ async function barbers() {
     ['Joined', (b) => dshort(b.created_at)],
     ['', (b) => act('Details', 'sec', `data-do="detail" data-id="${b.id}"`) + (['PENDING', 'NEEDS_INFO', 'REJECTED'].includes(b.review_status) ? act('Approve', '', `data-do="approve" data-id="${b.id}"`) : b.review_status === 'VERIFIED' ? act('Suspend', 'red', `data-do="detail" data-id="${b.id}"`) : act('Reinstate', '', `data-do="reinstate" data-id="${b.id}"`)), 'act'],
   ];
-  app.innerHTML = head('Barbers', 'Only verified shops are visible and bookable. Review new signups, ask for more information, reject with a reason, or suspend a live shop (reversible).', refreshBtn) +
+  app.innerHTML = head('Barbers', 'Customers only see shops you have verified. Check new sign-ups, ask for more information, reject with a reason, or suspend a live shop. You can undo a suspension.', refreshBtn) +
     `<div class="pills" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" class="${btab === k ? 'on' : ''}">${l} <span class="c">${r.counts[k === 'ALL' ? 'ALL' : k] || 0}</span></button>`).join('')}</div>` +
-    table(cols, rows, btab === 'PENDING' ? 'No shops waiting for review.' : 'No barbers in this state.');
+    table(cols, rows, btab === 'PENDING' ? 'No shops are waiting for review.' : 'No barbers here.');
   wireReload(barbers);
   app.querySelectorAll('[data-tab]').forEach((x) => x.onclick = () => { btab = x.dataset.tab; barbers(); });
   wireActions(app, {
@@ -248,7 +248,7 @@ async function bookings() {
     ['Price', (b) => naira(b.price_kobo), 'num'], ['#', (b) => '#' + b.id, 'num'],
     ['', (b) => act('Manage', 'sec', `data-do="manage" data-id="${b.id}"`), 'act'],
   ];
-  app.innerHTML = head('Bookings', 'Newest first, up to 100 results.', refreshBtn) +
+  app.innerHTML = head('Bookings', 'Newest first. Shows up to 100.', refreshBtn) +
     `<div class="filters"><input type="date" id="f-date" value="${esc(bf.date)}" aria-label="Date"><select id="f-barber" aria-label="Barber"><option value="">All barbers</option>${bs.barbers.map((b) => `<option value="${b.id}" ${String(b.id) === bf.barber_id ? 'selected' : ''}>${esc(b.shop_name)}</option>`).join('')}</select>
       <select id="f-status" aria-label="Status"><option value="">Any status</option>${['CONFIRMED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'NOT_SERVED', 'PENDING_PAYMENT'].map((s) => `<option value="${s}" ${s === bf.status ? 'selected' : ''}>${s === 'PENDING_PAYMENT' ? 'NOT CONFIRMED' : s.replace('_', ' ')}</option>`).join('')}</select>
       <button class="btn sm sec" id="f-clear">Clear</button></div>` + table(cols, r.bookings, 'No bookings match these filters.');
@@ -272,15 +272,15 @@ async function payments() {
     ['', (p) => (p.status === 'SUCCESS' ? act(p.disputed ? 'Clear flag' : 'Flag', 'sec', `data-do="flag" data-ref="${esc(p.reference)}" data-on="${p.disputed ? 0 : 1}"`) : '') + (p.refund_status === 'NEEDS_REFUND' ? act('Retry refund', '', `data-do="retry" data-ref="${esc(p.reference)}"`) + act('Mark refunded', 'sec', `data-do="mark" data-ref="${esc(p.reference)}"`) : p.refund_status === 'REFUND_REQUESTED' ? act('Mark refunded', 'sec', `data-do="mark" data-ref="${esc(p.reference)}"`) : ''), 'act'],
   ];
   const f = (k, l) => `<button data-f="${k}" class="${payFilter === k ? 'on' : ''}">${l}</button>`;
-  app.innerHTML = head('Payments', 'Refunds are requested from Paystack automatically. If that fails, retry it here or mark it refunded once you paid the customer back yourself.', refreshBtn) +
+  app.innerHTML = head('Payments', 'We ask Paystack for refunds by ourselves. If that fails, try again here. Or mark it as refunded after you pay the customer back yourself.', refreshBtn) +
     `<div class="tiles"><div class="tile"><span>Paid</span><b>${r.summary.paid}</b></div><div class="tile"><span>Failed</span><b>${r.summary.failed}</b></div><div class="tile"><span>Initiated, not paid</span><b>${r.summary.initiated}</b></div><div class="tile ${r.summary.open_refunds ? 'alert' : ''}"><span>Refunds to action</span><b>${r.summary.open_refunds}</b></div></div>
-    <div class="pills">${f('needs_refund', 'Needs refund')}${f('paid', 'Paid')}${f('failed', 'Failed')}${f('initiated', 'Not paid')}${f('refunds', 'All refunds')}${f('all', 'All')}</div>` + table(cols, r.payments, payFilter === 'needs_refund' ? 'No refunds waiting.' : 'No payments in this view.');
+    <div class="pills">${f('needs_refund', 'Needs refund')}${f('paid', 'Paid')}${f('failed', 'Failed')}${f('initiated', 'Not paid')}${f('refunds', 'All refunds')}${f('all', 'All')}</div>` + table(cols, r.payments, payFilter === 'needs_refund' ? 'No refunds waiting.' : 'No payments here.');
   document.querySelectorAll('.pills [data-f]').forEach((b) => b.onclick = () => { payFilter = b.dataset.f; payments(); });
   wireReload(payments);
   wireActions(app, {
-    flag: async (d) => { const on = d.on === '1'; if (!on) { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return payments(); } ADM2.formModal({ title: 'Flag payment as disputed', help: 'A private marker for follow-up (e.g. a chargeback or a customer claim). It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: payments }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); },
+    flag: async (d) => { const on = d.on === '1'; if (!on) { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return payments(); } ADM2.formModal({ title: 'Flag payment as disputed', help: 'A private mark so you remember to follow up (for example a chargeback or a customer claim). It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: payments }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); },
     retry: async (d) => { const x = await api(`/payments/${encodeURIComponent(d.ref)}/retry-refund`, { method: 'POST', body: {} }); toast(x.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (x.refund_error || 'try again later'), x.result !== 'requested'); await payments(); },
-    mark: async (d) => { if (!confirm('Mark this payment as refunded? Only do this after the customer has been paid back.')) throw new Error('Not changed'); await api(`/payments/${encodeURIComponent(d.ref)}/mark-refunded`, { method: 'POST', body: {} }); toast('Marked as refunded'); await payments(); },
+    mark: async (d) => { if (!confirm('Mark this payment as refunded? Do this only after you paid the customer back.')) throw new Error('Not changed'); await api(`/payments/${encodeURIComponent(d.ref)}/mark-refunded`, { method: 'POST', body: {} }); toast('Marked as refunded'); await payments(); },
   });
 }
 
@@ -293,11 +293,11 @@ async function decisions() {
     ['Paid', (b) => naira(b.price_kobo), 'num'], ['Cancelled', (b) => stamp(b.cancelled_at)],
     ['', (b) => act('Convert to credit', 'sec', `data-do="credit" data-id="${b.id}"`) + act('Refund', '', `data-do="refund" data-id="${b.id}"`), 'act'],
   ];
-  app.innerHTML = head('Refund decisions', `Paid bookings cancelled in time wait here. A credit is a same-barber session valid ${r.credit_expiry_days} days; a refund goes back to the customer's card and the customer is told.`, refreshBtn) + table(cols, r.bookings, 'Nothing is waiting for a decision.', { row: (b) => ({ t: esc(b.customer_name), p: bd('b-amber', 'AWAITING'), m: `${esc(b.service_name)} · ${esc(b.shop_name)} · ${dlabel(b.date)}, ${t12(b.start_min)}`, r: naira(b.price_kobo) }), title: (b) => b.customer_name });
+  app.innerHTML = head('Refund decisions', `Paid bookings that were cancelled in time wait here. A credit is one session with the same barber. It works for ${r.credit_expiry_days} days. A refund goes back to the customer's card, and we tell the customer.`, refreshBtn) + table(cols, r.bookings, 'Nothing needs a decision.', { row: (b) => ({ t: esc(b.customer_name), p: bd('b-amber', 'AWAITING'), m: `${esc(b.service_name)} · ${esc(b.shop_name)} · ${dlabel(b.date)}, ${t12(b.start_min)}`, r: naira(b.price_kobo) }), title: (b) => b.customer_name });
   wireReload(decisions);
   wireActions(app, {
     credit: async (d) => { await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'credit' } }); toast('Converted to a session credit'); await decisions(); },
-    refund: async (d) => { if (!confirm('Refund this payment to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund; the gateway call failed, retry from Payments' : 'Refund requested'); await decisions(); },
+    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions(); },
   });
 }
 
@@ -314,13 +314,13 @@ async function plans() {
     ['Status', (p) => p.status === 'CANCELLED' ? bd('b-red', 'CANCELLED') : p.live ? bd('b-green', 'ACTIVE') : bd('b-gray', p.sessions_used >= p.sessions_total ? 'USED UP' : 'ENDED')],
     ['', (p) => p.status === 'ACTIVE' ? act('Adjust', 'sec', `data-do="padj" data-id="${p.id}"`) + act('Cancel', 'red', `data-do="pcan" data-id="${p.id}"`) : '', 'act'],
   ];
-  app.innerHTML = head('Plans', 'What barbers sell and what customers have bought.', refreshBtn) + `<h2>Plans on offer</h2>${table(pc, r.plans, 'No plans yet.')}<h2>Purchases</h2>${table(uc, r.purchases, 'No purchases yet.')}`;
+  app.innerHTML = head('Plans', 'What barbers sell and what customers bought.', refreshBtn) + `<h2>Plans on offer</h2>${table(pc, r.plans, 'No plans yet.')}<h2>Purchases</h2>${table(uc, r.purchases, 'No purchases yet.')}`;
   wireReload(plans);
   const unlock = () => app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false);
   wireActions(app, {
-    vis: async (d) => { const on = d.on === '1'; ADM2.formModal({ title: (on ? 'Restore plan ' : 'Hide plan ') + d.n, help: on ? 'The plan goes back on sale.' : 'Customers can no longer buy it. Existing purchases keep working. The barber is told.', go: on ? 'Restore' : 'Hide plan', fields: [ADM2.REASON()], submit: async (v) => { await ADM2.post(`/plans/${d.id}/visibility`, { active: on, reason: v.reason }); return on ? 'Plan restored' : 'Plan hidden'; }, after: plans }); unlock(); },
-    padj: async (d) => { ADM2.formModal({ title: 'Adjust plan purchase #' + d.id, help: 'Add or remove sessions and/or extend the expiry. The customer is told.', go: 'Apply', fields: [{ name: 'delta', label: 'Sessions to add (negative removes)', type: 'number', step: 1, ph: '0' }, { name: 'extend_days', label: 'Extend expiry by (days, negative shortens)', type: 'number', step: 1, ph: '0' }, ADM2.REASON()], submit: async (v) => { await ADM2.post(`/plan-purchases/${d.id}/adjust`, { reason: v.reason, delta: v.delta || undefined, extend_days: v.extend_days || undefined }); return 'Plan purchase updated'; }, after: plans }); unlock(); },
-    pcan: async (d) => { ADM2.formModal({ title: 'Cancel plan purchase #' + d.id, help: 'Ends the plan. Tick refund to flag the payment for a refund (requested from Paystack at once).', go: 'Cancel purchase', cls: 'red', fields: [{ name: 'refund', label: 'Also refund the payment', type: 'checkbox' }, ADM2.REASON()], submit: async (v) => { const o = await ADM2.post(`/plan-purchases/${d.id}/cancel`, { reason: v.reason, refund: v.refund }); return 'Purchase cancelled' + (o.refund === 'requested' ? ' · refund requested' : o.refund === 'failed' ? ' · refund could not be requested, see Payments' : ''); }, after: plans }); unlock(); },
+    vis: async (d) => { const on = d.on === '1'; ADM2.formModal({ title: (on ? 'Restore plan ' : 'Hide plan ') + d.n, help: on ? 'The plan is for sale again.' : 'Customers can no longer buy it. People who already bought it keep their plan. We tell the barber.', go: on ? 'Restore' : 'Hide plan', fields: [ADM2.REASON()], submit: async (v) => { await ADM2.post(`/plans/${d.id}/visibility`, { active: on, reason: v.reason }); return on ? 'Plan restored' : 'Plan hidden'; }, after: plans }); unlock(); },
+    padj: async (d) => { ADM2.formModal({ title: 'Adjust plan purchase #' + d.id, help: 'Add or remove sessions, or make the plan last longer. We tell the customer.', go: 'Apply', fields: [{ name: 'delta', label: 'Sessions to add (use a minus to remove)', type: 'number', step: 1, ph: '0' }, { name: 'extend_days', label: 'Make it last longer by (days; use a minus to shorten)', type: 'number', step: 1, ph: '0' }, ADM2.REASON()], submit: async (v) => { await ADM2.post(`/plan-purchases/${d.id}/adjust`, { reason: v.reason, delta: v.delta || undefined, extend_days: v.extend_days || undefined }); return 'Plan purchase updated'; }, after: plans }); unlock(); },
+    pcan: async (d) => { ADM2.formModal({ title: 'Cancel plan purchase #' + d.id, help: 'This ends the plan. Tick refund to mark the payment for a refund. We ask Paystack right away.', go: 'Cancel purchase', cls: 'red', fields: [{ name: 'refund', label: 'Also refund the payment', type: 'checkbox' }, ADM2.REASON()], submit: async (v) => { const o = await ADM2.post(`/plan-purchases/${d.id}/cancel`, { reason: v.reason, refund: v.refund }); return 'Purchase cancelled' + (o.refund === 'requested' ? ' · refund requested' : o.refund === 'failed' ? ' · we could not ask for the refund. See Payments.' : ''); }, after: plans }); unlock(); },
   });
 }
 
@@ -332,23 +332,23 @@ async function credits() {
     ['Status', (c) => c.status === 'USED' ? bd('b-gray', 'USED') : c.status === 'REVOKED' ? bd('b-red', 'REVOKED') : c.live ? bd('b-purple', 'AVAILABLE') : bd('b-gray', 'EXPIRED')],
     ['', (c) => c.status === 'AVAILABLE' ? act('Revoke', 'sec', `data-do="rev" data-id="${c.id}"`) : '', 'act'],
   ];
-  app.innerHTML = head('Credits', 'Same-barber session credits. They are never cashable. Issue one to a customer from their profile (Customers).', refreshBtn) + table(cols, r.credits, 'No credits issued yet.');
+  app.innerHTML = head('Credits', 'Session credits for one barber. People cannot cash them out. To give one, open the customer\'s profile in Customers.', refreshBtn) + table(cols, r.credits, 'No credits issued yet.');
   wireReload(credits);
-  wireActions(app, { rev: async (d) => { ADM2.formModal({ title: 'Revoke credit #' + d.id, help: 'The customer is told their credit was removed.', go: 'Revoke credit', cls: 'red', fields: [ADM2.REASON()], submit: async (v) => { await ADM2.post(`/credits/${d.id}/revoke`, v); return 'Credit revoked'; }, after: credits }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); } });
+  wireActions(app, { rev: async (d) => { ADM2.formModal({ title: 'Revoke credit #' + d.id, help: 'We tell the customer that their credit was removed.', go: 'Revoke credit', cls: 'red', fields: [ADM2.REASON()], submit: async (v) => { await ADM2.post(`/credits/${d.id}/revoke`, v); return 'Credit revoked'; }, after: credits }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); } });
 }
 
 const FIELDS = [
   ['min_plan_price_naira', 'Minimum plan price (₦)', 'number'], ['max_plan_price_naira', 'Maximum plan price (₦)', 'number'],
   ['max_plan_validity_days', 'Maximum plan duration (days)', 'number'], ['max_plan_sessions', 'Maximum sessions per plan', 'number'],
   ['credit_expiry_days', 'Credit expiry (days)', 'number'], ['plan_refund_policy', 'Unused plan sessions', 'select'],
-  ['credit_on_missed_session', 'A missed paid session (no-show or late cancel) gives 1 credit', 'checkbox'],
+  ['credit_on_missed_session', 'If a customer misses a paid session (no-show or late cancel), they get 1 credit', 'checkbox'],
 ];
 async function rules() {
   const { settings: s } = await api('/settings'); drawNav('rules');
   const el = (k, l, t) => t === 'checkbox' ? `<label class="chk"><input type="checkbox" name="${k}" ${s[k] ? 'checked' : ''}> ${esc(l)}</label>`
     : t === 'select' ? `<div><label>${esc(l)}</label><select name="${k}"><option value="NONE" ${s[k] === 'NONE' ? 'selected' : ''}>No refund</option><option value="MANUAL" ${s[k] === 'MANUAL' ? 'selected' : ''}>Case by case</option></select></div>`
       : `<div><label>${esc(l)}</label><input type="number" step="any" min="0" name="${k}" value="${esc(s[k])}"></div>`;
-  app.innerHTML = head('Platform rules', 'Barbers cannot create plans outside these limits. Changes apply to new plans and new bookings.') +
+  app.innerHTML = head('Platform rules', 'Barbers cannot make plans outside these limits. A change counts for new plans and new bookings.') +
     `<div class="card"><form id="rf"><div class="formgrid">${FIELDS.filter((f) => f[2] !== 'checkbox').map(([k, l, t]) => el(k, l, t)).join('')}</div>${FIELDS.filter((f) => f[2] === 'checkbox').map(([k, l, t]) => el(k, l, t)).join('')}
       <div class="btns cta"><button class="btn" type="submit">Save rules</button></div><p class="small muted" style="margin:8px 0 0">Last saved ${stamp(s.updated_at)}</p></form></div>`;
   $('#rf').onsubmit = async (ev) => {
@@ -362,7 +362,7 @@ async function rules() {
 const ACTION_TXT = { SETTINGS_UPDATED: 'Platform rules updated', ADMIN_BARBER_VERIFIED: 'Barber approved', ADMIN_BARBER_SUSPENDED: 'Barber suspended', ADMIN_BARBER_REINSTATED: 'Barber reinstated', ADMIN_BARBER_REJECTED: 'Barber rejected', ADMIN_BARBER_INFO_REQUESTED: 'More information requested', ADMIN_BOOKING_CANCELLED_SUSPENSION: 'Booking cancelled (shop suspended)', BARBER_RESUBMITTED: 'Barber resubmitted for review', ADMIN_REFUND_RETRIED: 'Refund retried', ADMIN_MARKED_REFUNDED: 'Marked as refunded', ADMIN_RESOLVED_CREDIT: 'Cancellation converted to credit', ADMIN_RESOLVED_REFUND: 'Cancellation refunded', BARBER_SIGNUP: 'Barber signed up', BARBER_VERIFIED: 'Barber verified (CLI)', BARBER_UNVERIFIED: 'Barber unverified (CLI)' };
 async function audit() {
   const r = await api('/audit'); drawNav('audit');
-  app.innerHTML = head('Audit log', 'Admin actions and key platform events, newest first.', refreshBtn) +
+  app.innerHTML = head('Audit log', 'What admins did and key events, newest first.', refreshBtn) +
     (r.entries.length ? `<div class="card log">${r.entries.map((e) => `<div style="padding:8px 0;border-top:1px solid var(--line)"><b>${esc(ACTION_TXT[e.action] || e.action)}</b> ${e.actor_role === 'admin' ? bd('b-blue', 'ADMIN') : ''}<div class="when">${stamp(e.created_at)}${e.booking_id ? ' · booking #' + e.booking_id : ''}</div>${e.details ? `<pre>${esc(JSON.stringify(e.details))}</pre>` : ''}</div>`).join('')}</div>` : '<div class="empty">No entries yet.</div>');
   wireReload(audit);
 }
@@ -398,7 +398,7 @@ $('#lf').onsubmit = async (ev) => {
   try {
     const r = await fetch('/api/admin/login', { method: 'POST', headers: { Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(r.status === 401 ? 'That key is not right.' : j.error?.message || 'Could not sign in.');
+    if (!r.ok) throw new Error(r.status === 401 ? 'That key is wrong.' : j.error?.message || 'Could not sign in.');
     sessionStorage.setItem(KEY, k); $('#key').value = ''; location.hash = '#/home'; route();
   } catch (e) { showLogin(e.message); } finally { b.disabled = false; }
 };
