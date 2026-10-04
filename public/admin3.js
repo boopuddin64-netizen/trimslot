@@ -306,14 +306,14 @@ document.addEventListener('click', (e) => {
 });
 
 /* ---------------------------------------------------------------- payment drawer */
-async const payMoney = (p) => {
+const payMoney = (p) => {
   const ps = p.ps_fee_actual_kobo != null ? p.ps_fee_actual_kobo : p.ps_fee_est_kobo;
   if (p.price_kobo == null) return kvr('Amount', naira(p.amount_kobo)) + (p.gateway_fee_kobo ? kvr('Paystack fee (customer paid)', naira(p.gateway_fee_kobo)) : '') + kvr('Platform fee', naira(p.fee_kobo));
   return kvr('Price', naira(p.price_kobo)) + kvr('Booking fee (customer share)', naira(p.booking_fee_kobo)) + kvr('Total charged', naira(p.amount_kobo))
     + kvr(p.ps_fee_actual_kobo != null ? 'Paystack fee (reported)' : 'Paystack fee (estimate)', naira(ps)) + kvr('Barber share of the fee', naira(p.barber_fee_kobo)) + kvr('TrimSlot charge', naira(p.fee_kobo))
     + kvr('Barber payout', naira(p.payout_kobo)) + kvr('TrimSlot keeps after Paystack', naira((p.fee_kobo || 0) + (p.booking_fee_kobo || 0) + (p.barber_fee_kobo || 0) - ps));
 };
-function paymentSheet(ref, reload) {
+async function paymentSheet(ref, reload) {
   const { payment: p } = await api('/payments/' + encodeURIComponent(ref));
   const btns = [];
   if (p.status === 'SUCCESS') btns.push(act(p.disputed ? 'Clear flag' : 'Flag disputed', 'sec', 'data-k="flag"'));
