@@ -161,3 +161,37 @@ test('new barbers get a code at sign-up; customers who booked before keep their 
     assert.equal((await c.call('GET', `/api/barbers/${c.barberId}`, undefined, cu.cookie)).status, 200);
   } finally { done(c); }
 });
+
+test('a customer who added / opened / booked the barber can see and re-share the private link (list, barber page, link page, QR); outsiders and guests cannot; a new link reaches them', async () => {
+  const c = await boot();
+  try {
+    const cu = await c.newCustomer(); const outsider = await c.newCustomer(); const opener = await c.newCustomer();
+    await c.call('POST', `/api/b/${DEMO_SHARE_CODE}/add`, undefined, cu.cookie);
+    // My barbers: link + QR for each barber, and never the bare share_code field
+    const list = (await c.call('GET', '/api/me/barbers', undefined, cu.cookie)).json.barbers;
+    assert.equal(list.length, 1); assert.match(list[0].share.url, new RegExp(`/b/${DEMO_SHARE_CODE}$`)); assert.match(list[0].share.qr_url, new RegExp(`^/api/barbers/${c.barberId}/share/qr\\.svg`));
+    assert.equal('share_code' in list[0], false);
+    assert.deepEqual((await c.call('GET', '/api/barbers', undefined, cu.cookie)).json.barbers[0].share, list[0].share);
+    // barber page by id
+    const page = (await c.call('GET', `/api/barbers/${c.barberId}`, undefined, cu.cookie)).json;
+    assert.equal(page.share_link.url, list[0].share.url);
+    // the link page (customer who only opened it) has the link too
+    const lp = (await c.call('GET', '/api/b/' + DEMO_SHARE_CODE, undefined, opener.cookie)).json;
+    assert.equal(lp.share.url, list[0].share.url); assert.match(lp.share.qr_url, /share\/qr\.svg/);
+    // QR: only for customers who may use the barber
+    const qr = await c.call('GET', list[0].share.qr_url, undefined, cu.cookie);
+    assert.equal(qr.status, 200); assert.match(qr.headers.get('content-type') || '', /image\/svg\+xml/); assert.match(qr.headers.get('cache-control') || '', /no-store/); assert.match(qr.text, /^<svg/);
+    assert.equal((await c.call('GET', list[0].share.qr_url, undefined, opener.cookie)).status, 200, 'opened the link: allowed');
+    assert.equal((await c.call('GET', list[0].share.qr_url, undefined, outsider.cookie)).status, 404, 'a customer with no access sees nothing');
+    assert.equal((await c.call('GET', list[0].share.qr_url)).status, 404, 'guests: the barber does not exist for them');
+    assert.equal((await c.call('GET', list[0].share.qr_url, undefined, await c.barberCookie())).status, 403, 'not a barber route');
+    assert.equal((await c.call('GET', `/api/barbers/${c.barberId}`, undefined, outsider.cookie)).status, 404);
+    assert.doesNotMatch((await c.call('GET', `/api/barbers/${c.barberId}`, undefined, outsider.cookie)).text, new RegExp(DEMO_SHARE_CODE));
+    // the barber makes a new link: customers who still have the barber get the new one, the old one is dead
+    const re = (await c.call('POST', '/api/barber/share/regenerate', {}, await c.barberCookie())).json;
+    const after = (await c.call('GET', '/api/me/barbers', undefined, cu.cookie)).json.barbers[0].share;
+    assert.match(after.url, new RegExp(`/b/${re.code}$`)); assert.equal((await c.call('GET', '/api/b/' + DEMO_SHARE_CODE)).status, 404);
+    // the barber's own pages never get the customer fields
+    assert.equal('share_link' in (await c.call('GET', `/api/barbers/${c.barberId}`, undefined, await c.barberCookie())).json, false);
+  } finally { done(c); }
+});

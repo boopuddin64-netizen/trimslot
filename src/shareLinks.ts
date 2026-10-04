@@ -62,7 +62,7 @@ export async function rememberBarber(c: Conn, customerId: number, barberId: numb
 }
 
 export const myBarbers = (c: Conn, customerId: number) => c.many(
-  `SELECT b.id, b.shop_name, b.photo_url, b.location, u.name, cb.created_at AS added_at, (f.customer_id IS NOT NULL) AS favourite,
+  `SELECT b.id, b.shop_name, b.photo_url, b.location, b.share_code, u.name, cb.created_at AS added_at, (f.customer_id IS NOT NULL) AS favourite,
           (SELECT MAX(k.date) FROM bookings k WHERE k.customer_id=cb.customer_id AND k.barber_id=b.id) AS last_booked
      FROM customer_barbers cb JOIN barbers b ON b.id=cb.barber_id AND b.verified JOIN users u ON u.id=b.user_id
      LEFT JOIN favourites f ON f.customer_id=cb.customer_id AND f.barber_id=b.id
@@ -89,7 +89,7 @@ export function barberAccessGuard(db: Db) {
   return async (req: Request, _res: Response, next: NextFunction) => {
     try {
       let barberId = 0;
-      const m = /^\/barbers\/(\d+)(\/slots|\/reviews|\/favourite)?$/.exec(req.path);
+      const m = /^\/barbers\/(\d+)(\/slots|\/reviews|\/favourite|\/share\/qr\.svg)?$/.exec(req.path);
       if (m) barberId = idOf(m[1]);
       else if (req.method === 'POST' && (req.path === '/bookings' || req.path === '/waitlist')) {
         if (!req.user) return next();                       // the route's own login check answers 401
@@ -110,6 +110,15 @@ export function barberAccessGuard(db: Db) {
   };
 }
 
+/** The link a customer who can use this barber may pass on. Only for barbers the guard already let the customer see. */
+export async function shareLinkFor(c: Conn, req: Request, barberId: number, code?: string | null) {
+  const cd = code || await ensureShareCode(c, barberId);
+  return { url: absolute(req, `/b/${cd}`), qr_url: `/api/barbers/${barberId}/share/qr.svg?c=${cd.slice(0, 6)}` };
+}
+export async function myBarbersWithLinks(c: Conn, req: Request) {
+  const rows = await myBarbers(c, req.user!.id) as any[];
+  return Promise.all(rows.map(async ({ share_code, ...b }) => ({ ...b, share: await shareLinkFor(c, req, b.id, share_code) })));
+}
 export const absolute = (req: Request, path: string) => {
   const base = config.appBaseUrl && /^https?:\/\//.test(config.appBaseUrl) ? config.appBaseUrl.replace(/\/+$/, '') : `${req.protocol}://${req.get('host')}`;
   return base + path;
@@ -153,7 +162,7 @@ export function registerShareLinks(api: Router, barberR: Router, db: Db, wrap: (
     const code = String(req.params.code);
     const card = prof.barber.photo_url && String(prof.barber.photo_url).startsWith('/api/barbers/') ? { ...prof.barber, photo_url: prof.barber.photo_url + (String(prof.barber.photo_url).includes('?') ? '&' : '?') + 'k=' + code } : prof.barber;
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Robots-Tag', 'noindex, nofollow');
-    res.json({ ...prof, barber: card, reviews, share: { code, added, can_add: u?.role === 'customer', logged_in: !!u, role: u?.role ?? null } });
+    res.json({ ...prof, barber: card, reviews, share: { code, added, can_add: u?.role === 'customer', logged_in: !!u, role: u?.role ?? null, ...(u?.role === 'customer' ? await shareLinkFor(db, req, b.id, code) : {}) } });
   }));
   api.post('/b/:code/add', limits.shareLink, cust, wrap(async (req, res) => {
     const b = await barberByCode(db, String(req.params.code));
@@ -163,6 +172,18 @@ export function registerShareLinks(api: Router, barberR: Router, db: Db, wrap: (
   }));
 
   /* ----- My barbers ----- */
-  api.get('/me/barbers', cust, wrap(async (req, res) => res.json({ barbers: await myBarbers(db, req.user!.id) })));
+  api.get('/me/barbers', cust, wrap(async (req, res) => {
+    res.json({ barbers: await myBarbersWithLinks(db, req) });
+  }));
+  /** A customer who may use this barber (added, opened the link, or booked) can see and re-share the barber's link as a QR code too. */
+  api.get('/barbers/:id/share/qr.svg', cust, wrap(async (req, res) => {
+    const id = idOf(req.params.id);
+    const b = await db.maybeOne<{ share_code: string | null }>('SELECT share_code FROM barbers WHERE id=$1 AND verified', [id]);
+    if (!b) throw notFound('We could not find that barber.');
+    const l = await shareLinkFor(db, req, id, b.share_code);
+    const svg = await QRCode.toString(l.url, { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+    res.setHeader('Content-Type', 'image/svg+xml'); res.setHeader('Cache-Control', 'private, no-store'); res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(svg);
+  }));
   api.delete('/me/barbers/:id', cust, wrap(async (req, res) => { await removeBarber(db, req.user!.id, idOf(req.params.id)); res.json({ removed: true }); }));
 }

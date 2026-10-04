@@ -27,7 +27,7 @@ import { registerAdminDelete } from './adminDelete';
 import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
 import { registerSmart, backgroundAfterResponse } from './smartRoutes';
-import { barberAccessGuard, newShareCode, photoAllowed, registerShareLinks, myBarbers } from './shareLinks';
+import { barberAccessGuard, newShareCode, photoAllowed, registerShareLinks, myBarbersWithLinks, shareLinkFor } from './shareLinks';
 import { vapidPublicKey, pushAvailable, flushPush } from './push';
 import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
 import { getSettingsCached } from './plans';
@@ -402,7 +402,7 @@ export function createApp(db: Db) {
   /* ---------- public barber directory (verified barbers only) ---------- */
   const barberCard = (b: any) => ({ id: b.id, name: b.name, shop_name: b.shop_name, photo_url: b.photo_url, location: b.location, about: b.about });
   // There is no public list of barbers. A customer gets only the barbers they added ("My barbers"); everything else comes from a share link (/api/b/:code).
-  api.get('/barbers', requireRole('customer'), wrap(async (req, res) => res.json({ barbers: await myBarbers(db, req.user!.id) })));
+  api.get('/barbers', requireRole('customer'), wrap(async (req, res) => res.json({ barbers: await myBarbersWithLinks(db, req) })));
   /** The full barber profile (services, hours, plans, rating, what this customer holds). Callers decide whether the viewer may see it. */
   const profileFor = async (req: Request, b: any) => {
     const services = await db.many('SELECT id, name, price_kobo, duration_min FROM services WHERE barber_id=$1 AND active ORDER BY price_kobo, id', [b.id]);
@@ -426,7 +426,9 @@ export function createApp(db: Db) {
     const id = Number(req.params.id);
     const b = Number.isInteger(id) ? await db.maybeOne('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 AND b.verified', [id]) : undefined;
     if (!b) throw notFound('We could not find that barber.');
-    res.json(await profileFor(req, b));
+    const prof = await profileFor(req, b);
+    // a customer who may see this barber (the guard checked) can pass the private link on
+    res.json(req.user?.role === 'customer' ? { ...prof, share_link: await shareLinkFor(db, req, (b as any).id, (b as any).share_code) } : prof);
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
