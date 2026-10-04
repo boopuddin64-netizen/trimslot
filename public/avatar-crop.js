@@ -6,19 +6,16 @@
 const CM = window.CropMath, MAX_BYTES = 100 * 1024;   // the server accepts up to 120 KB
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
 
-function loadImage(file) {
-  return new Promise((res, rej) => {
-    if (!file || !/^image\//.test(file.type || '')) return rej(new Error('Please choose a picture.'));
-    const url = URL.createObjectURL(file), im = new Image();
-    im.onload = () => (im.naturalWidth > 0 && im.naturalHeight > 0 ? res({ im, url }) : (URL.revokeObjectURL(url), rej(new Error('We could not read that picture.'))));
-    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error('We could not read that picture. Try a JPEG or PNG.')); };
-    im.src = url;
-  });
+/** Decode the chosen file (see imgdecode.js): upright, long side <= 1600 px, returned as a canvas that is both shown in the preview and drawn from on Save. */
+async function loadImage(file) {
+  if (!window.ImgDecode) throw new Error('We could not open that photo. Please reload the page and try again.');
+  const r = await window.ImgDecode.load(file, { maxSide: 1600 });
+  return { im: r.canvas, W: r.width, H: r.height };
 }
 
 /** Draw the chosen square and compress it (quality first, then size) until it fits. */
 async function encode(im, rect) {
-  const w = im.naturalWidth, h = im.naturalHeight;
+  const w = im.width, h = im.height;
   let a = { px: CM.outputSize(rect.side), q: 0.86 };
   while (a) {
     const c = document.createElement('canvas'); c.width = c.height = a.px;
@@ -32,8 +29,7 @@ async function encode(im, rect) {
 }
 
 async function open(file, save) {
-  const { im, url } = await loadImage(file);
-  const W = im.naturalWidth, H = im.naturalHeight;
+  const { im, W, H } = await loadImage(file);
   const opener = document.activeElement;
   const root = el(`<div class="scrim crop-scrim"><div class="sheet crop" role="dialog" aria-modal="true" aria-labelledby="crop-t" aria-describedby="crop-help">
     <h3 id="crop-t">Adjust your photo</h3>
@@ -44,7 +40,7 @@ async function open(file, save) {
     <div class="btns crop-btns"><button class="btn sec" type="button" data-cancel>Cancel</button><button class="btn" type="button" data-save disabled>Save</button></div></div></div>`);
   const view = root.querySelector('#crop-view'), zin = root.querySelector('#crop-z'), errBox = root.querySelector('#crop-err');
   const bCancel = root.querySelector('[data-cancel]'), bSave = root.querySelector('[data-save]');
-  im.alt = ''; im.draggable = false; im.className = 'crop-img'; view.appendChild(im);
+  im.setAttribute('aria-hidden', 'true'); im.className = 'crop-img'; im.style.width = W + 'px'; im.style.height = H + 'px'; view.appendChild(im);
 
   let V = 260, st = CM.initial(W, H), busy = false, closed = false;
   const paint = () => {
@@ -99,7 +95,7 @@ async function open(file, save) {
     const close = (saved) => {
       if (closed) return; closed = true;
       document.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', measure);
-      document.body.style.overflow = prevOverflow; root.remove(); URL.revokeObjectURL(url);
+      document.body.style.overflow = prevOverflow; root.remove();
       if (opener && opener.focus && document.contains(opener)) opener.focus();
       resolve(saved);
     };

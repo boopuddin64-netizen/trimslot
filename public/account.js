@@ -12,12 +12,8 @@ const av = (c, cls) => {
 
 /** Centre-crop to a square and compress to a small JPEG, all on the device. */
 async function squareJpeg(file) {
-  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose a picture file.');
-  const bmp = await (window.createImageBitmap ? createImageBitmap(file).catch(() => null) : null) || await new Promise((res, rej) => {
-    const im = new Image(); const u = URL.createObjectURL(file);
-    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('We could not read that picture.')); im.src = u;
-  });
-  const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, side = Math.min(w, h);
+  const bmp = (await ImgDecode.load(file, { maxSide: 1600 })).canvas;
+  const w = bmp.width, h = bmp.height, side = Math.min(w, h);
   const sx = Math.floor((w - side) / 2), sy = Math.floor((h - side) / 2);
   let px = SIZE, q = 0.82;
   for (let i = 0; i < 8; i++) {

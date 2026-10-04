@@ -1016,12 +1016,8 @@ async function barberReviews() {
 /* ---------- barber: settings ---------- */
 /** Client-side downscale: longest side <= 1024px, JPEG, shrunk until it fits the server's 300 KB cap. */
 async function compressImage(file) {
-  if (!file || !/^image\//.test(file.type || '')) throw new Error('Please choose a picture file.');
-  const bmp = await (window.createImageBitmap ? createImageBitmap(file).catch(() => null) : null) || await new Promise((res, rej) => {
-    const im = new Image(); const u = URL.createObjectURL(file);
-    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => rej(new Error('We could not read that picture.')); im.src = u;
-  });
-  const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight;
+  const bmp = (await window.ImgDecode.load(file, { maxSide: 1024 })).canvas;
+  const w0 = bmp.width, h0 = bmp.height;
   let scale = Math.min(1, 1024 / Math.max(w0, h0)), q = 0.85;
   for (let attempt = 0; attempt < 8; attempt++) {
     const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w0 * scale)); c.height = Math.max(1, Math.round(h0 * scale));

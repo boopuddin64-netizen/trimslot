@@ -21,8 +21,11 @@ async function main() {
   let code = 1;
   try {
     await waitHealthy(base);
-    const e2e = spawn(process.execPath, ['--import', 'tsx', 'scripts/avatar-crop-ui.mjs'], { env, stdio: 'inherit' });
-    code = await new Promise<number>((res) => e2e.on('exit', (c) => res(c ?? 1)));
+    for (const script of ['scripts/avatar-crop-ui.mjs', 'scripts/avatar-photos-ui.mjs']) {
+      const e2e = spawn(process.execPath, ['--import', 'tsx', script], { env: { ...env, BASE: base }, stdio: 'inherit' });
+      const c = await new Promise<number>((res) => e2e.on('exit', (x) => res(x ?? 1)));
+      if (c) code = c; else if (code === 1) code = 0;
+    }
   } finally {
     server.kill('SIGTERM');
     await new Promise((r) => setTimeout(r, 500));
