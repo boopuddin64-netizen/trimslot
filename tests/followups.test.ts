@@ -176,5 +176,5 @@ test('H: legal "In plain words" boxes say the credit comes when the barber marks
   assert.match(terms, /When your barber marks it a no-show, you get one credit with the same barber/);
   assert.match(plan, /When your barber marks it a no-show, you get one credit with the same barber/);
   assert.match(ref, /If the barber does not mark a no-show, there is no refund and no credit\./);
-  assert.match(ref, /If you do not come and the barber marks a no-show, section 4 applies\. A credit comes only when the barber marks a no-show\./, 'section 2.2 keeps its PR #1 wording (not part of this change)');
+  assert.match(ref, /If you do not come and the barber marks a no-show, section 4 applies. A credit for a missed session comes only when your barber marks it a no-show. Other credits are in section 4.2\./, 'section 2.2 is limited to the missed-session credit and points to 4.2 for other credits');
 });
