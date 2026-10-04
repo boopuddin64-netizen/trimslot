@@ -423,3 +423,24 @@ input::placeholder,textarea::placeholder{color:var(--mut);opacity:1}
 .chip:hover,.svc:hover{border-color:var(--ctl)}.now.idle .lbl{opacity:1}
 .warn-t{color:var(--accent-ink)}
 .rate svg{color:var(--star)}
+
+/* compact rows: flat, 56-72px, two lines (admin lists, customer and barber lists) */
+.clist{border:1px solid var(--line2);border-radius:var(--r);background:var(--card);overflow:hidden;margin:8px 0}
+a.crow{text-decoration:none}
+.crow{display:flex;align-items:center;gap:8px;min-height:58px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--line);cursor:pointer;color:var(--ink);background:var(--card);-webkit-user-select:none;user-select:none}
+.crow:last-child{border-bottom:0}
+.crow:hover,.crow:active{background:var(--bg2)}
+.crow:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.crow .cb{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.crow .c1,.crow .c2{display:flex;align-items:center;gap:8px;min-width:0}
+.crow .ct{flex:1 1 0;min-width:0;font-size:14px;font-weight:600;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .cp{flex:none;display:flex;gap:4px;align-items:center}
+.crow .cm{flex:1 1 0;min-width:0;font-size:12.5px;line-height:18px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .cr{flex:none;font-size:13px;font-weight:600;line-height:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.crow .cgo{flex:none;color:var(--mut);font-size:22px;line-height:1;width:14px;text-align:center}
+.crow .selbox{margin:0 2px 0 -4px;padding:8px 6px;flex:none}
+.crow .stars{white-space:nowrap}
+.crow .cx{display:block;font-size:12.5px;line-height:18px;font-weight:600;color:var(--brand-d);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .c1,.crow .c2{min-width:0}
+.crow .ct,.crow .cm{display:block}
+.crow .badge{margin:0}

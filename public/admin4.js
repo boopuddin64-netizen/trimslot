@@ -111,7 +111,7 @@ async function deletedPage() {
     ['Time left', (x) => x.days_left > 0 ? `${x.days_left} day${x.days_left === 1 ? '' : 's'} to restore` : bd('b-gray', 'RESTORE ENDED')],
     ['', (x) => (x.days_left > 0 ? act('Restore', '', `data-do="rs" data-t="${x.type}" data-id="${x.id}"`) : '') + act('Delete forever', 'red', `data-do="pg" data-t="${x.type}" data-id="${x.id}" data-n="${esc(x.label)}"`), 'act'],
   ];
-  app.innerHTML = head('Recently deleted', `Deleted customers, barbers, plans, reviews and reports can be restored for ${r.window_days} days. “Delete forever” needs your PIN and is refused when real payments are on record.`, refreshBtn) + table(cols, r.items, 'Nothing has been deleted.');
+  app.innerHTML = head('Recently deleted', `Deleted customers, barbers, plans, reviews and reports can be restored for ${r.window_days} days. “Delete forever” needs your PIN and is refused when real payments are on record.`, refreshBtn) + table(cols, r.items, 'Nothing has been deleted.', { row: (x) => ({ t: esc(x.label), p: bd('b-gray', x.type), m: `Deleted ${dshort(x.deleted_at)} · ` + (x.days_left > 0 ? `${x.days_left} day${x.days_left === 1 ? '' : 's'} to restore` : 'restore ended') }), title: (x) => x.label });
   wireReload(deletedPage);
   wireActions(app, {
     rs: async (d) => { await post(`/restore/${d.t}/${d.id}`); toast('Restored'); deletedPage(); },

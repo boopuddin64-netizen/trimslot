@@ -203,7 +203,7 @@ async function broadcast() {
       <div id="uidbox" class="hidden"><label>User id</label><input name="user_id" type="number" min="1" placeholder="e.g. 12 (see Customers)"></div></div>
       <label>Title</label><input name="title" maxlength="80" required><label>Message</label><textarea name="body" rows="4" maxlength="500" required></textarea>
       <div class="err hidden" id="berr"></div><div class="btns cta"><button class="btn" type="submit">Send announcement</button></div></form></div>
-    <h2>Recent broadcasts</h2>` + table([['Title', (b) => `${esc(b.title)}<span class="sub">${esc(b.body).slice(0, 120)}</span>`], ['To', (b) => esc(b.audience.toLowerCase()) + (b.user_id ? ' #' + b.user_id : '')], ['Recipients', (b) => b.recipients, 'num'], ['Sent', (b) => stamp(b.created_at)]], r.broadcasts, 'Nothing sent yet.');
+    <h2>Recent broadcasts</h2>` + table([['Title', (b) => `${esc(b.title)}<span class="sub">${esc(b.body).slice(0, 120)}</span>`], ['To', (b) => esc(b.audience.toLowerCase()) + (b.user_id ? ' #' + b.user_id : '')], ['Recipients', (b) => b.recipients, 'num'], ['Sent', (b) => stamp(b.created_at)]], r.broadcasts, 'Nothing sent yet.', { row: (b) => ({ t: esc(b.title), p: bd('b-gray', b.audience.toLowerCase() + (b.user_id ? ' #' + b.user_id : '')), m: esc(stamp(b.created_at) + ' · ' + b.body.slice(0, 120)), r: b.recipients + ' sent' }), title: (b) => b.title });
   const f = $('#bf'); f.elements.audience.onchange = () => $('#uidbox').classList.toggle('hidden', f.elements.audience.value !== 'user');
   f.onsubmit = async (ev) => {
     ev.preventDefault(); const v = Object.fromEntries(new FormData(f)); const n = v.audience === 'user' ? 'this user' : 'all ' + v.audience;
@@ -250,7 +250,7 @@ async function analytics() {
      <div class="tiles" style="grid-template-columns:repeat(2,1fr)"><div class="tile"><span>Incomplete payments</span><b>${x.incomplete_payment_pct}%</b><small>${x.online_incomplete} of ${x.online_attempts} online attempts</small></div><div class="tile"><span>Completed</span><b>${x.completed}</b></div></div>
      <h2>Bookings per day</h2><div class="card">${chart(r.series, 'bookings', (v) => v + ' booking' + (v === 1 ? '' : 's'))}</div>
      <h2>Revenue per day</h2><div class="card">${chart(r.series, 'revenue_kobo', naira, 'alt')}</div>
-     <h2>Top barbers</h2>` + table([['Shop', (b) => esc(b.shop_name)], ['Completed', (b) => b.completed, 'num'], ['Revenue', (b) => naira(b.revenue_kobo), 'num']], r.top_barbers, 'No activity in this period.');
+     <h2>Top barbers</h2>` + table([['Shop', (b) => esc(b.shop_name)], ['Completed', (b) => b.completed, 'num'], ['Revenue', (b) => naira(b.revenue_kobo), 'num']], r.top_barbers, 'No activity in this period.', { row: (b) => ({ t: esc(b.shop_name), m: b.completed + ' completed', r: naira(b.revenue_kobo) }), title: (b) => b.shop_name });
   app.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { adays = Number(b.dataset.d); analytics(); });
   wireReload(analytics);
 }

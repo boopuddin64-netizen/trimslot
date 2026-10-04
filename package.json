@@ -19,7 +19,9 @@
     "migrate": "tsx scripts/migrate.ts",
     "vercel:local": "tsx scripts/vercel-local.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
-    "contrast": "node scripts/contrast-check.mjs"
+    "contrast": "node scripts/contrast-check.mjs",
+    "compact-ui": "node scripts/compact-ui.mjs",
+    "rows": "node scripts/rows-per-screen.mjs"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

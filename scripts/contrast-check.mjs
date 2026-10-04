@@ -67,6 +67,11 @@ function scan() {
     if (!bc && ratio(own, around) < 1.05) continue;
     out.push({ kind: 'control-boundary', el: label(el), ratio: Math.round(best * 100) / 100, need: 3, ok: best >= 3 - 0.001 });
   }
+  // 5) compact rows: 56-72px tall (80 with the optional third line), flat (no shadow / gradient) rows, lists and pop-ups
+  for (const el of document.querySelectorAll('.crow')) { if (!visible(el)) continue; const h = el.getBoundingClientRect().height, max = el.querySelector('.cx') ? 80 : 72; out.push({ kind: 'row-height', el: label(el), ratio: Math.round(h), need: '56-' + max, ok: h >= 56 && h <= max }); }
+  for (const el of document.querySelectorAll('.crow,.clist,.sheet,.modal .sheet,.bulkbar')) { if (!visible(el)) continue; const s = getComputedStyle(el); out.push({ kind: 'flat-style', el: label(el), ratio: 0, need: 'no shadow/gradient', ok: s.boxShadow === 'none' && !/gradient/.test(s.backgroundImage) }); }
+  // 6) single-line rows must never wrap: title and meta stay one line (ellipsis)
+  for (const el of document.querySelectorAll('.crow .ct,.crow .cm')) { if (!visible(el)) continue; const s = getComputedStyle(el); out.push({ kind: 'row-nowrap', el: label(el), ratio: 0, need: 'nowrap + ellipsis', ok: s.whiteSpace === 'nowrap' && s.textOverflow === 'ellipsis' && el.getBoundingClientRect().height <= 24 }); }
   return out;
 }
 
@@ -101,7 +106,11 @@ for (const theme of THEMES) for (const w of WIDTHS) {
   { const { ctx, p } = await newPage(w, theme); await p.goto('/admin.html'); await p.fill('#key', ADMINKEY); await p.click('#lf button'); await p.waitForSelector('.tiles', { timeout: 10000 });
     for (const r of ['home', 'customers', 'barbers', 'bookings', 'decisions', 'payments', 'credits', 'plans', 'earnings', 'ledger', 'analytics', 'reviews', 'waitlist', 'broadcast', 'reports', 'controls', 'rules', 'audit', 'pin', 'deleted', 'testdata']) {
       await p.goto('/admin.html#/' + r); await p.waitForTimeout(800); await check(p, 'admin ' + r, w, theme);
-      if (['customers', 'barbers', 'bookings', 'payments'].includes(r)) { const row = p.locator('#ltbl tbody tr, #ltbl .row, .lrow, tbody tr').first(); if (await row.count()) { await row.click().catch(() => {}); await p.waitForTimeout(700); await check(p, 'admin ' + r + ' drawer', w, theme); await p.keyboard.press('Escape'); await p.locator('[data-close]').first().click({ timeout: 800 }).catch(() => {}); } } }
+      // compact rows: open the pop-up of the first row (and the second, so different statuses/actions are covered), check it, then test the bulk-select state
+      if (['customers', 'barbers', 'bookings', 'payments', 'credits', 'plans', 'reports', 'reviews', 'waitlist', 'ledger', 'decisions', 'deleted'].includes(r)) {
+        for (const n of [0, 1]) { const row = p.locator(w < 720 ? '.crow' : '#ltbl tbody tr, .tbl tbody tr').nth(n); if (!(await row.count())) break; await row.click({ position: { x: 150, y: 12 } }).catch(() => {}); await p.waitForTimeout(700); await check(p, 'admin ' + r + ' sheet ' + n, w, theme); await p.keyboard.press('Escape'); await p.locator('[data-close]').first().click({ timeout: 800 }).catch(() => {}); await p.waitForTimeout(200); }
+        const cb = p.locator('[data-sel]').first(); if (await cb.count()) { await cb.check().catch(() => {}); await p.waitForTimeout(300); await check(p, 'admin ' + r + ' row selected + bulk bar', w, theme); }
+      } }
     await ctx.close(); }
 }
 await b.close();

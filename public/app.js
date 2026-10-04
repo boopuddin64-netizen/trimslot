@@ -287,7 +287,7 @@ async function customerHome() {
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Pick a barber to see their services, plans and hours.</p>
     ${Notify.promptCard()}${rebookCard}
-    ${active.length ? `<h2>Your next booking</h2>${active.slice(0, 2).map(bookingCard).join('')}` : ''}
+    ${active.length ? `<h2>Your next booking</h2>${clist(active.slice(0, 2).map(bookingCard))}` : ''}
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
     ${waitCard}
     <h2>Choose a barber</h2>
@@ -302,13 +302,12 @@ async function customerHome() {
   document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Removed from waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   startPoll(customerHome);
 }
+/* compact tappable row (~58px): t title, p pills, m one-line meta, r trailing figure, x optional third line */
+const crowA = (d, href) => `<a class="crow" href="${href}"><span class="cb"><span class="c1"><span class="ct">${d.t}</span>${d.p ? `<span class="cp">${d.p}</span>` : ''}</span><span class="c2"><span class="cm">${d.m || ''}</span>${d.r ? `<span class="cr">${d.r}</span>` : ''}</span>${d.x ? `<span class="cx">${d.x}</span>` : ''}</span><span class="cgo" aria-hidden="true">›</span></a>`;
+const clist = (arr) => `<div class="clist">${arr.join('')}</div>`;
 function bookingCard(b) {
   const q = b.queue;
-  return `<a class="card" href="#/booking/${b.id}">
-    <div class="row between"><h3>${esc(b.service_name)}</h3>${statusBadge(b.status, b)}</div>
-    <div class="muted small">${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}</div>
-    <div class="row between" style="margin-top:8px"><b>${naira(b.price_kobo)}</b>${payBadge(b)}</div>
-    ${q && q.state !== 'NOT_ACTIVE' && q.is_today ? `<div class="small" style="margin-top:8px;color:var(--brand-d);font-weight:600">${esc(q.message)}</div>` : ''}</a>`;
+  return crowA({ t: esc(b.service_name), p: statusBadge(b.status, b) + payBadge(b), m: `${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}`, r: naira(b.price_kobo), x: q && q.state !== 'NOT_ACTIVE' && q.is_today ? esc(q.message) : '' }, '#/booking/' + b.id);
 }
 
 /* ---------- customer: booking wizard ---------- */
@@ -433,7 +432,7 @@ async function profile(editing) {
     <div class="list"><a class="lrow" href="#/wallet"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">My plans<span class="sub">${livePlans.length ? livePlans.map((p) => p.sessions_left + ' left · ' + esc(p.shop_name)).join(', ') : 'No active plan'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/wallet"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Session credits<span class="sub">${liveCredits.length ? liveCredits.length + ' available, next expires ' + expTxt(liveCredits[0].expires_at) : 'None right now'}</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
     <h2>Booking history</h2>
-    ${recent.length ? recent.map(bookingCard).join('') : '<p class="muted small">No bookings yet.</p>'}
+    ${recent.length ? clist(recent.map(bookingCard)) : '<p class="muted small">No bookings yet.</p>'}
     ${bk.bookings.length > 3 ? '<div class="btns end"><a class="btn sm sec" href="#/bookings">All bookings</a></div>' : ''}
     <h2>Preferences</h2>
     <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
@@ -589,13 +588,13 @@ async function wallet(planResult, ppId) {
   app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
     <h2>Session credits</h2>
     <p class="small muted" style="margin-top:0">A missed paid session isn't refunded — you get 1 credit with the <b>same barber</b>, valid ${w.rules.credit_expiry_days} days. Credits can't be cashed out and are applied when you book with that barber.</p>
-    ${live.map((c) => `<div class="card row between"><div><b>${esc(c.shop_name)}</b><div class="small muted">1 session · covers services up to ${naira(c.value_kobo)}</div></div><div style="text-align:right"><span class="badge b-purple">CREDIT</span><div class="small muted" style="margin-top:4px">until ${expTxt(c.expires_at)}</div></div></div>`).join('') || '<p class="muted small">No credits right now.</p>'}
+    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · services up to ${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">No credits right now.</p>'}
     <h2>My plans</h2>
     ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
       <div class="muted small">${esc(p.shop_name)}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
       <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
       ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}</div>`).join('') || '<p class="muted small">No plans yet. Open a barber page to see the plans on offer.</p>'}
-    ${past.length ? `<h2>Used / expired credits</h2>${past.map((c) => `<div class="card faded row between"><div><b>${esc(c.shop_name)}</b><div class="small muted">${c.status === 'USED' ? 'Used' : 'Expired ' + expTxt(c.expires_at)}</div></div><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></div>`).join('')}` : ''}`;
+    ${past.length ? `<h2>Used / expired credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Expired ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
 }
 
 /* ---------- customer: bookings ---------- */
@@ -603,7 +602,7 @@ async function myBookings() {
   const r = await api('/bookings');
   const upcoming = r.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status));
   const past = r.bookings.filter((b) => !upcoming.includes(b));
-  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.map(bookingCard).join('') || '<p class="muted">Nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.map(bookingCard).join('') || '<p class="muted">No past bookings yet.</p>'}`;
+  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">Nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? clist(past.map(bookingCard)) : ''}${past.length ? '' : '<p class="muted">No past bookings yet.</p>'}`;
   startPoll(myBookings);
 }
 /* Back from Paystack: the redirect lands here before the webhook may have arrived, so we ask the server to verify by reference (a few tries, a few seconds apart) instead of showing a stale "not confirmed". */
@@ -776,7 +775,7 @@ async function barberToday(keepScroll) {
     ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else in line.</p>'}
-    ${d.done.length ? `<h2>Done today</h2>${d.done.map((b) => `<a class="card row between" style="color:inherit" href="#/b/${b.id}"><div>${custLine(b)}<div class="small muted">${esc(b.start_label)}</div></div>${statusBadge(b.status)}</a>`).join('')}` : ''}`;
+    ${d.done.length ? `<h2>Done today</h2>${clist(d.done.map((b) => crowA({ t: esc(b.customer.name), p: statusBadge(b.status) + payBadge(b), m: `${esc(b.start_label)} · ${esc(b.service_name)}`, r: naira(b.price_kobo) }, '#/b/' + b.id)))}` : ''}`;
   $('#refresh').onclick = () => barberToday();
   document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you're running ${el.dataset.delay} more minutes behind?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); toast(`Running ${r.delay_min} min behind · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-tpl]').forEach((el) => el.onclick = async () => { if (!confirm(`Send "${el.textContent}" to everyone waiting today?`)) return; el.disabled = true; try { const r = await api('/barber/queue/message', { method: 'POST', body: { template: el.dataset.tpl } }); toast(`Sent to ${r.sent} customer${r.sent === 1 ? '' : 's'}`); } catch (e) { fail(e); } el.disabled = false; });
@@ -805,7 +804,7 @@ async function barberUpcoming() {
   const r = await api('/barber/bookings');
   const groups = {};
   r.bookings.forEach((b) => (groups[b.date] = groups[b.date] || []).push(b));
-  app.innerHTML = `<h1>Upcoming</h1>${Object.keys(groups).sort().map((d) => `<h2>${dateLabel(d)}</h2>${groups[d].map((b) => `<a class="card row between" style="color:inherit" href="#/b/${b.id}"><div><b>${esc(b.start_label)}</b> · ${esc(b.customer.name)}<div class="small muted">${esc(b.service_name)} · ${naira(b.price_kobo)}</div></div><div style="text-align:right">${statusBadge(b.status)}<div style="margin-top:4px">${payBadge(b)}</div></div></a>`).join('')}`).join('') || '<p class="muted">No upcoming bookings.</p>'}`;
+  app.innerHTML = `<h1>Upcoming</h1>${Object.keys(groups).sort().map((d) => `<h2>${dateLabel(d)}</h2>${clist(groups[d].map((b) => crowA({ t: esc(b.customer.name), p: statusBadge(b.status) + payBadge(b), m: `${esc(b.start_label)} · ${esc(b.service_name)}`, r: naira(b.price_kobo) }, '#/b/' + b.id)))}`).join('') || '<p class="muted">No upcoming bookings.</p>'}`;
   startPoll(barberUpcoming);
 }
 const ACTION_LABEL = { BOOKED: 'Booked', PAYMENT_CONFIRMED: 'Payment confirmed', CHECKED_IN: 'Customer checked in ("I\'m Here")', MARKED_PRESENT: 'Barber marked present', STARTED: 'Service started', COMPLETED: 'Service completed', CANCELLED: 'Cancelled', NO_SHOW: 'Marked no-show', NOT_SERVED: 'Marked not served', PAYMENT_RECORDED: 'Payment recorded', SKIPPED: 'Skipped (moved back)', WAITING_FOR_CUSTOMER: 'Barber chose to wait', HOLD_EXPIRED: 'Payment attempt expired', CREDIT_ISSUED: 'Session credit issued (no refund)', PAYMENT_SLOT_TAKEN: 'Payment arrived after the slot was taken', LATE_PAYMENT: 'Late payment flagged', DUPLICATE_PAYMENT: 'Duplicate payment flagged' };
@@ -830,7 +829,7 @@ async function customerList() {
   app.innerHTML = `<h1>Customers</h1><input id="q" type="search" placeholder="Search name, phone or email" autocomplete="off"><div id="list" style="margin-top:10px"></div>`;
   const load = async () => {
     const r = await api('/barber/customers?q=' + encodeURIComponent($('#q').value));
-    $('#list').innerHTML = r.customers.map((c) => `<a class="card row between" style="color:inherit" href="#/customers/${c.id}"><div><b>${esc(c.name)}</b><div class="small muted">${esc(c.phone || c.email || '')}</div></div><div class="small" style="text-align:right">${c.total_visits} visit${c.total_visits === 1 ? '' : 's'}<div class="muted">${c.last_visit ? 'Last ' + dateLabel(c.last_visit) : 'No visits yet'}</div></div></a>`).join('') || '<p class="muted center">No customers found.</p>';
+    $('#list').innerHTML = (r.customers.length ? clist(r.customers.map((c) => crowA({ t: esc(c.name), m: esc([c.phone || c.email, c.last_visit ? 'last ' + dateLabel(c.last_visit) : 'no visits yet'].filter(Boolean).join(' · ')), r: c.total_visits + ' visit' + (c.total_visits === 1 ? '' : 's') }, '#/customers/' + c.id))) : '') || '<p class="muted center">No customers found.</p>';
   };
   let t; $('#q').oninput = () => { clearTimeout(t); t = setTimeout(load, 200); };
   load();

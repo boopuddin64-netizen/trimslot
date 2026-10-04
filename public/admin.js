@@ -30,13 +30,47 @@ const payBadge = (s) => bd({ SUCCESS: 'b-green', FAILED: 'b-red', INITIATED: 'b-
 const refundBadge = (s) => s ? bd({ NEEDS_REFUND: 'b-amber', REFUND_REQUESTED: 'b-blue', REFUNDED: 'b-green' }[s] || 'b-gray', s.replace('_', ' ')) : '';
 const bpay = (s) => bd({ PAID: 'b-green', CREDIT_PENDING: 'b-purple', CREDITED: 'b-purple', PAYMENT_DUE: 'b-amber', VOID: 'b-gray', PENDING: 'b-amber' }[s] || 'b-gray', s.replace('_', ' '));
 
-/* table helper: rows -> responsive table (cards on phones). cols: [label, fn(row)->html, cls] ; first col is the card title */
-function table(cols, rows, empty) {
+/* compact rows (phones): one row = ~58px, two lines. d = { t: title, p: pills (right of title), m: meta (one line, ellipsis), r: trailing figure, sel: checkbox html } */
+const crow = (d, attrs = '') => `<div class="crow" role="button" tabindex="0" ${attrs}>${d.sel || ''}<div class="cb"><div class="c1"><span class="ct">${d.t}</span>${d.p ? `<span class="cp">${d.p}</span>` : ''}</div><div class="c2"><span class="cm">${d.m || ''}</span>${d.r ? `<span class="cr">${d.r}</span>` : ''}</div></div><span class="cgo" aria-hidden="true">›</span></div>`;
+const MQD = window.matchMedia('(min-width:720px)');
+/* buttons an action column would show, read from its markup so the pop-up can offer the same actions */
+function colActions(cols, r) {
+  const ac = cols.find(([, , c]) => c === 'act'); if (!ac) return [];
+  const t = document.createElement('div'); t.innerHTML = ac[1](r);
+  return [...t.querySelectorAll('button')].map((b, i) => ({ i, label: b.textContent.trim(), cls: [...b.classList].filter((x) => x !== 'btn' && x !== 'sm').join(' '), data: { ...b.dataset } }));
+}
+/* tap-a-row pop-up: bottom sheet on phones, side drawer on wide screens. o = { title, sub, pills, acts:[{label,cls,run}], links(reload) } */
+function openRowSheet(cols, r, o) {
+  const f0 = cols[0][1]; const kv = cols.slice(1).filter(([l, , c]) => l && c !== 'act' && !(o.pills && l === 'Status')).map(([l, f]) => kvr(l, f(r))).join('');
+  const acts = o.acts || [];
+  const m = modal(`<div class="sh-h"><div class="shtitle">${o.title ? esc(o.title) : f0(r)}</div><button class="btn sm sec" data-close>Close</button></div>
+    ${o.pills ? `<div class="row-badges">${o.pills}</div>` : ''}<h3>Details</h3>${kv}
+    <div class="btns end sticky">${acts.map((a, i) => `<button class="btn ${a.cls}" data-ai="${i}">${esc(a.label)}</button>`).join('') || '<span class="muted small">No actions available.</span>'}</div>`);
+  m.el.querySelectorAll('[data-ai]').forEach((x) => x.onclick = () => { m.close(); acts[Number(x.dataset.ai)].run(); });
+  m.el.querySelectorAll('[data-u]').forEach((x) => x.onclick = (e) => { e.preventDefault(); m.close(); userSheet(Number(x.dataset.u), o.reload || (() => route())); });
+  m.el.querySelectorAll('[data-b]').forEach((x) => x.onclick = (e) => { e.preventDefault(); m.close(); bookingSheet(Number(x.dataset.b), o.reload || (() => route())); });
+  return m;
+}
+/* table helper: rows -> responsive table on wide screens; compact tappable rows on phones when o.row is given (o.row(r) -> descriptor, o.title(r) optional).
+   cols: [label, fn(row)->html, cls] ; first col is the row title; the 'act' column is shown as buttons in the table and in the row's pop-up. */
+const TSETS = {}; let tsn = 0;
+function table(cols, rows, empty, o) {
   if (!rows.length) return `<div class="empty">${esc(empty || 'Nothing here.')}</div>`;
   const head = cols.map(([l, , c]) => `<th class="${c === 'num' ? 'num' : ''}">${esc(l)}</th>`).join('');
-  const body = rows.map((r) => `<tr>${cols.map(([l, f, c], i) => `<td class="${i === 0 ? 'main' : c === 'act' ? 'act' : c === 'num' ? 'num' : ''}" data-l="${esc(l)}">${f(r)}</td>`).join('')}</tr>`).join('');
-  return `<div class="tblwrap"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  const body = rows.map((r, ri) => `<tr data-ri="${ri}">${cols.map(([l, f, c], i) => `<td class="${i === 0 ? 'main' : c === 'act' ? 'act' : c === 'num' ? 'num' : ''}" data-l="${esc(l)}">${f(r)}</td>`).join('')}</tr>`).join('');
+  const desk = `<div class="tblwrap"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  if (!o || !o.row) return desk;
+  const id = ++tsn; TSETS[id] = { cols, rows, o }; delete TSETS[id - 12];
+  return `<div class="tblset" data-ts="${id}">${desk}<div class="clist">${rows.map((r, ri) => crow(o.row(r), `data-ri="${ri}"`)).join('')}</div></div>`;
 }
+function openTblRow(el) {
+  const set = el.closest('.tblset'); if (!set) return; const T = TSETS[set.dataset.ts]; if (!T) return;
+  const ri = Number(el.dataset.ri), r = T.rows[ri]; const tr = set.querySelector(`.tbl tbody tr[data-ri="${ri}"]`);
+  const acts = colActions(T.cols, r).map((a) => ({ label: a.label, cls: a.cls, run: () => tr.querySelectorAll('td.act button')[a.i]?.click() }));
+  openRowSheet(T.cols, r, { title: T.o.title ? T.o.title(r) : null, pills: T.o.row(r).p, acts });
+}
+document.addEventListener('click', (e) => { const c = e.target.closest('.tblset .crow'); if (c) openTblRow(c); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches?.('.tblset .crow')) openTblRow(e.target); });
 const cust = (r) => `<b>${esc(r.customer_name)}</b>`;
 
 /* ---------- sections ---------- */
@@ -259,7 +293,7 @@ async function decisions() {
     ['Paid', (b) => naira(b.price_kobo), 'num'], ['Cancelled', (b) => stamp(b.cancelled_at)],
     ['', (b) => act('Convert to credit', 'sec', `data-do="credit" data-id="${b.id}"`) + act('Refund', '', `data-do="refund" data-id="${b.id}"`), 'act'],
   ];
-  app.innerHTML = head('Refund decisions', `Paid bookings cancelled in time wait here. A credit is a same-barber session valid ${r.credit_expiry_days} days; a refund goes back to the customer's card and the customer is told.`, refreshBtn) + table(cols, r.bookings, 'Nothing is waiting for a decision.');
+  app.innerHTML = head('Refund decisions', `Paid bookings cancelled in time wait here. A credit is a same-barber session valid ${r.credit_expiry_days} days; a refund goes back to the customer's card and the customer is told.`, refreshBtn) + table(cols, r.bookings, 'Nothing is waiting for a decision.', { row: (b) => ({ t: esc(b.customer_name), p: bd('b-amber', 'AWAITING'), m: `${esc(b.service_name)} · ${esc(b.shop_name)} · ${dlabel(b.date)}, ${t12(b.start_min)}`, r: naira(b.price_kobo) }), title: (b) => b.customer_name });
   wireReload(decisions);
   wireActions(app, {
     credit: async (d) => { await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'credit' } }); toast('Converted to a session credit'); await decisions(); },
