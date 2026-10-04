@@ -160,9 +160,8 @@ const NUMS = [
 const VERS = [['terms_version', 'Terms version'], ['privacy_version', 'Privacy Policy version'], ['barber_agreement_version', 'Barber Agreement version']];
 async function addNumbersCard() {
   if ((location.hash.replace(/^#\/?/, '') || '').split('?')[0] !== 'controls') return;
-  const [{ settings: s }, pub] = await Promise.all([api('/settings'), fetch('/api/public-settings').then((r) => r.json()).catch(() => ({ settings: {} }))]);
+  const { settings: s } = await api('/settings');
   const v = (k) => k === 'commission_pct' ? Math.round(Number(s.commission_factor) * 100000) / 1000 : s[k];
-  const eff = pub.settings || {};
   const field = ([k, l, step, min, max, help]) => `<div><label>${esc(l)}</label><input type="number" name="${k}" step="${step}" min="${min}" max="${max}" value="${esc(v(k))}">${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`;
   const html = `<div class="card" id="numcard"><form id="nf"><h2 style="margin-top:0">Published numbers</h2><p class="muted small">The cancel window, payment hold, credit expiry, plan limits, data-keeping periods, liability cap and document versions are quoted on the public pages, which read them live. The fee, charge, fee-split and commission numbers are private: they are used for the sums and shown only to the barber on their own earnings screen and to you here. Every change is saved in the audit log.</p>
     ${NUMS.map(([g, fs]) => `<h2>${esc(g)}</h2><div class="formgrid">${fs.map(field).join('')}</div>`).join('')}
