@@ -839,7 +839,7 @@ async function barberBalance() {
   const st = { ACCRUED: ['b-amber', 'Owed'], SETTLED: ['b-green', 'Settled'], WAIVED: ['b-blue', 'Waived'] };
   app.innerHTML = `${pendingBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Platform balance owed</h1>
     <div class="card"><div class="muted small">YOU CURRENTLY OWE</div><div style="font-size:32px;font-weight:800;margin:4px 0">${naira(r.owed_kobo)}</div>
-      <div class="small muted">When a customer pays outside the app (cash or transfer) and you complete the booking, we add TrimSlot's commission here. It is ${Math.round(r.factor * 100)}% of the usual in-app fee. We take it out of your next online payments and plan sales. You do not need to send money.</div></div>
+      <div class="small muted">When a customer pays outside the app (cash or transfer) and you complete the booking, we add TrimSlot's charge here. We take it out of your next online payments and plan sales. You do not need to send money.</div></div>
     ${r.blocked.blocked ? `<div class="warn notice">${ic('warn')}<div><b>Pay on arrival is paused for your shop.</b><div class="small">Your balance ${esc(r.blocked.reason || '')}. Customers can still pay online. When you clear the balance, pay on arrival comes back.</div></div></div>` : ''}
     <h2>Entries</h2>${r.entries.length ? r.entries.map((e) => `<div class="card"><div class="row between"><b>${e.kind === 'ADJUSTMENT' ? 'Adjustment' : e.booking_id ? `<a href="#/b/${e.booking_id}">Booking #${e.booking_id}</a>` : 'Commission'}</b><span class="badge ${st[e.status][0]}">${st[e.status][1]}</span></div>
       <div class="row between" style="margin-top:4px"><span class="small muted">${esc(e.note || '')}</span><b>${naira(e.amount_kobo)}</b></div>
