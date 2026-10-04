@@ -18,6 +18,12 @@ const GOOD = {
   NODE_ENV: 'production', RESEND_API_KEY: 're_test_placeholder', MAIL_FROM: 'TrimSlot <no-reply@example.com>', DATABASE_URL: 'postgresql://postgres.abc:pw@aws-0-eu-west-1.pooler.supabase.com:6543/postgres', CRON_SECRET: 'c'.repeat(32), JWT_SECRET: 'a'.repeat(40), PAYSTACK_SECRET_KEY: 'sk_test_abc123', APP_BASE_URL: 'https://book.example.com',
 } as NodeJS.ProcessEnv;
 
+test('prod config: the missing-mail-key warning only matters while email verification is switched on', () => {
+  const noMail = { ...GOOD, RESEND_API_KEY: '', MAIL_FROM: '' } as NodeJS.ProcessEnv;
+  assert.ok(!assertProductionConfig(noMail).warnings.some((w) => /RESEND_API_KEY/.test(w)));
+  assert.ok(assertProductionConfig({ ...noMail, EMAIL_VERIFICATION_REQUIRED: 'true' }).warnings.some((w) => /RESEND_API_KEY/.test(w)));
+});
+
 test('prod config: valid env boots; test key yields a warning', () => {
   const r = assertProductionConfig({ ...GOOD });
   assert.ok(r.warnings.some((w) => /TEST key/.test(w)));

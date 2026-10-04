@@ -29,7 +29,10 @@ async function hit(db: Conn, key: string, windowMs: number, limit: number): Prom
   return r.hits <= limit;
 }
 
+const paused = () => new AppError(409, 'EMAIL_VERIFICATION_OFF', 'Email checking is switched off for now. You do not need a code.');
+
 export async function sendEmailOtp(db: Db, userId: number, ip: string) {
+  if (!config.emailVerificationRequired) throw paused();   // paused: nothing is sent
   const u = await db.one<any>('SELECT id, email, email_verified_at FROM users WHERE id=$1', [userId]);
   if (!u.email) throw new AppError(400, 'EMAIL_REQUIRED', 'Add your email first. Then we can send you a code.');
   if (u.email_verified_at) return { already_verified: true };
@@ -44,6 +47,7 @@ export async function sendEmailOtp(db: Db, userId: number, ip: string) {
 }
 
 export async function verifyEmailOtp(db: Db, userId: number, codeRaw: unknown) {
+  if (!config.emailVerificationRequired) throw paused();
   const code = typeof codeRaw === 'string' ? codeRaw.trim() : '';
   if (!/^\d{6}$/.test(code)) throw badRequest('Type the 6 numbers from the email.');
   const out = await db.tx(async (t) => {
@@ -72,6 +76,7 @@ const needMsg = (hasEmail: boolean, what: string) => hasEmail ? `Verify your ema
 
 /** Customers: a verified email is needed before their FIRST booking. Anyone who already has a real booking is not blocked (existing users keep working). */
 export async function assertCustomerMayBook(c: Conn, customerId: number) {
+  if (!config.emailVerificationRequired) return;
   const u = await c.maybeOne<any>('SELECT email, email_verified_at FROM users WHERE id=$1', [customerId]);
   if (!u || u.email_verified_at) return;
   if (await c.maybeOne(`SELECT 1 FROM bookings WHERE customer_id=$1 AND ${barberVisible()} LIMIT 1`, [customerId])) return;
@@ -79,9 +84,10 @@ export async function assertCustomerMayBook(c: Conn, customerId: number) {
 }
 /** The emergency action always needs a verified email (no grandfathering). */
 export async function assertEmailVerified(c: Conn, userId: number, what: string) {
+  if (!config.emailVerificationRequired) return;
   const u = await c.maybeOne<any>('SELECT email, email_verified_at FROM users WHERE id=$1', [userId]);
   if (!u || u.email_verified_at) return;
   throw new AppError(403, 'EMAIL_NOT_VERIFIED', needMsg(!!u.email, what), { needs_email: !u.email });
 }
 /** A barber shop is bookable once the barber's email is verified (barbers who joined before this rule are exempt). */
-export const barberEmailReadySql = (barberAlias = 'b') => `EXISTS (SELECT 1 FROM users bu WHERE bu.id = ${barberAlias}.user_id AND (bu.email_verified_at IS NOT NULL OR bu.email_verify_exempt))`;
+export const barberEmailReadySql = (barberAlias = 'b') => !config.emailVerificationRequired ? 'TRUE' : `EXISTS (SELECT 1 FROM users bu WHERE bu.id = ${barberAlias}.user_id AND (bu.email_verified_at IS NOT NULL OR bu.email_verify_exempt))`;

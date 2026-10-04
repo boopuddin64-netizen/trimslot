@@ -97,7 +97,8 @@ function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
-const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED') { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
+const emailCheckOn = () => !!(state.cfg && state.cfg.email_verification);   // email checking is paused unless the server says it is on
+const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
@@ -198,7 +199,7 @@ async function route() {
     if (parts[0] === 'b' && /^[a-f0-9]{12,32}$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
-    if (parts[0] === 'verify-email') return verifyEmail(q.get('next'));
+    if (parts[0] === 'verify-email') { if (!emailCheckOn()) { const nx = q.get('next'); return go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup|verify-email)/.test(nx) ? nx : '#/'); } return verifyEmail(q.get('next')); }
     if (parts[0] === 'notifications') return notifications();
     if (parts[0] === 'profile') return role === 'barber' ? barberProfile() : profile();
     if (parts[0] === 'barber') return barberPage(Number(parts[1]));
@@ -277,7 +278,7 @@ function authPage(mode, roleQ) {
         else await api('/auth/login', { method: 'POST', body: fd });
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
-        if (signup && fd.email) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
+        if (signup && fd.email && emailCheckOn()) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
         go(dest);
       } catch (e) { saved = fd; draw(e.message); }
     };
@@ -460,7 +461,7 @@ async function bookWizard(barberId) {
           }
           toast('Booking confirmed'); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
-          if (e.code === 'EMAIL_NOT_VERIFIED') { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
+          if (e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
           if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(e.message); } else draw(e.message);
         }
       };
@@ -876,7 +877,7 @@ async function act(id, action, body) {
   try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
 }
 const emailBanner = () => {
-  const u = state.user; if (!u || u.email_verified !== false) return '';
+  const u = state.user; if (!emailCheckOn() || !u || u.email_verified !== false) return '';
   const here = (location.hash || '').startsWith('#/verify-email');
   if (here) return '';
   return `<a class="notice warn" id="emailban" href="#/verify-email" style="text-decoration:none;color:inherit">${ic('shield')}<div><b>${u.email ? 'Check your email address.' : 'Add your email address.'}</b><div class="small">${u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'You need this before your first booking.'} ${u.email ? 'Tap to get a 6-digit code.' : 'Tap to add it.'}</div></div></a>`;

@@ -291,7 +291,7 @@ export function createApp(db: Db) {
   /** Published policy numbers for the legal pages (cancel lock, credit expiry, fee, ...). Public and cacheable for a minute. */
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => res.json({
-    payment_mode: config.paystackMode, mock: config.mockMode, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
+    payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: true, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));

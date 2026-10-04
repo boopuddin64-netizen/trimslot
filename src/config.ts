@@ -55,6 +55,8 @@ export const config = {
     if (this.isProd) throw new Error('JWT_SECRET must be set in production');
     return DEV_JWT_DEFAULT;
   },
+  /** Email verification by one-time code (sign-up, first booking, emergency action, barber ready). PAUSED by default: set EMAIL_VERIFICATION_REQUIRED=true to switch it on. When off nothing is blocked, no code is sent and the UI hides the prompts. Read on every call. */
+  get emailVerificationRequired() { return /^(1|true|yes|on)$/i.test((process.env.EMAIL_VERIFICATION_REQUIRED || '').trim()); },
   get paystackKey() { return process.env.PAYSTACK_SECRET_KEY || ''; },
   /** MOCK payments: only ever possible outside production, and only when no Paystack key is set. */
   get mockMode() { return !this.isProd && !process.env.PAYSTACK_SECRET_KEY; },
@@ -104,7 +106,7 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv = process.env): { 
   if (!env.CRON_SECRET) warnings.push('CRON_SECRET is not set: /api/cron/sweep is disabled (expired payment holds are still enforced lazily on every request).');
   else if (env.CRON_SECRET.length < 16) errors.push('CRON_SECRET must be at least 16 characters (generate: openssl rand -hex 24)');
   if (env.ADMIN_KEY && env.ADMIN_KEY.length < 16) warnings.push('ADMIN_KEY is shorter than 16 characters and is IGNORED (admin login falls back to CRON_SECRET). Generate one: openssl rand -hex 24');
-  if (!env.RESEND_API_KEY || !env.MAIL_FROM) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: email codes (sign-up and booking verification) cannot be sent. Set a real email provider key before launch.');
+  if (/^(1|true|yes|on)$/i.test((env.EMAIL_VERIFICATION_REQUIRED || '').trim()) && (!env.RESEND_API_KEY || !env.MAIL_FROM)) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: email codes (sign-up and booking verification) cannot be sent. Set a real email provider key before launch.');
   const base = env.APP_BASE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
   if (!/^https:\/\/[^/]+/.test(base)) errors.push('APP_BASE_URL must be set to your public https:// URL (used for Paystack callbacks and CSRF origin checks)');
   if (env.TRIMSLOT_FAKE_NOW) errors.push('TRIMSLOT_FAKE_NOW must not be set in production');

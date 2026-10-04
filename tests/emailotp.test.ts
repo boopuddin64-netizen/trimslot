@@ -6,7 +6,13 @@ import { setMailTransport, sendMail, mailerMode, Mail } from '../src/mailer';
 import { fixedDevCode, hashCode, OTP_MAX_ATTEMPTS } from '../src/emailOtp';
 import { createBooking } from '../src/bookingService';
 
-async function boot() {
+const FLAG = 'EMAIL_VERIFICATION_REQUIRED';
+const flagWas = process.env[FLAG];
+const setFlag = (v: string | undefined) => { if (v === undefined) delete process.env[FLAG]; else process.env[FLAG] = v; };
+
+/** The OTP rules are tested with the flag ON (it is OFF by default); bootOff() keeps the default. */
+async function boot(flag: string | undefined = 'true') {
+  setFlag(flag);
   const c = await bootApp();
   await unverifiedUsers(c.db);                     // the real rules: new users start unverified
   const mails: Mail[] = []; setMailTransport(async (m) => { mails.push(m); });
@@ -19,7 +25,7 @@ async function boot() {
   };
   const customer = async (extra: any = {}) => signup({ email: `new${++n}-${Date.now()}@example.com`, ...extra });
   const book = (cookie: string, time = '10:00') => c.call('POST', '/api/bookings', { barber_id: c.barberId, service_id: c.serviceIds[0], date: WED, time, payment_option: 'ON_ARRIVAL' }, cookie);
-  const done = () => { setMailTransport(null); c.close(); };
+  const done = () => { setMailTransport(null); setFlag(flagWas); c.close(); };
   return { c, mails, signup, customer, book, done };
 }
 
@@ -156,4 +162,44 @@ test('mailer: nothing real is sent from tests; production without a provider key
     await assert.rejects(sendMail({ to: 'a@b.co', subject: 's', text: 't' }), (e: any) => e.code === 'EMAIL_NOT_CONFIGURED');
   } finally { process.env.NODE_ENV = prev; }
   process.env.RESEND_API_KEY = 're_fake'; try { assert.equal(fixedDevCode(), false); assert.equal(mailerMode(), 'log'); } finally { delete process.env.RESEND_API_KEY; }   // NODE_ENV=test never reaches Resend
+});
+
+test('email code PAUSED (flag off, the default): nothing is blocked, nothing is sent, the OTP endpoints stay but refuse to send', async () => {
+  const { c, mails, signup, customer, book, done } = await boot(undefined);
+  try {
+    assert.equal((await c.call('GET', '/api/config')).json.email_verification, false);
+    // sign-up works without any code; a barber may sign up without an email again
+    const u = await customer();
+    assert.equal(u.r.status, 201);
+    assert.equal((await signup({ role: 'barber', shop_name: 'Phone Cuts', phone: '08077770003', accept_barber_agreement: true })).r.status, 201);
+    // first-time customer books without a verified email
+    assert.equal((await c.db.one('SELECT email_verified_at FROM users WHERE id=$1', [u.id])).email_verified_at, null);
+    const first = await book(u.cookie);
+    assert.equal(first.status, 201, first.text);
+    // a brand-new barber (not verified, not exempt) is bookable
+    const b = await signup({ role: 'barber', shop_name: 'New Cuts', email: 'newbarber@example.com', accept_barber_agreement: true });
+    const bid = (await c.db.one('SELECT id FROM barbers WHERE user_id=$1', [b.id])).id;
+    await c.db.query(`UPDATE barbers SET verified=TRUE, share_code='abcdef123456abcd' WHERE id=$1`, [bid]);
+    const svc = (await c.db.one(`INSERT INTO services (barber_id,name,price_kobo,duration_min,active,created_at) VALUES ($1,'Cut',200000,30,TRUE,now()) RETURNING id`, [bid])).id;
+    await c.db.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source, created_at) VALUES ($1,$2,TRUE,'link',now())`, [u.id, bid]);
+    assert.equal((await c.call('GET', `/api/barbers/${bid}`, undefined, u.cookie)).json.booking.paused, false);
+    const nb = await c.call('POST', '/api/bookings', { barber_id: bid, service_id: svc, date: WED, time: '10:00', payment_option: 'ON_ARRIVAL' }, u.cookie);
+    assert.equal(nb.status, 201, nb.text);
+    // emergency help is allowed for an unverified customer
+    setNow(`${WED}T09:45:00+01:00`);
+    await c.db.query(`UPDATE bookings SET payment_status='PAID', payment_option='ONLINE', paid_at=now() WHERE id=$1`, [first.json.booking.id]);
+    const h = await c.call('POST', `/api/bookings/${first.json.booking.id}/help`, { note: 'Please help me' }, u.cookie);
+    assert.equal(h.status, 201, h.text);
+    // the endpoints are still there but send nothing
+    const s = await c.call('POST', '/api/auth/email/send', {}, u.cookie);
+    assert.equal(s.status, 409); assert.equal(s.json.error.code, 'EMAIL_VERIFICATION_OFF');
+    assert.equal((await c.call('POST', '/api/auth/email/verify', { code: '123456' }, u.cookie)).status, 409);
+    assert.equal(mails.length, 0);
+    assert.equal((await c.db.one('SELECT otp_hash FROM users WHERE id=$1', [u.id])).otp_hash, null);
+    // switching it on later enforces the rules again (nothing to migrate)
+    setFlag('true');
+    assert.equal((await c.call('GET', '/api/config')).json.email_verification, true);
+    assert.equal((await c.call('POST', '/api/auth/email/send', {}, u.cookie)).status, 200);
+    assert.equal(mails.length, 1);
+  } finally { done(); }
 });

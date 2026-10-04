@@ -13,7 +13,10 @@ const api = (p, method, path, body) => p.evaluate(async ([m, u, bd]) => { const 
 const login = async (p, id, pw) => { await p.goto('/#/login'); await p.waitForSelector('[name=identifier]'); await p.fill('[name=identifier]', id); await p.fill('[name=password]', pw); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('login'), null, { timeout: 8000 }); };
 const stamp = Date.now();
 
-// 1) new customer: sign-up leads to the email code screen
+// 1) new customer. Email checking is PAUSED by default (EMAIL_VERIFICATION_REQUIRED unset): no code screen, no banner, no prompt.
+//    With EMAIL_VERIFICATION_REQUIRED=true the sign-up leads to the email code screen.
+const EV = /^(1|true|yes|on)$/i.test(process.env.EMAIL_VERIFICATION_REQUIRED || '');
+if (EV) {
 { const { ctx, p } = await mk();
   await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]');
   await p.fill('[name=name]', 'Code Tester'); await p.fill('[name=email]', `code${stamp}@example.com`); await p.fill('[name=password]', 'Password123'); await p.check('[name=accept_terms]'); await p.click('button[type=submit]');
@@ -25,6 +28,18 @@ const stamp = Date.now();
   await p.fill('#vf [name=code]', '123456'); await p.click('#vf button'); await p.waitForFunction(() => !location.hash.includes('verify-email'), null, { timeout: 8000 });
   ok(await p.locator('#emailban').count() === 0, 'no email banner after verifying');
   await p.screenshot({ path: 'screenshots/contact/after-verify.png' }); await ctx.close(); }
+} else {
+  const { ctx, p } = await mk();
+  await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]');
+  await p.fill('[name=name]', 'Code Tester'); await p.fill('[name=email]', `code${stamp}@example.com`); await p.fill('[name=password]', 'Password123'); await p.check('[name=accept_terms]'); await p.click('button[type=submit]');
+  await p.waitForFunction(() => !location.hash.includes('signup'), null, { timeout: 8000 });
+  await p.waitForTimeout(500);
+  ok(!(await p.evaluate(() => location.hash)).includes('verify-email') && await p.locator('#sendcode').count() === 0, 'paused: sign-up does not go to the code screen');
+  ok(await p.locator('#emailban').count() === 0, 'paused: no verify-email banner');
+  await p.goto('/#/verify-email'); await p.waitForTimeout(800);
+  ok(!(await p.evaluate(() => location.hash)).includes('verify-email') && await p.locator('#sendcode').count() === 0, 'paused: the verify-email screen is skipped');
+  await p.screenshot({ path: 'screenshots/contact/after-signup-paused.png' }); await ctx.close();
+}
 
 // 2) Chidi: paid upcoming booking -> contact box + Change time; locked paid booking -> urgent box + help
 const { ctx, p } = await mk();
