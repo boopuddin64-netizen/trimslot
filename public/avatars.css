@@ -1,0 +1,12 @@
+/* Customer avatars: small, round, flat. Initials fallback; photo is a background so the box never jumps. */
+.av{--s:28px;display:inline-grid;place-items:center;flex:none;width:var(--s);height:var(--s);border-radius:50%;background:var(--brand-soft) center/cover no-repeat;color:var(--brand-d);font:700 calc(var(--s)*.38)/1 var(--font);letter-spacing:.2px;text-transform:uppercase;vertical-align:middle;overflow:hidden;border:1px solid var(--line);user-select:none}
+.av.has{color:transparent;border-color:var(--line2)}
+.av.lg{--s:56px}.av.xl{--s:84px}.av.sm{--s:22px}
+.av-name{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.av-name>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.avatar-edit{display:flex;align-items:center;gap:14px;padding:6px 0 4px}
+.avatar-edit .btns{margin:0}
+.avatar-edit small{display:block;color:var(--mut)}
+.ct .av,.cm .av{margin-right:8px}
+.av-row{display:flex;align-items:center;gap:10px;min-width:0}
+.av-row>div{min-width:0}

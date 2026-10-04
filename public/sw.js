@@ -9,10 +9,12 @@ self.addEventListener('push', (event) => {
   const title = d.title || 'TrimSlot';
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const visible = wins.some((c) => c.visibilityState === 'visible');
     // App is open and in view: show the in-app banner instead of a system notification (no double alerts).
-    for (const c of wins) c.postMessage({ type: 'push', payload: d });
-    if (visible) return;
+    // Admin alerts only go to admin windows (never to a customer/barber app window that happens to be open).
+    const isAdminWin = (c) => new URL(c.url).pathname.startsWith('/admin');
+    const targets = d.admin ? wins.filter(isAdminWin) : wins.filter((c) => !isAdminWin(c));
+    for (const c of targets) c.postMessage({ type: 'push', payload: d });
+    if (targets.some((c) => c.visibilityState === 'visible')) return;
     await self.registration.showNotification(title, {
       body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || '/#/notifications', id: d.id },
       icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', timestamp: Date.now(),
@@ -28,8 +30,10 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const hash = url.includes('#') ? url.slice(url.indexOf('#')) : '#/notifications';
+    const wantAdmin = new URL(url, self.location.origin).pathname.startsWith('/admin');
     for (const c of wins) {
-      if (new URL(c.url).origin === self.location.origin) {
+      const u = new URL(c.url);
+      if (u.origin === self.location.origin && u.pathname.startsWith('/admin') === wantAdmin) {
         await c.focus().catch(() => {});
         c.postMessage({ type: 'go', hash });
         return;

@@ -161,7 +161,7 @@ const LISTS = {
     key: 'bookings', list: 'bookings', title: 'Bookings', sub: 'Every booking, newest date first. Filter by status, date or shop; click a row for the full record and admin actions.', search: 'Search #id or customer name',
     params: ['q', 'status', 'payment_status', 'date', 'from', 'to', 'barber_id', 'customer_id', 'sort'], defaults: () => ({ q: '', status: '', payment_status: '', date: '' }), empty: 'No bookings match.',
     pills: { param: 'status', items: [['', 'All'], ['CONFIRMED', 'Confirmed'], ['ARRIVED', 'Arrived'], ['IN_SERVICE', 'In service'], ['COMPLETED', 'Completed'], ['CANCELLED', 'Cancelled'], ['NO_SHOW', 'No-show'], ['PENDING_PAYMENT', 'Awaiting payment']] },
-    selects: [{ param: 'payment_status', label: 'Payment', options: [['', 'Any payment'], ['PAID', 'Paid'], ['PAYMENT_DUE', 'Pay on arrival'], ['PENDING', 'Pending'], ['CREDIT_PENDING', 'Awaiting decision'], ['CREDITED', 'Credited'], ['VOID', 'Void']] }],
+    selects: [{ param: 'payment_status', label: 'Payment', options: [['', 'Any payment'], ['PAID', 'Paid'], ['PAYMENT_DUE', 'Pay on arrival'], ['PENDING', 'Pending'], ['CREDIT_PENDING', 'Awaiting decision'], ['REFUND_PENDING', 'Refund pending'], ['REFUNDED', 'Refunded'], ['REFUND_DECLINED', 'Refund declined'], ['CREDITED', 'Credited'], ['VOID', 'Void']] }],
     dates: [{ param: 'date', label: 'Date' }], sorts: [['date', 'Date'], ['newest', 'Newest created'], ['price', 'Price']], open: (b, rl) => bookingSheet(b.id, rl),
     cols: [
       ['Booking', (b) => `#${b.id} ${esc(b.service_name)}<span class="sub">${esc(b.customer_name)}</span>`], ['Shop', (b) => esc(b.shop_name)],
@@ -412,5 +412,5 @@ Object.assign(ROUTES, {
   reports: listPage(LISTS.reports), ledger: async () => { await listPage(LISTS.ledger)(); const b = $('#remind-all'); if (b) b.onclick = async () => { b.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er) { toast(er.message, true); } b.disabled = false; }; },
   reviews: listPage(LISTS.reviews), waitlist: listPage(LISTS.waitlist), plans: plansRoute,
 });
-window.ADM2.mountSearch = mountSearch; window.ADM2.paymentSheet = paymentSheet;
+window.ADM2.mountSearch = mountSearch; window.ADM2.paymentSheet = paymentSheet; window.ADM2.LISTS = LISTS;
 })();

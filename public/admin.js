@@ -27,8 +27,8 @@ function signOut(silent) { try { sessionStorage.removeItem(KEY); } catch { /* ig
 const bd = (cls, t) => `<span class="badge ${cls}">${esc(t)}</span>`;
 const bookingBadge = (s) => bd({ CONFIRMED: 'b-blue', ARRIVED: 'b-green', IN_SERVICE: 'b-purple', COMPLETED: 'b-gray', CANCELLED: 'b-red', NO_SHOW: 'b-red', NOT_SERVED: 'b-red', PENDING_PAYMENT: 'b-amber' }[s] || 'b-gray', s === 'PENDING_PAYMENT' ? 'NOT CONFIRMED' : s.replace('_', ' '));
 const payBadge = (s) => bd({ SUCCESS: 'b-green', FAILED: 'b-red', INITIATED: 'b-amber' }[s] || 'b-gray', s === 'SUCCESS' ? 'PAID' : s);
-const refundBadge = (s) => s ? bd({ NEEDS_REFUND: 'b-amber', REFUND_REQUESTED: 'b-blue', REFUNDED: 'b-green' }[s] || 'b-gray', s.replace('_', ' ')) : '';
-const bpay = (s) => bd({ PAID: 'b-green', CREDIT_PENDING: 'b-purple', CREDITED: 'b-purple', PAYMENT_DUE: 'b-amber', VOID: 'b-gray', PENDING: 'b-amber' }[s] || 'b-gray', s.replace('_', ' '));
+const refundBadge = (s) => s ? bd({ NEEDS_REFUND: 'b-amber', PENDING_APPROVAL: 'b-amber', REFUND_REQUESTED: 'b-blue', REFUNDED: 'b-green', REJECTED: 'b-red' }[s] || 'b-gray', s.replace(/_/g, ' ')) : '';
+const bpay = (s) => bd({ PAID: 'b-green', CREDIT_PENDING: 'b-purple', REFUND_PENDING: 'b-amber', REFUNDED: 'b-blue', REFUND_DECLINED: 'b-red', CREDITED: 'b-purple', PAYMENT_DUE: 'b-amber', VOID: 'b-gray', PENDING: 'b-amber' }[s] || 'b-gray', s.replace('_', ' '));
 
 /* compact rows (phones): one row = ~58px, two lines. d = { t: title, p: pills (right of title), m: meta (one line, ellipsis), r: trailing figure, sel: checkbox html } */
 const crow = (d, attrs = '') => `<div class="crow" role="button" tabindex="0" ${attrs}>${d.sel || ''}<div class="cb"><div class="c1"><span class="ct">${d.t}</span>${d.p ? `<span class="cp">${d.p}</span>` : ''}</div><div class="c2"><span class="cm">${d.m || ''}</span>${d.r ? `<span class="cr">${d.r}</span>` : ''}</div></div><span class="cgo" aria-hidden="true">›</span></div>`;
@@ -343,7 +343,6 @@ const FIELDS = [
   ['platform_fee_percent', 'Platform fee (%)', 'number'], ['platform_fee_naira', 'Platform fee, flat (₦)', 'number'],
   ['credit_expiry_days', 'Credit expiry (days)', 'number'], ['plan_refund_policy', 'Unused plan sessions', 'select'],
   ['credit_on_missed_session', 'A missed paid session (no-show or late cancel) gives 1 credit', 'checkbox'],
-  ['credit_on_early_cancel_prepaid', 'Cancelling a prepaid booking in time gives a credit', 'checkbox'],
 ];
 async function rules() {
   const { settings: s } = await api('/settings'); drawNav('rules');
