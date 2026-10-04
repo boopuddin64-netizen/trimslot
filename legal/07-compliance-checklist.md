@@ -1,5 +1,7 @@
 # Compliance Checklist (short)
 
+> **INTERNAL – for the owner and the lawyer only. Do NOT publish this file or the legal pack** (no web page, no public repository, no app screen). It contains business details such as fees, charges, the split of processing costs and internal settings. Only files 01–06 are turned into public pages, and they must not quote those numbers.
+
 > **DRAFT – not legal advice – lawyer review required.** This is a to-do list for the owner and the lawyer/accountant, not a statement of what the law requires. Tick, date and note who did it.
 
 | # | Item | Why / what to do | Who | Status |

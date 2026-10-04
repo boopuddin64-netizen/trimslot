@@ -30,7 +30,7 @@ TrimSlot keeps this to the minimum. We **do not use advertising, tracking or ana
 | `trimslot_next` | Browser session storage | Remembers the page you were going to open when you were asked to log in | Until you close the tab | No |
 | Service worker and cache | Browser | Lets the app receive notifications and load faster | Until cleared | Notifications: yes (see Part B) |
 | `trimslot_admin_key` (staff only) | Browser session storage | Keeps staff signed in to the admin area | Until you close the tab | No |
-| `adm_sf_customers`, `adm_sf_barbers`, `adm_sf_bookings`, `adm_sf_payments`, `adm_sf_credits`, `adm_sf_reports`, `adm_sf_ledger`, `adm_sf_reviews`, `adm_sf_waitlist`, `adm_sf_purchases`, `adm_sf_plans` (staff only) | Browser local storage | Saved filter views in the admin lists (a name and the filter settings, including any search text staff typed) | Until staff delete the view or clear the browser | No — a choice staff make |
+| Saved filter views for admin lists (staff only) | Browser local storage | Saved filter views in the admin lists (a name and the filter settings, including any search text staff typed) | Until staff delete the view or clear the browser | No — a choice staff make |
 | Profile picture | Served by the app to you and your barbers only; not a cookie | Shows your optional photo | Until you remove it or delete your account | Your choice (you upload it) |
 
 Our payment provider **Paystack** and our host **Vercel** may set their own cookies or collect technical data when you use their pages (for example, the Paystack checkout page). Their notices apply: [PAYSTACK PRIVACY LINK], [VERCEL PRIVACY LINK]. 
@@ -68,7 +68,7 @@ After the person taps "Enable notifications", the browser shows its own permissi
 * **What we store:** the subscription address and encryption keys your browser gives us, linked to your account, a short description of your browser and device (the "user agent" text), when the subscription was made and last worked, plus which messages were sent. A subscription belongs to the **browser**: if someone else logs in on the same browser and turns notifications on, the subscription moves to their account. We do not read your contacts or location.
 * **What the messages contain:** booking details such as shop name, service and time. These may appear on your lock screen — turn off lock-screen previews on your device if that matters.
 * **Withdrawing consent:** turn off "Push notifications" on the Profile page (we then delete the subscription), or block notifications for the site in your browser. This does not affect the in-app list.
-* **Staff** can turn on push alerts for refunds waiting, auto-approved refunds, refund failures and deletion requests (with quiet hours); they are separate from customer notifications.
+* **Staff** can turn on push alerts for payments, refunds and requests that need attention (with quiet hours); they are separate from customer notifications.
 * **Barbers** receive notifications about new bookings, arrivals, cancellations and balance reminders.
 * **Marketing:** none today. If we ever send marketing, we will ask for a separate consent and you will be able to say no without losing the service.
 * **Legal basis:** consent (for push); contract (for in-app service messages).

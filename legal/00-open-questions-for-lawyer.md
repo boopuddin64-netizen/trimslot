@@ -1,5 +1,7 @@
 # Open questions for the lawyer
 
+> **INTERNAL – for the owner and the lawyer only. Do NOT publish this file or the legal pack** (no web page, no public repository, no app screen). It contains business details such as fees, charges, the split of processing costs and internal settings. Only files 01–06 are turned into public pages, and they must not quote those numbers.
+
 > **DRAFT – not legal advice – lawyer review required.**
 
 Numbered so you can answer by number. "Today" = what the app does now (see `08-app-behaviour-reference.md`).

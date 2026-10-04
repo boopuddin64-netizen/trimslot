@@ -35,3 +35,4 @@
 .sheet.crop .err{margin:10px 0 0;text-align:left}
 .crop-btns{display:flex;gap:8px;margin-top:14px}
 .crop-btns .btn{flex:1}
+.crow .ct .av,.crow .cm .av{--s:22px;vertical-align:middle}   /* a 28px avatar made the one-line name taller than its 20px line (row heights must not vary) */

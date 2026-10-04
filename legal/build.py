@@ -28,12 +28,18 @@ DEFAULTS = {
     "retention_deleted_days": "30", "loyalty_every_n": "10", "loyalty_credit_naira": "1,000", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
     "terms_version": "1", "privacy_version": "1", "barber_agreement_version": "1",
 }
+# The public pages may quote only these numbers (they are what /api/public-settings serves). Fee, charge, split, commission and refund-timing numbers are business settings:
+# they may appear in the internal lawyer files only (00, 07, 08 and the pack), never on a public page.
+PUBLIC_TOKENS = {"cancel_cutoff_min", "payment_hold_min", "credit_expiry_days", "min_plan_price_naira", "max_plan_price_naira", "max_plan_validity_days", "max_plan_sessions",
+    "liability_cap_naira", "retention_events_days", "retention_bad_events_days", "retention_notifications_days", "retention_push_stale_days", "retention_deleted_days",
+    "retention_checkout_days", "retention_rate_limit_hours", "retention_admin_alerts_days", "loyalty_every_n", "loyalty_credit_naira", "terms_version", "privacy_version", "barber_agreement_version"}
 TOKEN = re.compile(r"\{\{([a-z_]+)\}\}")
 
 def fill_tokens(text, live):
     def one(m):
         k = m.group(1)
         if k not in DEFAULTS: raise SystemExit("unknown setting token {{%s}}" % k)
+        if live and k not in PUBLIC_TOKENS: raise SystemExit("{{%s}} is an internal business number and must not appear on a public page" % k)
         return '<span data-s="%s">%s</span>' % (k, H.escape(DEFAULTS[k])) if live else DEFAULTS[k]
     return TOKEN.sub(one, text)
 DOCS = ["00-open-questions-for-lawyer.md", "01-terms-of-service.md", "02-barber-agreement.md", "03-privacy-policy.md",
@@ -81,8 +87,10 @@ def strip_first_quote(text):
     while j < len(lines) and lines[j].startswith(">"): j += 1
     return "\n".join(lines[:i] + lines[j:])
 
+NOTE = re.compile(r"\s*\[(?:LAWYER|OWNER)[^\]]*\]")   # drafting notes for the owner/lawyer stay in the pack and never reach a public page
+
 def web_page(md_name, page, title):
-    body = md2html(strip_first_quote((ROOT / md_name).read_text(encoding="utf-8")).split("\n## Open questions for the lawyer")[0])
+    body = md2html(NOTE.sub("", strip_first_quote((ROOT / md_name).read_text(encoding="utf-8")).split("\n## Open questions for the lawyer")[0]))
     body = unlink_unpublished(mark_placeholders(fill_tokens(body, True)))
     body = re.sub(r"<table>", '<div class="tblwrap"><table>', body).replace("</table>", "</table></div>")
     body = re.sub(r"<h1>.*?</h1>", lambda m: m.group(0) + BANNER, body, count=1, flags=re.S)
@@ -99,7 +107,7 @@ def web_page(md_name, page, title):
 '''
 
 def docx():
-    parts = ['<h1 style="page-break-before:avoid">TrimSlot legal pack — DRAFT</h1><p><b>DRAFT – not legal advice – lawyer review required.</b> Generated from the Markdown files in /legal. Placeholders in [SQUARE BRACKETS] are undecided.</p>']
+    parts = ['<h1 style="page-break-before:avoid">TrimSlot legal pack — DRAFT</h1><p><b>INTERNAL – FOR THE OWNER AND THE LAWYER ONLY. DO NOT PUBLISH.</b> This pack contains business details (fees, charges, internal settings) that must not appear on any public page.</p><p><b>DRAFT – not legal advice – lawyer review required.</b> Generated from the Markdown files in /legal. Placeholders in [SQUARE BRACKETS] are undecided.</p>']
     for n, name in enumerate(DOCS):
         h = md2html(fill_tokens((ROOT / name).read_text(encoding="utf-8"), False))
         h = re.sub(r"<a href=\"[^\"]*\.(?:html|md)\">(.*?)</a>", r"\1", h)  # in-pack links are meaningless in Word

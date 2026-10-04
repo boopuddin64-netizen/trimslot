@@ -43,9 +43,9 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 ## 3. Bookings
 
-3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, you also pay a small **booking fee**. It is shown as its own line, and the total is shown, before you pay. The booking fee is your share ({{fee_share_customer_percent}}%) of the payment company's processing fee; the barber and TrimSlot share the rest. We do not quote the payment company's own rates, because they can change. [LAWYER/OWNER: confirm this disclosure — see open questions.]
+3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, you also pay a small **booking fee**. It is shown as its own line, and the total is shown, before you pay. Pay-on-arrival bookings, plan sessions and credits have no booking fee.
 
-3.2 **Pay now (online).** **No slot is reserved while you pay, and the first confirmed payment for a time wins.** Your attempt stays open for **{{payment_hold_min}} minutes**. A booking is confirmed only when Paystack confirms your payment to us. If someone else's payment for the same time is confirmed first, your booking is not confirmed and your payment is refunded automatically. If you do not pay within {{payment_hold_min}} minutes, the booking is marked "Incomplete" and you are not charged. If your payment is confirmed after that and the time is still free, the booking is confirmed; if the time has been taken, the payment is refunded automatically.
+3.2 **Pay now (online).** **No slot is reserved while you pay, and the first confirmed payment for a time wins.** Your attempt stays open for **{{payment_hold_min}} minutes**. A booking is confirmed only when Paystack confirms your payment to us. If someone else's payment for the same time is confirmed first, your booking is not confirmed and your payment is refunded automatically. If you do not pay within {{payment_hold_min}} minutes, we first ask Paystack whether you paid. If you did, the booking is confirmed (or the payment is refunded if the time was taken). If you did not, the booking is marked "Incomplete" and you are not charged. If we cannot check with Paystack, we tell you so, and if money left your account we confirm the booking or refund you ourselves. Payments must be in Nigerian naira (NGN). If your payment is confirmed after that and the time is still free, the booking is confirmed; if the time has been taken, the payment is refunded automatically.
 
 3.3 **Pay on arrival.** If the barber offers it, you pay the barber directly (cash or bank transfer) at the shop. The barber records the payment in the app. Pay-on-arrival may be switched off for a shop or for the whole Service at any time.
 
@@ -61,7 +61,7 @@ The detailed rules are in the **Refund, Cancellation and Credit Policy**. In sho
 
 * You can cancel yourself until **{{cancel_cutoff_min}} minutes before** your appointment.
 * After that, you cannot cancel in the app. If you do not turn up, the barber may mark you as a no-show.
-* If you cancel **in time** a booking you paid online, you get a **refund** (approved by us, or automatically after {{refund_auto_approve_hours}} hour(s) if nobody has decided). You do not also get a credit.
+* If you cancel **in time** a booking you paid online, you get a **refund** (approved by us, or approved automatically if nobody has decided within a short time). You do not also get a credit.
 * A missed paid session is **not refunded**, but you get **one session credit** with the same barber, valid for **{{credit_expiry_days}} days**, which cannot be exchanged for cash. A booking gets a refund or a credit, never both.
 * **Loyalty credits.** If TrimSlot switches the loyalty reward on, you may earn a session credit with a barber after every {{loyalty_every_n}} completed visits with that barber (worth ₦{{loyalty_credit_naira}}, valid 90 days). It is a free reward, not something you buy. We can switch the reward off or change it at any time; credits already issued are kept, except as set out in the next point.
 * **Removing a credit.** We may remove (revoke) a session credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking these Terms. We tell you by notification and give the reason. [LAWYER: confirm this clause is acceptable for credits that were paid for (a missed paid session).]
@@ -91,7 +91,7 @@ You are responsible for telling the barber about skin conditions, allergies or a
 
 8.1 Customers are not charged a TrimSlot fee for a booking. When you pay online you pay the price plus the **booking fee** shown at checkout (see 3.1). Pay-on-arrival bookings, plan sessions and credits have no booking fee. If an online payment is refunded, the booking fee is refunded with it. [OWNER: confirm.]
 
-8.2 Barbers pay TrimSlot fees under the Barber Agreement. Fees are deducted automatically from online payments through the Paystack split; you do not pay them on top of the price (apart from 8.1).
+8.2 Barbers pay TrimSlot a service charge and the payment processing fees as set out in the Barber Agreement. You do not pay these on top of the price (apart from the booking fee in 8.1).
 
 8.3 We may change prices of our own fees, or switch features on or off, by giving notice in the app. Changes do not affect bookings already confirmed.
 

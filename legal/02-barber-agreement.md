@@ -9,7 +9,7 @@
 <li>We check every new shop first. Customers can see and book your shop only after we approve it. We can suspend or remove a shop that breaks the rules.</li>
 <li>Keep your shop clean and safe. Follow the law. You pay your own taxes.</li>
 <li>To get paid online, add your bank account in the app. Paystack sends online payments to your bank account. Until you do this, customers can only pay at your shop.</li>
-<li>When a customer pays you at the shop, you record it in the app. TrimSlot adds a commission to a balance you owe. You can see the balance in the app.</li>
+<li>When a customer pays you at the shop, you record it in the app. TrimSlot adds its service charge for that booking to a balance you owe. You can see the balance in the app.</li>
 <li>If you mark a customer who paid as a no-show, they get one credit with you. You must give them a service for that credit.</li>
 </ul>
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>
@@ -74,35 +74,29 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 7. Fees
 
-7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. Paystack sends the rest to your bank account after two things are taken from your price: **your share of the payment-processor fee** and **TrimSlot's charge**. So: *your payout = your price − your share of the processor fee − TrimSlot's charge*. You can see this for every booking in the app, in your bookings and earnings.
+7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. Paystack sends the rest to your bank account after two things are taken from your price: a **Paystack fee** (your part of the payment-processing cost) and **TrimSlot's service charge**. So: *your payout = your price − the Paystack fee − TrimSlot's service charge*. The exact amounts for every booking are shown in the app, in your bookings and in your earnings screen. They are worked out when the customer pays and do not change afterwards.
 
-7.1.1 **TrimSlot's charge** is, at the date of this draft, **{{platform_charge_percent}}% of the price** (plus ₦{{platform_charge_flat_naira}}), with a **minimum of ₦{{platform_charge_min_naira}}**, and never more than the price. [OWNER: confirm; these are admin-configurable settings, and we can set a different charge for you in writing or in the app.]
+7.1.1 **TrimSlot's service charge** is set by TrimSlot and shown in the app and in your earnings screen. We may agree a different charge with you in writing or in the app. The charge is never more than the price.
 
-7.1.2 **The payment-processor fee** is the fee Paystack takes for each online payment. Its rates are set by Paystack and can change, so this Agreement does not state them as a fixed number. We split that fee three ways: the customer (the booking fee), you, and TrimSlot. At the date of this draft the split is **{{fee_share_customer_percent}}% customer, {{fee_share_barber_percent}}% barber, {{fee_share_platform_percent}}% TrimSlot**. [OWNER: confirm; the split is an admin setting and the three parts always add up to 100%.] Your share is worked out when the customer pays, from our estimate of the processor fee, and does not change afterwards. If the fee Paystack really charges is different from our estimate, TrimSlot keeps or covers the difference; your share stays as shown.
+7.1.2 **The Paystack fee** is a processing cost that comes from Paystack. Its rates are set by Paystack and can change, so this Agreement does not state them as a fixed number. Your part is shown to you as "Paystack fee" on each booking. If the fee Paystack really charges is different from our estimate, TrimSlot keeps or covers the difference; the amount shown to you stays as shown.
 
-7.1.3 If a booking is refunded, the payment is returned to the customer and no payout is made for it. [LAWYER: refund of the booking fee.]
+7.1.3 If a booking is refunded, the payment is returned to the customer and no payout is made for it.
 
-7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **commission** accrues on your TrimSlot balance equal to **{{commission_percent}}%** of TrimSlot's charge (7.1.1) an online booking of the same price would have paid. There is no booking fee and no processor fee on these bookings. [OWNER: confirm the percentage; it is an admin setting.] You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
+7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **service charge** accrues on your TrimSlot balance. The amount is shown on the booking and in your earnings screen. There is no booking fee and no Paystack fee on these bookings. You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
 
-7.3 We may change fees or the commission by giving at least [30] days' notice in the app. Changes do not apply to bookings already confirmed.
+7.3 We may change fees or charges by giving at least [30] days' notice in the app. Changes do not apply to bookings already confirmed.
 
 7.4 All fees are [inclusive / exclusive] of VAT. [LAWYER/TAX ADVISER.]
 
-## 8. Cash-commission balance and netting
+## 8. Balance owed and how it is paid
 
-8.1 Commission on cash bookings is a **debt you owe TrimSlot**, added to your **balance owed**. You can see it at any time.
+8.1 The service charge on cash bookings is a **debt you owe TrimSlot**, added to your **balance owed**. You can see it at any time.
 
-8.2 **Automatic netting.** When a customer pays you online, we may raise the amount TrimSlot keeps from that payment, by up to the balance you owe, so that the balance is paid off from your online income. Rules:
-* We never take more than you owe;
-* you always keep **at least [50]% of the payment** (a setting; the "minimum payout share"), so one payment cannot be wiped out by old debt;
-* older debt is paid first;
-* if the customer is refunded, the netting is reversed and the balance goes back up.
-
-The netted amount is worked out **when the customer starts to pay** and is applied to your balance only when the payment is confirmed. If your balance is settled in the meantime (for example by a manual settlement) while a customer is still in checkout, that payment can take more from your share than you owed. The app records this; it is not paid back to you automatically. TrimSlot staff review it with you and may correct it. [OWNER/LAWYER: confirm this is acceptable or add an automatic correction; see question 56.]
+8.2 **Taking it from online payments.** When a customer pays you online, we may take part of what you owe from that payment, so that the balance is paid off from your online income. We never take more than you owe, the oldest debt is paid first, you always keep a fair part of every payment, and if the customer is refunded the amount is put back on your balance. The amounts are shown in the app. If your balance is settled in another way while a customer is still in checkout, that payment can take more than you owed. The app records this and TrimSlot staff will review it with you and correct it.
 
 8.3 **Manual settlement.** You may also settle the balance by another method we agree in writing (for example, bank transfer to [COMPANY BANK ACCOUNT]). We may record manual settlements, waivers or adjustments with a reason, and show them in your balance history.
 
-8.4 **Limits.** We may set a **maximum balance** and/or a **maximum age** for the balance. If you go over a limit, the app **switches off "pay on arrival"** for your shop (customers then have to pay online) until the balance is back within the limits. It also sends you **reminders** when the oldest part of your balance is more than 7 days old or a limit is exceeded (at most one every three days). **The app does not suspend your shop by itself**: any suspension is a decision by TrimSlot staff (section 12). [OWNER: confirm the limits; at the date of this draft they are not set.]
+8.4 **Limits.** We may set limits on how large and how old your balance can be. If you go over a limit, the app **switches off "pay on arrival"** for your shop (customers then have to pay online) until the balance is back within the limits. It also sends you **reminders** when the oldest part of your balance is more than 7 days old or a limit is exceeded (at most one every three days). **The app does not suspend your shop by itself**: any suspension is a decision by TrimSlot staff (section 12). 
 
 8.5 If you owe money and stop using TrimSlot, you must pay what you owe within [14] days of our written request, and we may recover it through the courts. [LAWYER: enforceability, interest, recovery.]
 
@@ -124,7 +118,7 @@ The netted amount is worked out **when the customer starts to pay** and is appli
 
 10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The money the customer paid (less our fee) has already been paid to you and stays with you (for a plan session, you were paid when the customer bought the plan); it is not refunded to the customer, and no second payment is made when the credit is used. The credit is worth the **service price on the missed booking**. For a missed plan session that can be more than that one session cost the customer under the plan, and you honour it at that value. [OWNER: confirm this is intended; see question 57.]
 
-10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically after {{refund_auto_approve_hours}} hour(s) if nobody decides. The app does not take the refunded amount from your balance or your payouts. [OWNER/LAWYER: check how Paystack reverses the split on a refund and who bears it; see question 55.] A plan session or credit that the customer used is returned to them.
+10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically if nobody decides within a short time. The app does not take the refunded amount from your balance or your payouts.  A plan session or credit that the customer used is returned to them.
 
 10.3 Duplicate payments, payments that arrive too late, and payments for a time someone else booked first are refunded to the customer by TrimSlot through Paystack; you do not receive them. (A late payment for a time that is still free confirms the booking as normal.)
 

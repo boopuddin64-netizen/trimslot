@@ -105,8 +105,9 @@ test('the auto-approve hours are an admin setting (validated + audited) and driv
     const e = (await s.j('/api/admin/audit', { headers: s.A })).body.entries.find((x: any) => x.action === 'SETTINGS_UPDATED');
     assert.ok(e, 'audited'); assert.match(JSON.stringify(e.details), /refund_auto_approve_hours/);
     const pub = (await s.j('/api/public-settings')).body.settings;
-    assert.equal(pub.refund_auto_approve_hours, 1); assert.equal(pub.cancel_cutoff_min, 45); assert.equal(pub.payment_hold_min, 20); assert.equal(pub.liability_cap_naira, 250000);
-    assert.equal(pub.credit_expiry_days, 30); assert.equal(pub.commission_percent, 50);
+    assert.equal(pub.cancel_cutoff_min, 45); assert.equal(pub.payment_hold_min, 20); assert.equal(pub.liability_cap_naira, 250000);
+    assert.equal(pub.credit_expiry_days, 30);
+    assert.equal(pub.refund_auto_approve_hours, undefined, 'the auto-approve time is not published');
     const { b } = await paid(s, s.customerIds[0], '15:00');
     await customerCancel(s.db, s.customerIds[0], b.id);
     setNow(`${WED}T09:05:00+01:00`);
@@ -120,10 +121,10 @@ test('public settings: defaults match the published numbers, no auth needed', as
     const r = await s.j('/api/public-settings'); assert.equal(r.status, 200);
     const p = r.body.settings;
     assert.equal(p.cancel_cutoff_min, 30); assert.equal(p.credit_expiry_days, 30); assert.equal(p.payment_hold_min, 15);
-    assert.equal(p.platform_charge_percent, 2); assert.equal(p.platform_charge_min_naira, 50); assert.equal(p.platform_charge_flat_naira, 0); assert.equal(p.commission_percent, 50);
-    assert.equal(p.ps_percent, 1.5); assert.equal(p.ps_flat_naira, 100); assert.equal(p.ps_flat_waived_below_naira, 2500); assert.equal(p.ps_cap_naira, 2000); assert.equal(p.ps_vat_percent, 7.5);
-    assert.ok(Math.abs(p.fee_share_customer_percent + p.fee_share_barber_percent + p.fee_share_platform_percent - 100) < 0.01);
-    assert.equal(p.refund_auto_approve_hours, 3); assert.equal(p.liability_cap_naira, null);
+    // business settings are never published
+    for (const k of ['platform_charge_percent', 'platform_charge_flat_naira', 'platform_charge_min_naira', 'commission_percent', 'commission_enabled', 'min_barber_payout_percent', 'ps_percent', 'ps_flat_naira', 'ps_cap_naira', 'ps_vat_percent', 'ps_flat_waived_below_naira',
+      'fee_share_customer_percent', 'fee_share_barber_percent', 'fee_share_platform_percent', 'refund_auto_approve_hours', 'ledger_max_debt_naira', 'ledger_max_age_days']) assert.equal(p[k], undefined, k + ' must not be public');
+    assert.equal(p.liability_cap_naira, null);
     assert.equal(p.terms_version, '1');
   } finally { s.server.close(); resetNow(); }
 });

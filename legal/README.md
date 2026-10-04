@@ -1,5 +1,7 @@
 # TrimSlot legal pack — DRAFT
 
+> **INTERNAL – for the owner and the lawyer only. Do NOT publish this file or the legal pack** (no web page, no public repository, no app screen). It contains business details such as fees, charges, the split of processing costs and internal settings. Only files 01–06 are turned into public pages, and they must not quote those numbers.
+
 > **DRAFT – not legal advice – lawyer review required.**
 > Written by the product team, in plain English, for review by a qualified Nigerian lawyer. Nothing here has been approved by counsel or by TrimSlot's owner.
 
@@ -17,7 +19,7 @@
 | `07-compliance-checklist.md` | Short checklist: CAC, TIN, VAT, NDPC, Paystack verification, consumer protection, insurance |
 | `08-app-behaviour-reference.md` | Table of what the app actually does, with the source file for each rule (for the lawyer to check the documents against the product) |
 | `legal-pack.docx`, `legal-pack.pdf` | All of the above combined in one Word file / one PDF (for the lawyer) |
-| `build.sh` | Rebuilds `legal-pack.docx`, `legal-pack.pdf` and **all six public pages** (`public/terms.html`, `privacy.html`, `refunds.html`, `plan-terms.html`, `cookies.html`, `barber-agreement.html`) from the Markdown. Numbers written as `{{setting_name}}` in the Markdown become live values on the web pages (filled in by `public/legal-live.js` from `/api/public-settings`) and the built-in defaults in the Word/PDF files. |
+| `build.sh` | Rebuilds `legal-pack.docx`, `legal-pack.pdf` and **all six public pages** (only 01–06 are published; 00, 07, 08, this README and the pack are internal and are never published) (`public/terms.html`, `privacy.html`, `refunds.html`, `plan-terms.html`, `cookies.html`, `barber-agreement.html`) from the Markdown. Numbers written as `{{setting_name}}` in the Markdown become live values on the web pages (filled in by `public/legal-live.js` from `/api/public-settings`) and the built-in defaults in the Word/PDF files. |
 
 ## Conventions
 

@@ -7,7 +7,7 @@
 <p class="ps-title"><b>In plain words</b></p>
 <ul>
 <li>You can cancel in the app up to {{cancel_cutoff_min}} minutes before your visit.</li>
-<li>If you cancel in time and you paid online, you get a refund. TrimSlot staff approve it. If no one decides in {{refund_auto_approve_hours}} hour(s), it is approved by itself.</li>
+<li>If you cancel in time and you paid online, you get a refund. TrimSlot staff approve it. If no one decides within a short time, it is approved by itself.</li>
 <li>If you paid with a plan session or a credit, you get it back.</li>
 <li>If you miss a visit that you paid for, you get no refund. You get one credit with the same barber instead. It lasts {{credit_expiry_days}} days. You cannot cash it out.</li>
 <li>If the barber cannot serve you, you get a refund. If you pay twice, or your payment comes after someone else took that time, you also get a refund. If your payment comes late but the time is still free, the booking is confirmed.</li>
@@ -45,7 +45,7 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 
 3.1 When you cancel in time a booking that you **paid online**, you are entitled to a **refund** of what you paid for the booking. You do **not** also receive a credit.
 
-3.2 The refund starts as **"refund pending"** and waits for approval by TrimSlot staff. If staff approve it, the refund request is sent to Paystack at once. If staff have **not approved or rejected it within {{refund_auto_approve_hours}} hour(s)** of your cancellation, it is **approved automatically** and the refund request is sent to Paystack. The automatic approval is done by a scheduled check, so it happens at the next check after that time: within minutes if TrimSlot runs the check every minute, otherwise at the daily run. [OWNER: confirm which schedule is in use.] You are notified when it is approved. You can see the status ("refund pending", "refunded") on your booking.
+3.2 The refund starts as **"refund pending"** and waits for approval by TrimSlot staff. If staff approve it, the refund request is sent to Paystack at once. If staff have **not approved or rejected it within a short time** of your cancellation, it is **approved automatically** and the refund request is sent to Paystack. You are notified when it is approved. You can see the status ("refund pending", "refunded") on your booking.
 
 3.3 Staff may **reject** a refund only for a stated reason (for example where the service was in fact delivered). [LAWYER/OWNER: define the permitted grounds.] You are told the reason, you receive neither a refund nor a credit for that booking, and you can contest it with "Report a problem" or by e-mail to [EMAIL].
 
@@ -82,7 +82,7 @@ If the barber marks the booking "**Not served**": a **plan session or credit is 
 
 ## 6. Incomplete payments
 
-6.1 When you choose "Pay now", **no slot is reserved while you pay, and the first confirmed payment for a time wins.** The attempt stays open for **{{payment_hold_min}} minutes**. If you do not complete payment, or you leave and cancel, the attempt is marked **Incomplete**, **you are not charged**, and the barber does not see it.
+6.1 When you choose "Pay now", **no slot is reserved while you pay, and the first confirmed payment for a time wins.** The attempt stays open for **{{payment_hold_min}} minutes**. When you start to pay, the attempt is kept open a little longer so a slow payment page does not end it (it cannot be stretched for long). Before an attempt is closed, **we ask Paystack whether it was paid**. If it was paid and the time is still free, the booking is confirmed (6.2); if the time was taken, the payment is refunded (section 7). If it was not paid, the attempt is marked **Incomplete**, **we tell you that you were not charged**, and the barber does not see it. If Paystack cannot be reached, we keep the attempt open for up to one more hour; if we still cannot check, we close it and say so honestly: **if money left your account, we confirm the booking or refund you ourselves**, and we do not tell you that you were not charged. We also re-check recent unpaid attempts from time to time.
 
 6.2 If Paystack confirms your payment after the attempt closed, **and the time is still free** (and the shop is still open for bookings), the booking is **confirmed**. This does not depend on when the cleaning-up check happens to run. If the time was taken meanwhile, the payment is refunded (section 7). An attempt that **you cancelled yourself** is never revived: a payment that arrives for it is refunded.
 
@@ -90,13 +90,13 @@ If the barber marks the booking "**Not served**": a **plan session or credit is 
 
 ## 7. Duplicate, late and mismatched payments
 
-7.1 **Duplicate** (you paid twice for one booking or plan), **too late** (the payment arrived after the attempt closed and the time was no longer free, or you had cancelled it) and **time taken** (someone else's payment for that time was confirmed first) payments are **never kept as bookings**. They are flagged "needs refund" and **a refund request is sent to Paystack automatically**; if that fails, we retry on a schedule and staff can action it. A payment that arrives late for a time that is still free is not in this group: it confirms the booking (6.2).
+7.1 Each of these has its own message on the booking page and in the app: **duplicate** (you paid twice for one booking; the booking stays confirmed and the extra payment is refunded), **too late** and **time taken**. A second click or a second browser tab on the same booking re-uses the same open payment, so it does not create a second charge. Duplicate (you paid twice for one booking or plan), **too late** (the payment arrived after the attempt closed and the time was no longer free, or you had cancelled it) and **time taken** (someone else's payment for that time was confirmed first) payments are **never kept as bookings**. They are flagged "needs refund" and **a refund request is sent to Paystack automatically**; if that fails, we retry on a schedule and staff can action it. A payment that arrives late for a time that is still free is not in this group: it confirms the booking (6.2).
 
 7.2 You get a notification in the app for each of these cases (a second payment, a late payment, and a payment for a time that was taken). The refund goes to the **original payment method**. Time to arrive depends on Paystack and your bank [typically [5–10] working days].
 
-7.3 If the amount Paystack reports does not match the price (other than Paystack's processing fee), the booking is **not confirmed automatically**; staff review it, and you are refunded if you were charged wrongly.
+7.3 If the amount Paystack reports does not match the price (other than Paystack's processing fee), or the payment is **not in Nigerian naira (NGN)**, the booking is **not confirmed automatically**. We tell you, TrimSlot staff get an alert and review it, and you are refunded if you were charged wrongly.
 
-7.4 **Booking fee.** When you pay online you pay the price plus a small, clearly labelled **booking fee**, which is part of the payment-processor fee (the current share is {{fee_share_customer_percent}}%). When a payment is refunded (in-time cancellation, "not served", duplicate, late or slot-taken payment), you get back **everything you were charged, including the booking fee**. A **credit** (for a missed booking) is for the **price only**; the booking fee is not turned into credit. Bookings paid by plan session, credit or on arrival have no booking fee. [LAWYER: confirm this treatment; see question 24b.]
+7.4 **Booking fee.** When you pay online you pay the price plus a small, clearly labelled **booking fee**, shown before you pay. When a payment is refunded (in-time cancellation, "not served", duplicate, late or slot-taken payment), you get back **everything you were charged, including the booking fee**. A **credit** (for a missed booking) is for the **price only**; the booking fee is not turned into credit. Bookings paid by plan session, credit or on arrival have no booking fee.
 
 ## 8. Plans
 
