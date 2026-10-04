@@ -327,7 +327,7 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     }
     const set = await getSettings(t);
     if (!canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min)) {
-      throw new AppError(403, 'CANCEL_LOCKED', `You can no longer cancel. The cut-off is ${set.cancel_cutoff_min} minutes before your visit, so this time stays yours. If you miss it, you get no refund. But if you paid, you get one credit with this barber. Contact your barber if something came up.`);
+      throw new AppError(403, 'CANCEL_LOCKED', `You can no longer cancel. The cut-off is ${set.cancel_cutoff_min} minutes before your visit, so this time stays yours. If you do not come and your barber marks a no-show, you get no refund. If you paid, you get one credit with this barber instead. If something urgent came up, call or message your barber. Your barber decides.`);
     }
     const now = isoNow();
     const abandoned = isIncomplete({ ...b, status: 'PENDING_PAYMENT' });   // walked away from an unpaid Pay-now attempt: barber never hears about it
