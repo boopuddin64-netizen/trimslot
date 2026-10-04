@@ -35,7 +35,7 @@ test('initialize: unique reference TS-BOOKING-<id>-<rand>, kobo amount from snap
     assert.equal(r1.mock, true);
     const row = await db.one('SELECT * FROM payments WHERE reference=$1', [r1.reference]);
     assert.equal(row.subaccount, 'ACCT_test123');
-    assert.notEqual(r1.reference, (await initializePayment(db, b.id, 'c@x.com')).reference);
+    assert.equal((await initializePayment(db, b.id, 'c@x.com')).reference, r1.reference, 'a second click reuses the open checkout');
     await assert.rejects(db.query(`INSERT INTO payments (booking_id, reference, provider, amount_kobo) VALUES ($1,$2,'MOCK',1)`, [b.id, r1.reference]), (e: any) => e.code === '23505'); // reference is UNIQUE
   } finally { resetNow(); }
 });
@@ -147,7 +147,7 @@ test('RACE: someone completes a booking for the slot first; the late payment is 
     const n = await db.many(`SELECT type, body FROM notifications WHERE user_id=$1 AND booking_id=$2`, [customerIds[0], b.id]);
     assert.ok(n.some((x: any) => /refund/i.test(x.body) && /not confirmed/i.test(x.body)));
     assert.equal((await db.many(`SELECT 1 FROM notifications n JOIN barbers br ON br.user_id=n.user_id WHERE br.id=$1 AND n.booking_id=$2`, [barberId, b.id])).length, 0, 'barber never hears about the failed attempt');
-    assert.equal((await processReference(db, reference)).result, 'already_processed');
+    assert.equal((await processReference(db, reference)).result, 'slot_taken', 'asked again: still slot_taken, never "already processed" (confirmed)');
   } finally { resetNow(); }
 });
 
@@ -158,7 +158,7 @@ test('payment arriving for an attempt the CUSTOMER cancelled is never confirmed 
     await customerCancel(db, customerIds[0], b.id);
     assert.equal((await getBooking(db, b.id))!.status, 'CANCELLED');
     await mockMarkPaid(db, reference);
-    assert.equal((await processReference(db, reference)).result, 'refund_due');
+    assert.equal((await processReference(db, reference)).result, 'late_refund');
     const bk = (await getBooking(db, b.id))!;
     assert.equal(bk.status, 'CANCELLED');
     assert.notEqual(bk.payment_status, 'PAID');

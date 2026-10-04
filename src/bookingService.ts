@@ -58,19 +58,26 @@ export function canCustomerCancel(scheduledAtIso: string, now: Date, cutoffMin: 
  * depends on the sweeper running. */
 export interface HoldScope { barberId?: number; customerId?: number }
 
-export async function expireHoldsIn(c: Conn, scope: HoldScope = {}): Promise<number> {
+export type HoldVerdict = { keep: Set<number>; unverified: Set<number> };
+
+export async function expireHoldsIn(c: Conn, scope: HoldScope = {}, o: { keep?: Set<number>; unverified?: Set<number> } = {}): Promise<number> {
   const now = isoNow();
   const params: unknown[] = [now];
   let where = `status='PENDING_PAYMENT' AND hold_expires_at IS NOT NULL AND hold_expires_at < $1`;
   if (scope.barberId != null) { params.push(scope.barberId); where += ` AND barber_id=$${params.length}`; }
   if (scope.customerId != null) { params.push(scope.customerId); where += ` AND customer_id=$${params.length}`; }
+  if (o.keep && o.keep.size) { params.push([...o.keep]); where += ` AND id <> ALL($${params.length}::int[])`; }
   // UPDATE re-checks the WHERE after taking the row lock, so a payment confirmed a millisecond earlier is never cancelled.
   const rows = await c.many<BookingRow>(
     `UPDATE bookings SET status='CANCELLED', payment_status='VOID', cancelled_at=$1, cancelled_by='system' WHERE ${where} RETURNING *`, params);
   for (const b of rows) {
     await audit(c, b.id, { id: null, role: 'system' }, 'HOLD_EXPIRED', { note: 'Payment not completed in time; slot released' });
     // Customer-only: an unpaid Pay-now hold never existed as far as the barber is concerned.
-    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished because the payment did not go through. We freed the time slot. You were not charged. Please book again.`, b.id);
+    // "You were not charged" only when we know it: no checkout was ever opened, or Paystack itself said nothing was paid. Otherwise say so honestly.
+    const sure = !o.unverified?.has(b.id);
+    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', sure
+      ? `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished because no payment came through. We freed the time slot. You were not charged. Please book again.`
+      : `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished and we could not check your payment with Paystack. If money left your account, we will confirm the booking or refund you by ourselves. You do not need to pay again.`, b.id);
   }
   return rows.length;
 }
@@ -82,7 +89,14 @@ export async function expireHolds(db: Db, scope: HoldScope = {}): Promise<number
   if (scope.barberId != null) { params.push(scope.barberId); where += ` AND barber_id=$${params.length}`; }
   if (scope.customerId != null) { params.push(scope.customerId); where += ` AND customer_id=$${params.length}`; }
   if (!(await db.maybeOne(`SELECT 1 FROM bookings WHERE ${where} LIMIT 1`, params))) return 0;
-  return db.tx((t) => expireHoldsIn(t, scope));
+  // Before closing: ask the gateway whether any of these attempts was in fact paid (missed webhook + closed browser).
+  let verdict: HoldVerdict = { keep: new Set(), unverified: new Set() };
+  {
+    const due = await db.many<{ id: number; hold_expires_at: string }>(`SELECT id, hold_expires_at FROM bookings WHERE ${where} ORDER BY id LIMIT 25`, params);
+    // paystack.ts imports this file, so it is loaded here on first use (a plain import would be circular).
+    try { verdict = await (require('./paystack') as typeof import('./paystack')).verifyBeforeClosing(db, due); } catch { /* verification must never block closing old attempts */ }
+  }
+  return db.tx((t) => expireHoldsIn(t, scope, verdict));
 }
 
 /* ---------------- create ---------------- */

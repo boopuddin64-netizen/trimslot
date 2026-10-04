@@ -1,6 +1,6 @@
 import { Db } from './db';
 import { expireHolds } from './bookingService';
-import { requestRefund, processReference } from './paystack';
+import { requestRefund, processReference, reconcileRecentPayments } from './paystack';
 import { config } from './config';
 import { sendLedgerReminders } from './ledger';
 import { runSmartTick } from './smart';
@@ -11,8 +11,10 @@ import { runRetentionIfDue } from './retention';
 import { getSettings } from './plans';
 
 /** Periodic housekeeping, safe to run at any frequency and from several callers at once (all statements are idempotent). */
-export async function runSweep(db: Db): Promise<{ smart: { reminders: number; waitlist: number }; push: { claimed: number; sent: number; removed: number }; ledger_reminders: number; holds_released: number; rate_limit_rows_purged: number; expired_events_purged: number; refunds_retried: number; refunds_auto_approved: number; admin_push: { claimed: number; sent: number; removed: number; held: boolean }; retention: unknown }> {
+export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked: number; confirmed: number; refunds: number }; smart: { reminders: number; waitlist: number }; push: { claimed: number; sent: number; removed: number }; ledger_reminders: number; holds_released: number; rate_limit_rows_purged: number; expired_events_purged: number; refunds_retried: number; refunds_auto_approved: number; admin_push: { claimed: number; sent: number; removed: number; held: boolean }; retention: unknown }> {
   const holds_released = await expireHolds(db);
+  // A payment whose webhook never reached us (and whose browser was closed) is found here, within 24 hours: confirmed if the time is still free, otherwise refunded.
+  const reconciled = await reconcileRecentPayments(db).catch(() => ({ checked: 0, confirmed: 0, refunds: 0 }));
   // Prepaid refunds nobody decided within the admin's hold time are approved here and sent to Paystack.
   const auto = await autoApproveDueRefunds(db).catch(() => ({ approved: 0, failed: 0 }));
   // Retention (rate-limit rows, old webhook payloads, stale push devices, soft-deleted records ...) with the periods the admin set; at most hourly.
@@ -38,5 +40,5 @@ export async function runSweep(db: Db): Promise<{ smart: { reminders: number; wa
   const smart = await runSmartTick(db, true).catch(() => ({ reminders: 0, waitlist: 0 }));
   const push = await flushPush(db, 200).catch(() => ({ claimed: 0, sent: 0, removed: 0 }));
   const admin_push = await flushAdminPush(db, 50).catch(() => ({ claimed: 0, sent: 0, removed: 0, held: false }));
-  return { smart, push, ledger_reminders, refunds_retried, refunds_auto_approved: auto.approved, admin_push, retention, holds_released, rate_limit_rows_purged: rl.rowCount, expired_events_purged: ev.rowCount };
+  return { payments_reconciled: reconciled, smart, push, ledger_reminders, refunds_retried, refunds_auto_approved: auto.approved, admin_push, retention, holds_released, rate_limit_rows_purged: rl.rowCount, expired_events_purged: ev.rowCount };
 }

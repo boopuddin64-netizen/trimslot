@@ -261,7 +261,7 @@ const lagosMin = (iso: string) => { const d = new Date(Date.parse(iso) + 3600000
     const a = await book(c6, D1, '16:00', 'ONLINE'); const pay = (await c6.call('POST', `/api/bookings/${a.j.booking.id}/pay`)).j;
     await c6.call('POST', `/api/bookings/${a.j.booking.id}/cancel`);
     await anon.call('POST', `/api/payments/mock/${pay.reference}/complete`);
-    const cb = await anon.call('GET', `/api/payments/callback?reference=${pay.reference}`); expect(/pay=refund_due/.test(cb.loc), 'late payment -> refund_due: ' + cb.loc);
+    const cb = await anon.call('GET', `/api/payments/callback?reference=${pay.reference}`); expect(/pay=late_refund/.test(cb.loc), 'late payment -> late_refund: ' + cb.loc);
     const st = (await c6.call('GET', `/api/bookings/${a.j.booking.id}`)).j.booking; expect(st.status === 'CANCELLED' && st.payment_status !== 'PAID', 'stays cancelled');
     // duplicate webhooks on a genuinely paid reference (S10's c7 payment)
     const paid = (await c7.call('GET', '/api/bookings')).j.bookings.find((x: any) => x.id === bk.paid7);

@@ -104,12 +104,13 @@ test('payment confirmed AFTER the try timed out: the booking is confirmed when t
     await db.query(`UPDATE barbers SET paystack_subaccount='ACCT_test' WHERE id=$1`, [barberId]);
     const mk = async (cust: number, time: string) => {
       const b = await createBooking(db, cust, { barber_id: barberId, service_id: serviceIds[0], date: WED, time, payment_option: 'ONLINE' });
-      const pay = await initializePayment(db, b.id, null); await mockMarkPaid(db, pay.reference); return { b, ref: pay.reference };
+      const pay = await initializePayment(db, b.id, null); return { b, ref: pay.reference };   // (paid at the gateway only AFTER the try closed, below: an already-paid try is confirmed by the check that runs before closing)
     };
     // A: time still free after the try closed
     const a = await mk(customerIds[0], '10:00');
     setNow(`${WED}T08:30:00+01:00`); await expireHolds(db);
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [a.b.id])).status, 'CANCELLED', 'try closed first');
+    await mockMarkPaid(db, a.ref);
     assert.equal((await processReference(db, a.ref)).result, 'processed');
     const ra = await db.one('SELECT status, payment_status, cancelled_by FROM bookings WHERE id=$1', [a.b.id]);
     assert.deepEqual([ra.status, ra.payment_status, ra.cancelled_by], ['CONFIRMED', 'PAID', null], 'paid late, time free: confirmed');
@@ -119,6 +120,7 @@ test('payment confirmed AFTER the try timed out: the booking is confirmed when t
     const bb = await mk(customerIds[1], '12:00');
     setNow(`${WED}T08:30:00+01:00`); await expireHolds(db);
     await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '12:00', payment_option: 'ON_ARRIVAL' });
+    await mockMarkPaid(db, bb.ref);
     await processReference(db, bb.ref);
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [bb.b.id])).status, 'CANCELLED');
     assert.equal((await db.one(`SELECT refund_status FROM payments WHERE reference=$1`, [bb.ref])).refund_status !== null, true, 'time gone: flagged for refund');
@@ -126,6 +128,7 @@ test('payment confirmed AFTER the try timed out: the booking is confirmed when t
     setNow(`${WED}T08:00:00+01:00`);
     const c3 = await mk(customerIds[1], '15:00');
     await customerCancel(db, customerIds[1], c3.b.id);
+    await mockMarkPaid(db, c3.ref);
     await processReference(db, c3.ref);
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [c3.b.id])).status, 'CANCELLED');
   });

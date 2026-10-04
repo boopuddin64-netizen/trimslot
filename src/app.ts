@@ -15,7 +15,7 @@ import {
   BarberAction, barberAction, canCustomerCancel, cancelCutoff, createBooking, customerCancel, customerCheckIn,
   expireHolds, getBooking, orderedQueue, queueInfo, BookingRow, isIncomplete, barberVisible,
 } from './bookingService';
-import { handleWebhook, initializePayment, initializePlanPurchase, mockMarkPaid, processReference, recordPaymentEvent } from './paystack';
+import { handleWebhook, initializePayment, initializePlanPurchase, mockMarkPaid, processReference, recordPaymentEvent, bookingIdFromReference, planIdFromReference } from './paystack';
 import { barberPlanOverview, customerWallet, entitlementsFor, getSettings, limitsOf, planSchema, publicPlans, savePlan, settingsView, updateSettings } from './plans';
 import { clock, hhmmToMin, isValidDate, isoNow, lagosDate, minToHhmm } from './time';
 import { TRANSITIONS } from './stateMachine';
@@ -99,6 +99,13 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   if (!opts.forBarber && ['REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
     const rf = await db.maybeOne<any>(`SELECT refund_status, refund_due_at FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1`, [b.id]);
     out.refund = { status: b.payment_status, gateway: rf?.refund_status ?? null, due_at: b.payment_status === 'REFUND_PENDING' ? rf?.refund_due_at ?? null : null };
+  }
+  // Customer detail view only: what went wrong with a payment on this booking (so the page can always say the right thing, also after a reload or a poll).
+  if (!opts.forBarber && !memo && b.payment_option === 'ONLINE') {
+    const pi = await db.maybeOne<any>(`SELECT refund_reason, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' AND refund_status IS NOT NULL
+        AND (refund_reason LIKE 'Slot was taken%' OR refund_reason LIKE 'Duplicate payment%' OR refund_reason LIKE 'Payment arrived after%') ORDER BY id DESC LIMIT 1`, [b.id]);
+    if (pi) out.payment_issue = { kind: /^Slot was taken/.test(pi.refund_reason) ? 'slot_taken' : /^Duplicate/.test(pi.refund_reason) ? 'duplicate' : 'late', refund: pi.refund_status === 'REFUNDED' ? 'sent' : 'coming' };
+    else if (b.status !== 'CONFIRMED' && await db.maybeOne(`SELECT 1 FROM audit_log WHERE booking_id=$1 AND action='PAYMENT_AMOUNT_MISMATCH' LIMIT 1`, [b.id])) out.payment_issue = { kind: 'mismatch', refund: 'none' };
   }
   if (b.date === lagosDate() || b.status === 'IN_SERVICE') {
     let q = opts.queue;
@@ -431,12 +438,19 @@ export function createApp(db: Db) {
     const reference = String(req.query.reference || req.query.trxref || '').slice(0, 100);
     let bookingId: number | undefined; let planId: number | undefined; let result = 'unknown_reference';
     if (reference) {
-      const r = await processReference(db, reference);
-      result = r.result; bookingId = r.booking_id; planId = r.plan_purchase_id;
-      await recordPaymentEvent(db, { source: 'CALLBACK', eventType: 'callback', reference, signatureValid: null, payload: JSON.stringify(req.query), result: r.result });
+      try {
+        const r = await processReference(db, reference);
+        result = r.result; bookingId = r.booking_id; planId = r.plan_purchase_id;
+        await recordPaymentEvent(db, { source: 'CALLBACK', eventType: 'callback', reference, signatureValid: null, payload: JSON.stringify(req.query), result: r.result }).catch(() => {});
+      } catch (e: any) {
+        // Paystack (or our database) hiccuped. The customer must still land on their booking, which asks again by itself; never a bare error page.
+        logger.warn('payment_callback_failed', { reference, err: String(e?.message).slice(0, 160) });
+        result = 'checked'; bookingId = bookingIdFromReference(reference) ?? undefined; planId = planIdFromReference(reference) ?? undefined;
+      }
     }
     if (planId) return void res.redirect(`/#/wallet?plan=${encodeURIComponent(result)}&pp=${planId}`);
-    res.redirect(`/#/booking/${bookingId ?? ''}?pay=${encodeURIComponent(result)}`);
+    if (!bookingId) return void res.redirect('/#/bookings');
+    res.redirect(`/#/booking/${bookingId}?pay=${encodeURIComponent(result)}`);
   }));
   // MOCK mode only (never available when NODE_ENV=production)
   api.get('/payments/mock/:reference', wrap(async (req, res) => {
