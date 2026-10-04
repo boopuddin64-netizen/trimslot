@@ -24,7 +24,8 @@
     "rows": "node scripts/rows-per-screen.mjs",
     "account-ui": "node scripts/account-ui.mjs",
     "plans-ui": "node scripts/plans-ui.mjs",
-    "share-ui": "node scripts/sharelinks-ui.mjs"
+    "share-ui": "node scripts/sharelinks-ui.mjs",
+    "avatar-ui": "tsx scripts/avatar-crop-run.ts"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

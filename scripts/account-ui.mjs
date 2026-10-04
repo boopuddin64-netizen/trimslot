@@ -18,7 +18,7 @@ for (const w of [390, 1280]) {
     await p.check('[name=accept_terms]'); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('signup'), null, { timeout: 8000 });
     ok(true, w + ' signup with tick-box'); await p.goto('/#/profile'); await p.waitForSelector('.avatar-edit');
     ok(await p.locator('#exp').count() === 1 && await p.locator('#delacct').count() === 1, w + ' profile has export + delete');
-    await p.setInputFiles('#av-file', IMG); await p.waitForSelector('.avatar-edit .av.has', { timeout: 8000 }); ok(true, w + ' avatar uploaded and shown round');
+    await p.setInputFiles('#av-file', IMG); await p.waitForSelector('.sheet.crop'); await p.click('[data-save]'); await p.waitForSelector('.avatar-edit .av.has', { timeout: 8000 }); ok(true, w + ' avatar uploaded and shown round');
     const r = await p.evaluate(() => { const e = document.querySelector('.avatar-edit .av'); const s = getComputedStyle(e); return [s.borderRadius, e.offsetWidth, e.offsetHeight]; });
     ok(r[1] === r[2] && /50%|^\d+px/.test(r[0]), w + ' avatar is square box with round radius', r.join(','));
     await p.screenshot({ path: `screenshots/account/${w}-profile.png` });
