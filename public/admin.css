@@ -133,7 +133,7 @@ body.adm{padding-bottom:32px}
 .bulkbar .btn.sec{background:rgba(255,255,255,.14);color:#fff;border-color:transparent}
 [data-theme=dark] .bulkbar{background:#2a3350}
 @media (min-width:1000px){.bulkbar{top:80px}}
-.stars{color:var(--star);letter-spacing:1px;font-size:14px}.stars i{color:var(--ctl);font-style:normal}
+.stars{color:var(--star);letter-spacing:1px;font-size:14px}.stars i{color:var(--mut);font-style:normal}
 .attn{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0 16px}
 .acard{display:grid;grid-template-columns:auto 1fr auto;align-items:center;column-gap:14px;background:var(--card);border:1px solid var(--line);border-left:4px solid #b7791f;border-radius:var(--r);padding:14px 16px;color:var(--ink);transition:transform .12s,box-shadow .12s}
 .acard.red{border-left-color:var(--red)}

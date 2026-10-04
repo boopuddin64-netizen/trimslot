@@ -399,7 +399,7 @@ a.payban{text-decoration:none;color:inherit;font-weight:400}.payban u{color:var(
    --ctl   : border of every interactive control (inputs, outlined buttons, chips, switches) - >= 3:1 against card and page
    --mut   : secondary text - >= 4.5:1 on page, card and tinted surfaces
    --star  : filled star; unfilled stars use --ctl.   Flat: no gradients, no shadows. */
-:root{--on-red:#fff;--ctl:#7b8aa0;--star:#b7791f;--on-brand:#fff;--mut:#5b6b82;--red:#c0392b}
+:root{--on-red:#fff;--ctl:#7b8aa0;--star:#946010;--on-brand:#fff;--mut:#5b6b82;--red:#c0392b}
 :root[data-theme=dark]{--on-red:#0b1220;--ctl:#6a7b95;--star:#f0b429;--on-brand:#0b1220;--mut:#9aa9bf;--red:#f2807f}
 .btn{color:var(--on-brand)}
 .btn.sec,.btn.red,.btn.ghost{background:var(--card);color:var(--ink);border-color:var(--ctl)}
