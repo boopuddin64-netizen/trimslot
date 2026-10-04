@@ -103,8 +103,8 @@ export function barberAccessGuard(db: Db) {
         if (!pl) return next();
         barberId = pl.barber_id;
       }
-      if (!barberId) return next(notFound('Barber not found'));
-      if (!(await canUseBarber(db, req.user as U, barberId))) return next(notFound('Barber not found'));
+      if (!barberId) return next(notFound('We could not find that barber.'));
+      if (!(await canUseBarber(db, req.user as U, barberId))) return next(notFound('We could not find that barber.'));
       next();
     } catch (e) { next(e); }
   };

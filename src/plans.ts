@@ -152,7 +152,7 @@ export async function validatePlanInput(c: Conn, barberId: number, d: z.infer<ty
     // Secondary sanity check (the real rule is the explicit service list): one session must be worth at least the dearest included service.
     const perSession = Math.floor(kobo / d.sessions);
     const dear = await c.many<{ name: string; price_kobo: number }>('SELECT name, price_kobo FROM services WHERE id = ANY($1::int[]) AND price_kobo > $2 ORDER BY price_kobo DESC', [ids, perSession]);
-    if (dear.length) errs.push(`Each session is worth ${naira(perSession)} (plan price ÷ sessions), but ${dear.map((x) => `${x.name} costs ${naira(x.price_kobo)}`).join(', ')}. Raise the plan price, use fewer sessions, or leave that service out.`);
+    if (dear.length) errs.push(`Each session is worth ${naira(perSession)} (plan price ÷ sessions), but ${dear.map((x) => `${x.name} costs ${naira(x.price_kobo)}`).join(', ')}. Raise the plan price, use fewer sessions, or take that service out.`);
   }
   if (errs.length) throw new AppError(400, 'PLAN_RULES', errs.join(' '), { limits: limitsOf(s) });
   return { kobo, ids, settings: s };

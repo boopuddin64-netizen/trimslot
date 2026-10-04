@@ -361,7 +361,7 @@ export function createApp(db: Db) {
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || !(await photoAllowed(db, req, id))) throw notFound('No photo');
+    if (!Number.isInteger(id) || !(await photoAllowed(db, req, id))) throw notFound('There is no photo.');
     const p = Number.isInteger(id) ? await db.maybeOne<{ mime: string; data: Buffer; updated_at: string }>('SELECT mime, data, updated_at FROM barber_photos WHERE barber_id=$1', [id]) : undefined;
     if (!p) throw notFound('There is no photo.');
     res.setHeader('Content-Type', p.mime);
