@@ -1,36 +1,222 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Privacy Policy — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script></head>
+<meta name="robots" content="noindex"><title>Privacy Policy — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script><style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}.legal .tblwrap{overflow-x:auto;margin:12px 0}.legal table{border-collapse:collapse;font-size:13px;min-width:520px}.legal th,.legal td{border:1px solid var(--ctl);padding:6px 8px;text-align:left;vertical-align:top}.legal th{background:var(--bg2);color:var(--ink)}.legal blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--ctl)}.legal code{overflow-wrap:anywhere}.legal li{margin:4px 0}</style></head>
 <body><header class="topbar"><a class="brand" href="/"><span class="logo"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></span>Trim<b>Slot</b></a><a href="/" class="toplink">← Back to app</a></header>
 <div class="legal">
-<div class="draft"><b>TEMPLATE — NOT LEGAL ADVICE.</b> This page is a placeholder written by the developers. It <b>must be reviewed and completed by a qualified Nigerian lawyer</b> (including NDPA 2023 / NDPC GAID 2025 compliance and consumer-protection rules) before TrimSlot is launched to the public. Replace every <code>[BRACKETED]</code> value.</div>
-<h1>Privacy Policy</h1>
-<p>[COMPANY LEGAL NAME] ("TrimSlot", "we", "us") operates the TrimSlot booking and queue service. We are the <b>data controller</b> for personal data described here. Contact: [PRIVACY EMAIL], [REGISTERED ADDRESS]. Data Protection Officer: [NAME / EMAIL]. NDPC registration/status: [REGISTRATION NUMBER OR "NOT REQUIRED — CONFIRM WITH COUNSEL"].</p>
-<h2>1. What we collect</h2>
-<ul><li><b>Account data:</b> name, email and/or phone number, password (stored only as a salted bcrypt hash).</li>
-<li><b>Booking data:</b> barber, service, price, date/time, arrival, start and completion times, payment status and method, cancellation/no-show history.</li>
-<li><b>Barber data:</b> shop name, location, photo URL, about text, working hours, Paystack subaccount code.</li>
-<li><b>Payment data:</b> card/bank details are entered on Paystack and are <b>never</b> stored by us. We keep Paystack transaction references, amounts and status.</li>
-<li><b>Technical data:</b> IP address, request logs, and a secure login cookie.</li></ul>
-<h2>2. Why we use it (lawful basis)</h2>
-<p>To create your account and provide bookings and queue updates (contract); to process payments and prevent fraud (contract / legitimate interest); to send in-app notifications about your bookings (contract); to meet legal obligations. [COUNSEL: confirm lawful bases and whether any consent-based processing, e.g. marketing, is planned.]</p>
-<h2>3. Who we share it with</h2>
-<ul><li>The barber you book with sees your name, phone/email and booking history <i>with them only</i>.</li>
-<li><b>Paystack</b> (payment processing). [Confirm Paystack's role and cross-border terms.]</li>
-<li>Hosting provider: [PROVIDER, COUNTRY]. [COUNSEL: cross-border transfer safeguards under NDPA Part VIII.]</li>
-<li>Authorities where required by law.</li></ul>
-<p>We do not sell personal data.</p>
-<h2>4. Retention</h2>
-<p>Booking and payment records are kept for [PERIOD, e.g. 6 years] for accounting and dispute purposes. Backups are kept for [PERIOD]. Account data is kept while your account is active. [COUNSEL: confirm.]</p>
-<h2>5. Your rights</h2>
-<p>Under the Nigeria Data Protection Act 2023 you may request access, correction, deletion, restriction, portability, and object to processing, and withdraw consent. Email [PRIVACY EMAIL]. You may also complain to the Nigeria Data Protection Commission (NDPC). Note: self-service account deletion/export is not yet available in the app — requests are handled manually.</p>
-<h2>6. Security</h2>
-<p>HTTPS, hashed passwords, access controls, audit logging and regular backups. No system is perfectly secure; we will notify the NDPC and affected users of a qualifying breach within the legal timeframe (72 hours).</p>
-<h2>7. Cookies</h2>
-<p>We use one strictly necessary, httpOnly cookie to keep you logged in. No advertising or analytics cookies. [Update if that changes.]</p>
-<h2>8. Children</h2>
-<p>Parents/guardians may book for children. Accounts are for adults (18+). [COUNSEL: confirm approach for children's data.]</p>
-<h2>9. Changes</h2><p>We will post changes here and update the date above.</p>
-<p class="muted small">Last updated: [DATE]</p>
+<h1>Privacy Policy</h1><div class="draft"><b>DRAFT – not legal advice – lawyer review required.</b> This page is a draft prepared for review by a qualified Nigerian lawyer. Items in <mark class="ph">[SQUARE BRACKETS]</mark> are not decided yet. Do not rely on it until it has been reviewed and completed.</div>
+<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <mark class="ph">[VERSION]</mark></p>
+<h2>1. Who we are</h2>
+<p><strong><mark class="ph">[COMPANY NAME]</mark></strong> (RC <mark class="ph">[CAC RC NUMBER]</mark>), <mark class="ph">[REGISTERED ADDRESS]</mark> ("<strong>TrimSlot</strong>", "<strong>we</strong>", "<strong>us</strong>") runs the TrimSlot booking and queue service at <mark class="ph">[WEBSITE URL]</mark>. For the personal data described here we are the <strong>data controller</strong> under the <strong>Nigeria Data Protection Act 2023 ("NDPA")</strong>. NDPC registration / status: [NDPC REGISTRATION NUMBER or "pending"]. Data Protection Officer: <mark class="ph">[DPO NAME]</mark>, <mark class="ph">[DPO EMAIL]</mark>. General privacy contact: <mark class="ph">[EMAIL]</mark>.</p>
+<p>This policy explains, in plain English, what personal data we collect, why, who sees it, how long we keep it, and what rights you have.</p>
+<h2>2. What we collect</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Group</th>
+<th>What</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Account</strong></td>
+<td>Name; e-mail and/or phone number (at least one); role (customer or barber); password (stored only as a one-way <strong>bcrypt hash</strong>, never the password itself); account status</td>
+<td>You</td>
+</tr>
+<tr>
+<td><strong>Barber / shop profile</strong></td>
+<td>Shop name, location (text address), about text, photo, working hours, days off, services and prices, plans you sell, Paystack subaccount code, bank name, last 4 digits of your account number, account name, whether the account name was verified</td>
+<td>Barbers</td>
+</tr>
+<tr>
+<td><strong>Bookings</strong></td>
+<td>Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history</td>
+<td>You and the barber</td>
+</tr>
+<tr>
+<td><strong>Payments</strong></td>
+<td>Paystack transaction reference, amount, fees, status, refund status; the e-mail we send Paystack for the receipt (yours, or a placeholder address if you have none). <strong>Card and bank-login details are typed into Paystack and never reach us.</strong> We also keep the technical webhook messages Paystack sends us (which may contain payer details such as e-mail, card type, last 4 digits, bank and IP address) as an audit record.</td>
+<td>You, Paystack</td>
+</tr>
+<tr>
+<td><strong>Plans, credits, balance</strong></td>
+<td>Plans bought, sessions used, expiry, session credits; for barbers, the commission balance owed and its history</td>
+<td>System</td>
+</tr>
+<tr>
+<td><strong>Reliability label</strong></td>
+<td>A simple label shown <strong>to barbers</strong> about a customer ("New", "Reliable", "Mostly reliable", "Often misses") with counts of completed visits and no-shows</td>
+<td>Calculated from your bookings</td>
+</tr>
+<tr>
+<td><strong>Reviews, reports, notes</strong></td>
+<td>Ratings and comments you write; reports you file or that are filed about you (category and message); private notes a barber writes about a customer; favourites; waitlist entries</td>
+<td>You, barbers</td>
+</tr>
+<tr>
+<td><strong>Notifications</strong></td>
+<td>The in-app notifications we send you; if you turn on browser notifications, your <strong>push subscription</strong> (a browser-generated address and keys that let your browser receive our messages)</td>
+<td>System, your browser</td>
+</tr>
+<tr>
+<td><strong>Technical</strong></td>
+<td>IP address, browser type, request logs (time, page, response code, account ID), security counters (such as failed log-in counts and rate limits), error logs</td>
+<td>Your device</td>
+</tr>
+<tr>
+<td><strong>Admin records</strong></td>
+<td>An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why)</td>
+<td>System</td>
+</tr>
+</tbody>
+</table></div>
+<p>We do <strong>not</strong> knowingly collect sensitive personal data (such as health, biometric, religion). Please do not put health or other sensitive information in notes or reviews. We do not track your precise GPS location; shop addresses are text typed by barbers.</p>
+<h2>3. Why we use it, and our lawful basis</h2>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Lawful basis (NDPA s.25)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Create and run your account; make, show and manage bookings; show queue positions; send booking notifications (confirmation, reminders at about 2 hours and 30 minutes before, "your turn")</td>
+<td>Performance of a contract</td>
+</tr>
+<tr>
+<td>Take payments, issue refunds and credits, run plans, pay barbers, keep commission balances, detect failed or duplicate payments</td>
+<td>Performance of a contract; legal obligation (financial records)</td>
+</tr>
+<tr>
+<td>Prevent fraud, abuse, fake bookings and misuse; security; rate-limiting; audit trail; resolving disputes and reports</td>
+<td>Legitimate interests (safe and fair platform); legal obligation</td>
+</tr>
+<tr>
+<td>Reliability label shown to barbers, to reduce no-shows</td>
+<td>Legitimate interests <mark class="ph">[LAWYER: confirm; consider a right to object and a DPIA]</mark></td>
+</tr>
+<tr>
+<td>Reviews and shop ratings</td>
+<td>Legitimate interests / contract</td>
+</tr>
+<tr>
+<td>Browser (push) notifications</td>
+<td><strong>Consent</strong> — you choose to switch them on and can switch them off at any time</td>
+</tr>
+<tr>
+<td>Service announcements and important changes</td>
+<td>Contract / legitimate interests</td>
+</tr>
+<tr>
+<td>Marketing messages</td>
+<td><strong>We do not send marketing today.</strong> If we start, we will ask for consent first.</td>
+</tr>
+<tr>
+<td>Tax, accounting, regulator and court requests</td>
+<td>Legal obligation</td>
+</tr>
+<tr>
+<td>Improving the service using aggregate counts</td>
+<td>Legitimate interests</td>
+</tr>
+</tbody>
+</table></div>
+<p><mark class="ph">[LAWYER: confirm each basis; whether any processing needs explicit consent; whether any is automated decision-making (the reliability label does not block bookings automatically, but barbers may rely on it).]</mark></p>
+<h2>4. Who we share it with</h2>
+<ul>
+<li><strong>The barber you book with</strong> sees your name, phone/e-mail, booking details, your reliability label and your history <em>with them</em>. Barbers are independent controllers of what they receive and must handle it under the Barber Agreement and NDPA.</li>
+<li><strong>Customers</strong> see a barber's shop profile, photo, services, hours, reviews and replies.</li>
+<li><strong>Our service providers (processors)</strong> — we use them only to run the service:</li>
+<li><strong>Paystack</strong> (Paystack Payments Limited / Stripe group) — card and bank payments, refunds, barber payouts and verification of bank account names. Paystack also has its own legal duties and acts as an independent controller for its own purposes (fraud, compliance); see its privacy notice.</li>
+<li><strong>Supabase</strong> — managed database (PostgreSQL) where account, booking and payment records are stored. Project region: <strong>London, United Kingdom (eu-west-2)</strong>.</li>
+<li><strong>Vercel</strong> — web hosting and serverless functions that run the app (functions run in <strong>London, UK</strong>; content is delivered through a global network) and application logs.</li>
+<li><strong>Browser push services</strong> (for example those run by Google, Mozilla and Apple) — only if you enable notifications; they carry the message to your browser.</li>
+<li>[Any e-mail/SMS provider, analytics or error-monitoring tool — NONE TODAY. Add here if one is added.]</li>
+<li><strong>Authorities, courts, regulators, banks</strong> where the law or a valid order requires, or to protect rights and safety.</li>
+<li><strong>A buyer or successor</strong> if the business is sold, under the same protections.</li>
+</ul>
+<p><strong>We do not sell personal data.</strong> We do not share it for third-party advertising.</p>
+<h2>5. Sending data outside Nigeria</h2>
+<p>Our database and hosting are outside Nigeria (<strong>United Kingdom</strong>), and our providers (Supabase, Vercel, Paystack and its group companies) are international companies that may process data in other countries, including the United States and the European Economic Area. Where personal data leaves Nigeria we rely on the transfer rules in the NDPA (Part VIII): <mark class="ph">[LAWYER: choose and document the basis — adequacy of the destination, standard contractual clauses / binding corporate rules, or another permitted basis — and check each provider's data processing agreement.]</mark> We ask providers to protect data to a standard at least equal to the NDPA.</p>
+<h2>6. How long we keep it</h2>
+<p><mark class="ph">[LAWYER: confirm every period. The first column reflects what the system really does today; the second is a proposal.]</mark></p>
+<div class="tblwrap"><table>
+<thead>
+<tr>
+<th>Data</th>
+<th>What happens today</th>
+<th>Proposed retention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Account and profile</td>
+<td>Kept while the account exists. An admin can hide ("soft-delete") an account, restorable for <strong>30 days</strong>, after which it can be erased unless money records exist</td>
+<td>Until you ask us to delete, or <mark class="ph">[24]</mark> months after last use</td>
+</tr>
+<tr>
+<td>Bookings, plans, credits, reviews</td>
+<td>Kept; no automatic deletion yet</td>
+<td>[Account life + 6 years] for those linked to payments; others <mark class="ph">[24]</mark> months</td>
+</tr>
+<tr>
+<td>Payment and refund records, audit trail</td>
+<td>Kept; <strong>cannot be hard-deleted once a payment succeeded</strong> (financial record)</td>
+<td><mark class="ph">[6]</mark> years (tax and accounting)</td>
+</tr>
+<tr>
+<td>Raw payment webhook messages</td>
+<td>Kept; those with an invalid signature deleted after <strong>30 days</strong></td>
+<td>[400 days]</td>
+</tr>
+<tr>
+<td>Notifications</td>
+<td>Kept; no automatic deletion yet</td>
+<td><mark class="ph">[12]</mark> months</td>
+</tr>
+<tr>
+<td>Push subscriptions</td>
+<td>Removed when your browser says the subscription is gone, when you switch notifications off, or when the account is erased</td>
+<td>Same</td>
+</tr>
+<tr>
+<td>Security counters and rate limits</td>
+<td>Deleted automatically after about <strong>2 hours</strong></td>
+<td>Same</td>
+</tr>
+<tr>
+<td>Request/application logs</td>
+<td>Kept by the hosting provider under its log retention (typically days to weeks) <mark class="ph">[CHECK]</mark></td>
+<td>[30–90] days</td>
+</tr>
+<tr>
+<td>Unpaid "Pay now" attempts, abandoned plan checkouts</td>
+<td>Marked incomplete; abandoned never-paid plan checkouts deleted after <strong>2 days</strong></td>
+<td>Same</td>
+</tr>
+<tr>
+<td>Backups</td>
+<td>[Provider backups — CHECK plan; a free-tier database may have none]</td>
+<td><mark class="ph">[30]</mark> days</td>
+</tr>
+</tbody>
+</table></div>
+<h2>7. Your rights</h2>
+<p>Under the NDPA you have the right to: <strong>be informed</strong> (this policy); <strong>access</strong> your data and get a copy; <strong>correct</strong> wrong data; <strong>erase</strong> data we no longer need or hold unlawfully; <strong>restrict</strong> processing; <strong>object</strong> to processing based on legitimate interests or for direct marketing; <strong>data portability</strong> (a machine-readable copy of data you gave us); <strong>withdraw consent</strong> at any time (for example, turn off notifications — this does not affect earlier use); and <strong>not to be subject to a decision based only on automated processing</strong> that significantly affects you. </p>
+<p>To use a right, e-mail <mark class="ph">[PRIVACY EMAIL]</mark> or write to <mark class="ph">[REGISTERED ADDRESS]</mark>. We will confirm your identity, and reply within [one month] <mark class="ph">[LAWYER: confirm NDPA/GAID time limit]</mark>. We may keep what the law requires us to (for example payment records). There is currently <strong>no self-service button for data export or account deletion</strong> in the app; requests are handled by e-mail. <mark class="ph">[OWNER: consider building these.]</mark></p>
+<p>If you are unhappy with our answer you may complain to the <strong>Nigeria Data Protection Commission (NDPC)</strong>, <mark class="ph">[NDPC CONTACT DETAILS]</mark>, or go to court.</p>
+<h2>8. Security</h2>
+<p>We use HTTPS; password hashing; login cookies that scripts cannot read; access controls and staff PIN protection for destructive admin actions; audit logging; rate limits and lock-outs against guessing; and payment details that stay with Paystack. No system is perfectly secure. If a personal-data breach is likely to harm you, we will tell the NDPC within <strong>72 hours</strong> and tell you without undue delay, as the NDPA requires.</p>
+<h2>9. Cookies and device storage</h2>
+<p>We use one essential cookie to keep you logged in, and small items in your browser's storage for settings. We use no advertising or analytics cookies. See the Cookie and Notification Notice.</p>
+<h2>10. Children</h2>
+<p>The Service is for people aged <strong>18 and over</strong>. <mark class="ph">[LAWYER: the app lets an adult book for a child; decide whether to allow this and how to treat children's data under NDPA s.31.]</mark> If you think a child has given us data, contact us and we will remove it.</p>
+<h2>11. Third-party links and content</h2>
+<p>Shop photos and some links may point to other websites. We are not responsible for their privacy practices.</p>
+<h2>12. Changes</h2>
+<p>We will post changes here and, for important ones, notify you in the app. The "Effective date" shows the latest version.</p>
+<h2>13. Contact</h2>
+<p><strong><mark class="ph">[COMPANY NAME]</mark></strong>, <mark class="ph">[REGISTERED ADDRESS]</mark> · Privacy: <mark class="ph">[PRIVACY EMAIL]</mark> · DPO: <mark class="ph">[DPO NAME / EMAIL]</mark> · Phone: <mark class="ph">[PHONE]</mark></p>
 </div>
 <footer class="foot"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></footer></body></html>

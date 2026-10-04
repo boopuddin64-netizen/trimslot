@@ -1,0 +1,70 @@
+# Plan (Subscription) Terms
+
+> **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
+
+**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+
+These terms apply when you buy a **plan** from a barber on TrimSlot. They are part of the [Terms of Service](terms.html) and should be read with the [Refund, Cancellation and Credit Policy](refunds.html).
+
+## 1. What a plan is
+
+1.1 A plan is a **prepaid pack of haircut sessions** with **one barber**, for a set price, number of sessions, validity period and list of included services. It is **not a recurring subscription**: you pay once, there is **no automatic renewal** and no card is saved. [LAWYER: confirm no "subscription" or auto-debit rules apply; if renewals are added later this must change.]
+
+1.2 The barber (not TrimSlot) sets the plan's name, price, sessions, validity and included services, within limits that TrimSlot sets. Today the limits are: price **₦1,000 to ₦500,000**; validity **up to 90 days**; **up to 30 sessions**. The limits can change; they never change a plan you have already bought.
+
+1.3 The barber is the seller of the sessions and the provider of the service. TrimSlot runs the platform and collects the payment through Paystack.
+
+## 2. Buying a plan
+
+2.1 You see the full terms (price, sessions, validity in days, included services) before you pay. You pay online through Paystack. A plan is **active only after Paystack confirms the payment to us** (this can take a moment; use "check status" if needed). Until then you have nothing to use and nothing is reserved.
+
+2.2 The terms you see are **frozen at purchase**. If the barber later edits or deletes the plan, **your plan does not change.**
+
+2.3 If you start a plan checkout and do not pay, nothing is bought. Unpaid plan checkouts are removed after about two days. If you pay twice for the same plan, the duplicate payment is refunded automatically.
+
+2.4 Plans are not available while bookings are paused for maintenance, or if the platform has switched plans off.
+
+## 3. Using sessions
+
+3.1 When you book with the barber, choose "**Use plan session**". Each booking uses **one session**. You can use a plan only for the **services it includes**, and only **with the barber who sold it**.
+
+3.2 **The appointment must start before the plan ends.** Plan sessions expire at the end of the validity period (the plan's end date and time, counted from the moment payment was confirmed). You cannot book an appointment that starts after the plan has expired.
+
+3.3 If you **cancel in time** (at least 30 minutes before), the session is **returned** to the plan. If the **barber cannot serve** you, the session is returned. 
+
+3.4 If you **miss** a plan appointment and the barber marks you no-show, the session counts as **used** and you receive **one session credit** with the same barber (30 days, not cashable) as set out in the Refund, Cancellation and Credit Policy.
+
+3.5 Sessions are personal to you and cannot be transferred, shared, sold or exchanged for cash.
+
+## 4. Expiry, refunds and cancellation of a plan
+
+4.1 **Unused sessions expire when the plan ends and are not refunded.** [OWNER: the platform has a setting for "unused sessions: no refund / case by case"; today it is "no refund".]
+
+4.2 There is no change of mind period built into the app. [LAWYER: check whether a cooling-off or cancellation right applies to prepaid services sold at a distance under Nigerian consumer law, and add one if so.]
+
+4.3 If you have paid and the plan did not activate, or you were charged twice, tell us — we will verify with Paystack and refund where due.
+
+4.4 If the barber's shop is **removed or suspended** while you have unused sessions, [PROPOSED: we will try to arrange the sessions with another route, or refund the value of unused sessions on a pro-rata basis]. [OWNER/LAWYER: decide — the app does not do this automatically today; the admin can handle cases manually.]
+
+4.5 If the barber closes for a period (days off), the plan does **not** automatically extend. [OWNER: consider extending in that case.]
+
+## 5. Barber's obligations
+
+The barber must honour every paid session until the plan expires, provide the included services with the same care as any customer, and not refuse a plan customer because they paid less. See the Barber Agreement.
+
+## 6. Fees
+
+The platform fee for a plan sale is taken from the plan price when you pay and is not charged to you on top (a Paystack processing fee may be shown at checkout). No fee is charged again when you use a session.
+
+## 7. Changes and contact
+
+We may change these terms for future plans on notice in the app. Questions: [EMAIL] · [PHONE].
+
+## Open questions for the lawyer
+
+> Numbers refer to `00-open-questions-for-lawyer.md`, which has the full list.
+
+* **Q18.** Prepaid packs with expiry and no refund of unused sessions: acceptable? Cooling-off period for distance sales?
+* **Q19.** What must happen to customers' unused paid sessions if the barber is removed?
+* **Q20.** Is expiry with no refund enforceable; is a prominent summary at purchase needed?
+* **Q21.** Is this a 'subscription' in any legal sense (no auto-renewal today)?

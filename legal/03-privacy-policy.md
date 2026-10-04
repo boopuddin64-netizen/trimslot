@@ -1,0 +1,127 @@
+# Privacy Policy
+
+> **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
+
+**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+
+## 1. Who we are
+
+**[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**", "**we**", "**us**") runs the TrimSlot booking and queue service at [WEBSITE URL]. For the personal data described here we are the **data controller** under the **Nigeria Data Protection Act 2023 ("NDPA")**. NDPC registration / status: [NDPC REGISTRATION NUMBER or "pending"]. Data Protection Officer: [DPO NAME], [DPO EMAIL]. General privacy contact: [EMAIL].
+
+This policy explains, in plain English, what personal data we collect, why, who sees it, how long we keep it, and what rights you have.
+
+## 2. What we collect
+
+| Group | What | Where it comes from |
+|---|---|---|
+| **Account** | Name; e-mail and/or phone number (at least one); role (customer or barber); password (stored only as a one-way **bcrypt hash**, never the password itself); account status | You |
+| **Barber / shop profile** | Shop name, location (text address), about text, photo, working hours, days off, services and prices, plans you sell, Paystack subaccount code, bank name, last 4 digits of your account number, account name, whether the account name was verified | Barbers |
+| **Bookings** | Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history | You and the barber |
+| **Payments** | Paystack transaction reference, amount, fees, status, refund status; the e-mail we send Paystack for the receipt (yours, or a placeholder address if you have none). **Card and bank-login details are typed into Paystack and never reach us.** We also keep the technical webhook messages Paystack sends us (which may contain payer details such as e-mail, card type, last 4 digits, bank and IP address) as an audit record. | You, Paystack |
+| **Plans, credits, balance** | Plans bought, sessions used, expiry, session credits; for barbers, the commission balance owed and its history | System |
+| **Reliability label** | A simple label shown **to barbers** about a customer ("New", "Reliable", "Mostly reliable", "Often misses") with counts of completed visits and no-shows | Calculated from your bookings |
+| **Reviews, reports, notes** | Ratings and comments you write; reports you file or that are filed about you (category and message); private notes a barber writes about a customer; favourites; waitlist entries | You, barbers |
+| **Notifications** | The in-app notifications we send you; if you turn on browser notifications, your **push subscription** (a browser-generated address and keys that let your browser receive our messages) | System, your browser |
+| **Technical** | IP address, browser type, request logs (time, page, response code, account ID), security counters (such as failed log-in counts and rate limits), error logs | Your device |
+| **Admin records** | An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why) | System |
+
+We do **not** knowingly collect sensitive personal data (such as health, biometric, religion). Please do not put health or other sensitive information in notes or reviews. We do not track your precise GPS location; shop addresses are text typed by barbers.
+
+## 3. Why we use it, and our lawful basis
+
+| Purpose | Lawful basis (NDPA s.25) |
+|---|---|
+| Create and run your account; make, show and manage bookings; show queue positions; send booking notifications (confirmation, reminders at about 2 hours and 30 minutes before, "your turn") | Performance of a contract |
+| Take payments, issue refunds and credits, run plans, pay barbers, keep commission balances, detect failed or duplicate payments | Performance of a contract; legal obligation (financial records) |
+| Prevent fraud, abuse, fake bookings and misuse; security; rate-limiting; audit trail; resolving disputes and reports | Legitimate interests (safe and fair platform); legal obligation |
+| Reliability label shown to barbers, to reduce no-shows | Legitimate interests [LAWYER: confirm; consider a right to object and a DPIA] |
+| Reviews and shop ratings | Legitimate interests / contract |
+| Browser (push) notifications | **Consent** — you choose to switch them on and can switch them off at any time |
+| Service announcements and important changes | Contract / legitimate interests |
+| Marketing messages | **We do not send marketing today.** If we start, we will ask for consent first. |
+| Tax, accounting, regulator and court requests | Legal obligation |
+| Improving the service using aggregate counts | Legitimate interests |
+
+[LAWYER: confirm each basis; whether any processing needs explicit consent; whether any is automated decision-making (the reliability label does not block bookings automatically, but barbers may rely on it).]
+
+## 4. Who we share it with
+
+* **The barber you book with** sees your name, phone/e-mail, booking details, your reliability label and your history *with them*. Barbers are independent controllers of what they receive and must handle it under the Barber Agreement and NDPA.
+* **Customers** see a barber's shop profile, photo, services, hours, reviews and replies.
+* **Our service providers (processors)** — we use them only to run the service:
+  * **Paystack** (Paystack Payments Limited / Stripe group) — card and bank payments, refunds, barber payouts and verification of bank account names. Paystack also has its own legal duties and acts as an independent controller for its own purposes (fraud, compliance); see its privacy notice.
+  * **Supabase** — managed database (PostgreSQL) where account, booking and payment records are stored. Project region: **London, United Kingdom (eu-west-2)**.
+  * **Vercel** — web hosting and serverless functions that run the app (functions run in **London, UK**; content is delivered through a global network) and application logs.
+  * **Browser push services** (for example those run by Google, Mozilla and Apple) — only if you enable notifications; they carry the message to your browser.
+  * [Any e-mail/SMS provider, analytics or error-monitoring tool — NONE TODAY. Add here if one is added.]
+* **Authorities, courts, regulators, banks** where the law or a valid order requires, or to protect rights and safety.
+* **A buyer or successor** if the business is sold, under the same protections.
+
+**We do not sell personal data.** We do not share it for third-party advertising.
+
+## 5. Sending data outside Nigeria
+
+Our database and hosting are outside Nigeria (**United Kingdom**), and our providers (Supabase, Vercel, Paystack and its group companies) are international companies that may process data in other countries, including the United States and the European Economic Area. Where personal data leaves Nigeria we rely on the transfer rules in the NDPA (Part VIII): [LAWYER: choose and document the basis — adequacy of the destination, standard contractual clauses / binding corporate rules, or another permitted basis — and check each provider's data processing agreement.] We ask providers to protect data to a standard at least equal to the NDPA.
+
+## 6. How long we keep it
+
+[LAWYER: confirm every period. The first column reflects what the system really does today; the second is a proposal.]
+
+| Data | What happens today | Proposed retention |
+|---|---|---|
+| Account and profile | Kept while the account exists. An admin can hide ("soft-delete") an account, restorable for **30 days**, after which it can be erased unless money records exist | Until you ask us to delete, or [24] months after last use |
+| Bookings, plans, credits, reviews | Kept; no automatic deletion yet | [Account life + 6 years] for those linked to payments; others [24] months |
+| Payment and refund records, audit trail | Kept; **cannot be hard-deleted once a payment succeeded** (financial record) | [6] years (tax and accounting) |
+| Raw payment webhook messages | Kept; those with an invalid signature deleted after **30 days** | [400 days] |
+| Notifications | Kept; no automatic deletion yet | [12] months |
+| Push subscriptions | Removed when your browser says the subscription is gone, when you switch notifications off, or when the account is erased | Same |
+| Security counters and rate limits | Deleted automatically after about **2 hours** | Same |
+| Request/application logs | Kept by the hosting provider under its log retention (typically days to weeks) [CHECK] | [30–90] days |
+| Unpaid "Pay now" attempts, abandoned plan checkouts | Marked incomplete; abandoned never-paid plan checkouts deleted after **2 days** | Same |
+| Backups | [Provider backups — CHECK plan; a free-tier database may have none] | [30] days |
+
+## 7. Your rights
+
+Under the NDPA you have the right to: **be informed** (this policy); **access** your data and get a copy; **correct** wrong data; **erase** data we no longer need or hold unlawfully; **restrict** processing; **object** to processing based on legitimate interests or for direct marketing; **data portability** (a machine-readable copy of data you gave us); **withdraw consent** at any time (for example, turn off notifications — this does not affect earlier use); and **not to be subject to a decision based only on automated processing** that significantly affects you. 
+
+To use a right, e-mail [PRIVACY EMAIL] or write to [REGISTERED ADDRESS]. We will confirm your identity, and reply within [one month] [LAWYER: confirm NDPA/GAID time limit]. We may keep what the law requires us to (for example payment records). There is currently **no self-service button for data export or account deletion** in the app; requests are handled by e-mail. [OWNER: consider building these.]
+
+If you are unhappy with our answer you may complain to the **Nigeria Data Protection Commission (NDPC)**, [NDPC CONTACT DETAILS], or go to court.
+
+## 8. Security
+
+We use HTTPS; password hashing; login cookies that scripts cannot read; access controls and staff PIN protection for destructive admin actions; audit logging; rate limits and lock-outs against guessing; and payment details that stay with Paystack. No system is perfectly secure. If a personal-data breach is likely to harm you, we will tell the NDPC within **72 hours** and tell you without undue delay, as the NDPA requires.
+
+## 9. Cookies and device storage
+
+We use one essential cookie to keep you logged in, and small items in your browser's storage for settings. We use no advertising or analytics cookies. See the [Cookie and Notification Notice](cookies.html).
+
+## 10. Children
+
+The Service is for people aged **18 and over**. [LAWYER: the app lets an adult book for a child; decide whether to allow this and how to treat children's data under NDPA s.31.] If you think a child has given us data, contact us and we will remove it.
+
+## 11. Third-party links and content
+
+Shop photos and some links may point to other websites. We are not responsible for their privacy practices.
+
+## 12. Changes
+
+We will post changes here and, for important ones, notify you in the app. The "Effective date" shows the latest version.
+
+## 13. Contact
+
+**[COMPANY NAME]**, [REGISTERED ADDRESS] · Privacy: [PRIVACY EMAIL] · DPO: [DPO NAME / EMAIL] · Phone: [PHONE]
+
+## Open questions for the lawyer
+
+> Numbers refer to `00-open-questions-for-lawyer.md`, which has the full list.
+
+* **Q31.** Are we a data controller of major importance: NDPC registration, DPO, annual audit return?
+* **Q32.** Lawful basis, DPIA and right to object for the reliability label and barbers' private notes.
+* **Q33.** International transfers (London database and hosting, Paystack group): mechanism and notices.
+* **Q34.** Retention periods to publish; most data is not auto-deleted today.
+* **Q35.** Data-subject rights procedure and time limits; no self-service export or delete yet.
+* **Q36.** Raw Paystack webhook payloads stored up to 400 days: data minimisation?
+* **Q37.** Barbers as controllers of customer data they receive.
+* **Q38.** Breach notification wording (72 hours to NDPC).
+* **Q7.** Children's data (see Terms, age).
