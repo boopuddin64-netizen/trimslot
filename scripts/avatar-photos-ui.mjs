@@ -34,19 +34,28 @@ async function toProfile(p) {
   }
   throw new Error('profile screen did not show the photo section');
 }
+let saved = null;   // one sign-up per run (the server allows 10 sign-ups per 15 minutes from one network); every later browser context reuses this login
 async function session({ csp, noBitmap, expectCspNoise, w = 390, h = 800 }) {
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, baseURL: BASE, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, baseURL: BASE, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block', ...(saved ? { storageState: saved } : {}) });   // no service worker: it would answer before the test's header rewrite
+  await ctx.addInitScript(() => { if (navigator.serviceWorker) navigator.serviceWorker.register = () => Promise.reject(new Error('service worker off in this test')); });   // Playwright's own block resolves with undefined, a browser rejects
   if (noBitmap) await ctx.addInitScript(() => { delete window.createImageBitmap; });
   const p = await ctx.newPage(); const errs = [], warns = [];
   await p.route('**/*', async (route) => {   // same response, but with the CSP header from vercel.json (the local server sends its own)
-    const r = await route.fetch();
-    await route.fulfill({ response: r, headers: { ...r.headers(), 'content-security-policy': csp } });
+    try {
+      const r = await route.fetch(); const body = await r.body();   // read the body first: a response must not be disposed before it is used
+      const h = { ...r.headers(), 'content-security-policy': csp }; delete h['content-encoding']; delete h['content-length']; delete h['transfer-encoding'];   // body() is already decoded
+      await route.fulfill({ status: r.status(), headers: h, body });
+    } catch (e) { await route.continue().catch(() => {}); }   // e.g. the page was closed while the request was in flight
   });
   p.on('console', (m) => { if (m.type() === 'error' && !/favicon|Failed to load resource/.test(m.text()) && !(expectCspNoise && /Content Security Policy/.test(m.text()))) errs.push(m.text().slice(0, 200)); if (m.type() === 'warning') warns.push(m.text().slice(0, 200)); });
   p.on('pageerror', (e) => errs.push(e.message));
-  await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]');
-  await p.fill('[name=name]', 'Photo Tester'); await p.fill('[name=email]', `photo${Date.now()}${Math.floor(Math.random() * 1e4)}@example.com`); await p.fill('[name=password]', 'Password123');
-  await p.check('[name=accept_terms]'); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('signup'), null, { timeout: 8000 });
+  if (!saved) {
+    await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]', { timeout: 15000 });
+    await p.fill('[name=name]', 'Photo Tester'); await p.fill('[name=email]', `photo${process.pid}${Date.now()}${Math.floor(Math.random() * 1e6)}@example.com`); await p.fill('[name=password]', 'Password123');
+    await p.check('[name=accept_terms]'); await p.click('button[type=submit]');
+    await p.waitForFunction(() => !location.hash.includes('signup') && !!document.querySelector('#tabs:not(.hidden), .mybarber, #nobarbers'), null, { timeout: 20000 });
+    saved = await ctx.storageState();
+  }
   await toProfile(p);
   return { ctx, p, errs, warns };
 }

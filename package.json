@@ -26,7 +26,7 @@
     "account-ui": "node scripts/account-ui.mjs",
     "plans-ui": "node scripts/plans-ui.mjs",
     "share-ui": "node scripts/sharelinks-ui.mjs",
-    "avatar-ui": "tsx scripts/avatar-crop-run.ts",
+    "avatar-ui": "tsx scripts/with-server.ts scripts/avatar-ui-all.mjs",
     "haptics-ui": "node scripts/haptics-ui.mjs",
     "speed": "tsx scripts/with-server.ts scripts/speed-measure.mjs",
     "offline-ui": "tsx scripts/with-server.ts scripts/offline-ui.mjs",

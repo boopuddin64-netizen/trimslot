@@ -1,6 +1,6 @@
 /* Profile-picture cropper UI test (headless Chrome via playwright-core) against a running dev server with mock payments.
    Usage: node scripts/avatar-crop-ui.mjs   (env BASE, default http://localhost:4103)  -> exit 1 on any failure; screenshots in screenshots/avatar-crop/
-   `npm run avatar-ui` boots a throw-away Postgres + server first (scripts/avatar-crop-run.ts). Covers: mouse drag, wheel, slider + keyboard, touch drag + two-finger pinch
+   `npm run avatar-ui` boots a throw-away Postgres + server first (scripts/with-server.ts, then scripts/avatar-ui-all.mjs). Covers: mouse drag, wheel, slider + keyboard, touch drag + two-finger pinch
    (real touch events through the DevTools protocol), Cancel, Esc, Save (size/dimensions/content of the stored picture), failed upload, bad file, light + dark contrast (WCAG AA), small phones. */
 import { chromium } from '/workspace/pw-tools/node_modules/playwright-core/index.mjs';
 import fs from 'fs';
