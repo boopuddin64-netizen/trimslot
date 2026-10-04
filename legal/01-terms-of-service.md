@@ -9,7 +9,7 @@
 <li>You must be 18 or older to make an account.</li>
 <li>You can pay online. Or you can pay at the shop, if the barber allows it. If you pay online, we add a small booking fee. You see it before you pay.</li>
 <li>You can cancel in the app up to {{cancel_cutoff_min}} minutes before your visit.</li>
-<li>If you miss a visit that you paid for, you get no refund. You get one credit with the same barber. You cannot cash out a credit.</li>
+<li>If you miss a visit that you paid for, you get no refund. When your barber marks it a no-show, you get one credit with the same barber. You cannot cash out a credit.</li>
 <li>In Profile, you can download your data or delete your account.</li>
 </ul>
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>

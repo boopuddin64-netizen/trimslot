@@ -10,6 +10,7 @@
 <li>If you cancel in time and you paid online, you get a refund. TrimSlot staff approve it. If no one decides within a short time, it is approved by itself.</li>
 <li>If you paid with a plan session or a credit, you get it back.</li>
 <li>If you miss a visit that you paid for, you get no refund. When your barber marks it a no-show, you get one credit with the same barber instead. It lasts {{credit_expiry_days}} days. You cannot cash it out.</li>
+<li>If the barber does not mark a no-show, there is no refund and no credit.</li>
 <li>If the barber cannot serve you (the barber marks "Not served"), you get a refund. If you pay twice, or your payment comes after someone else took that time, you also get a refund. If your payment comes late but the time is still free, the booking is confirmed.</li>
 <li>One booking gets a refund or a credit. It never gets both.</li>
 </ul>
@@ -37,7 +38,7 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 
 2.1 You may cancel in the app **until {{cancel_cutoff_min}} minutes before your appointment starts.** The cut-off is a TrimSlot setting and is shown on the booking before you pay. [LAWYER/OWNER: confirm {{cancel_cutoff_min}} minutes is the policy to publish.]
 
-2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit comes only when the barber marks a no-show.
+2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit for a missed visit comes only when the barber marks a no-show.
 
 2.3 If a barber is removed or suspended, or a customer account is removed, upcoming bookings may be cancelled by us. Paid online bookings are then refunded (flagged for refund and requested from Paystack); plan sessions and credits are returned.
 
