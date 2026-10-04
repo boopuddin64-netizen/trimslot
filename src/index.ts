@@ -3,6 +3,7 @@ import { closeDb } from './db';
 import { config } from './config';
 import { logger } from './logger';
 import { expireHolds } from './bookingService';
+import { reconcileRecentPayments } from './paystack';
 import { bootChecks, prepareDb } from './runtime';
 
 async function main() {
@@ -20,8 +21,13 @@ async function main() {
   server.headersTimeout = 66_000;
 
   // Long-running deployments (Docker/VPS/dev) keep a light in-process sweeper. On Vercel this does not exist: use /api/cron/sweep.
+  let sweeping = false;
   const sweeper = config.sweepEverySeconds > 0
-    ? setInterval(() => { expireHolds(db).catch((e) => logger.error('hold_sweep_failed', { err: e.message })); }, config.sweepEverySeconds * 1000)
+    ? setInterval(() => {
+      if (sweeping) return; sweeping = true;      // never two rounds at once
+      // Same two steps the cron sweep does for payments: ask Paystack before closing old attempts, and re-check open checkouts of the last 48 hours.
+      expireHolds(db, {}, { budgetMs: 25000 }).then(() => reconcileRecentPayments(db)).catch((e) => logger.error('hold_sweep_failed', { err: e.message })).finally(() => { sweeping = false; });
+    }, config.sweepEverySeconds * 1000)
     : undefined;
   sweeper?.unref();
 

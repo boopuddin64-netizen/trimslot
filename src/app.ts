@@ -102,10 +102,15 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   }
   // Customer detail view only: what went wrong with a payment on this booking (so the page can always say the right thing, also after a reload or a poll).
   if (!opts.forBarber && !memo && b.payment_option === 'ONLINE') {
-    const pi = await db.maybeOne<any>(`SELECT refund_reason, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' AND refund_status IS NOT NULL
-        AND (refund_reason LIKE 'Slot was taken%' OR refund_reason LIKE 'Duplicate payment%' OR refund_reason LIKE 'Payment arrived after%') ORDER BY id DESC LIMIT 1`, [b.id]);
-    if (pi) out.payment_issue = { kind: /^Slot was taken/.test(pi.refund_reason) ? 'slot_taken' : /^Duplicate/.test(pi.refund_reason) ? 'duplicate' : 'late', refund: pi.refund_status === 'REFUNDED' ? 'sent' : 'coming' };
-    else if (b.status !== 'CONFIRMED' && await db.maybeOne(`SELECT 1 FROM audit_log WHERE booking_id=$1 AND action='PAYMENT_AMOUNT_MISMATCH' LIMIT 1`, [b.id])) out.payment_issue = { kind: 'mismatch', refund: 'none' };
+    // A refunded problem stays on the page for a week (so the customer can read it again), then it is history; one still waiting stays until it is settled.
+    const pi = await db.maybeOne<any>(`SELECT refund_reason, refund_status FROM payments WHERE booking_id=$1 AND refund_status IS NOT NULL
+        AND (refund_reason LIKE 'Slot was taken%' OR refund_reason LIKE 'Duplicate payment%' OR refund_reason LIKE 'Payment arrived after%' OR refund_reason = 'Amount mismatch')
+        AND (refund_status <> 'REFUNDED' OR COALESCE(refund_requested_at, verified_at, created_at) > $2) ORDER BY id DESC LIMIT 1`, [b.id, new Date(clock.now().getTime() - 7 * 86400000).toISOString()]);
+    if (pi) {
+      const kind = /^Slot was taken/.test(pi.refund_reason) ? 'slot_taken' : /^Duplicate/.test(pi.refund_reason) ? 'duplicate' : /^Amount mismatch/.test(pi.refund_reason) ? 'mismatch' : 'late';
+      out.payment_issue = { kind, refund: pi.refund_status === 'REFUNDED' ? 'sent' : pi.refund_status === 'REFUND_REQUESTED' ? 'coming' : kind === 'mismatch' ? 'none' : 'coming' };
+      out.incomplete = false;       // there is a payment to talk about: the "no payment" badge and text would contradict the refund banner
+    }
   }
   if (b.date === lagosDate() || b.status === 'IN_SERVICE') {
     let q = opts.queue;
@@ -410,9 +415,11 @@ export function createApp(db: Db) {
   api.post('/bookings/:id/verify', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
     const p = await db.many('SELECT reference FROM payments WHERE booking_id=$1 ORDER BY id DESC', [b.id]);
-    let last: any = { result: 'no_payment' };
-    for (const row of p) { last = await processReference(db, row.reference); if (last.result === 'processed' || last.result === 'already_processed') break; }
-    res.json({ result: last.result, booking: await decorate(db, (await getBooking(db, b.id))!) });
+    let best: any = { result: 'no_payment' }, bestRef: string | null = null, bestRank = -1;
+    // Which answer matters most to the customer: a confirmation, then a problem with money (refund / amount), then "not paid".
+    const rank = (r: string) => (r === 'processed' || r === 'already_processed' ? 5 : ['slot_taken', 'late_refund', 'duplicate_refund', 'refund_due', 'amount_mismatch'].includes(r) ? 4 : r === 'not_paid' ? 2 : 1);
+    for (const row of p) { const r = await processReference(db, row.reference); if (rank(r.result) > bestRank) { best = r; bestRef = row.reference; bestRank = rank(r.result); } if (bestRank === 5) break; }
+    res.json({ result: best.result, reference: bestRef, booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));
   api.post('/bookings/:id/cancel', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCancel(db, req.user!.id, (await ownBooking(req)).id)) })));
   api.post('/bookings/:id/check-in', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCheckIn(db, req.user!.id, (await ownBooking(req)).id)) })));

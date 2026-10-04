@@ -10,6 +10,7 @@ import { accrueCommission, assertBookable } from './ledger';
 import { feeSettingsOf, offAppBreakdown, onlineBreakdown } from './fees';
 import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
+import { logger } from './logger';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
 export interface BookingRow {
@@ -58,14 +59,15 @@ export function canCustomerCancel(scheduledAtIso: string, now: Date, cutoffMin: 
  * depends on the sweeper running. */
 export interface HoldScope { barberId?: number; customerId?: number }
 
-export type HoldVerdict = { keep: Set<number>; unverified: Set<number> };
+export type HoldVerdict = { keep: Set<number>; unverified: Set<number>; mismatch?: Set<number> };
 
-export async function expireHoldsIn(c: Conn, scope: HoldScope = {}, o: { keep?: Set<number>; unverified?: Set<number> } = {}): Promise<number> {
+export async function expireHoldsIn(c: Conn, scope: HoldScope = {}, o: { keep?: Set<number>; unverified?: Set<number>; mismatch?: Set<number>; only?: number[] } = {}): Promise<number> {
   const now = isoNow();
   const params: unknown[] = [now];
   let where = `status='PENDING_PAYMENT' AND hold_expires_at IS NOT NULL AND hold_expires_at < $1`;
   if (scope.barberId != null) { params.push(scope.barberId); where += ` AND barber_id=$${params.length}`; }
   if (scope.customerId != null) { params.push(scope.customerId); where += ` AND customer_id=$${params.length}`; }
+  if (o.only) { params.push(o.only); where += ` AND id = ANY($${params.length}::int[])`; }   // only the attempts that were checked with Paystack
   if (o.keep && o.keep.size) { params.push([...o.keep]); where += ` AND id <> ALL($${params.length}::int[])`; }
   // UPDATE re-checks the WHERE after taking the row lock, so a payment confirmed a millisecond earlier is never cancelled.
   const rows = await c.many<BookingRow>(
@@ -75,28 +77,48 @@ export async function expireHoldsIn(c: Conn, scope: HoldScope = {}, o: { keep?: 
     // Customer-only: an unpaid Pay-now hold never existed as far as the barber is concerned.
     // "You were not charged" only when we know it: no checkout was ever opened, or Paystack itself said nothing was paid. Otherwise say so honestly.
     const sure = !o.unverified?.has(b.id);
-    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', sure
+    await notify(c, b.customer_id, 'BOOKING_INCOMPLETE', 'Booking incomplete', o.mismatch?.has(b.id)
+      ? `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not confirmed. We received a payment that did not match the booking, and our team is checking it. We will confirm the booking or refund you by ourselves. Please keep your booking number #${b.id}.`
+      : sure
       ? `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished because no payment came through. We freed the time slot. You were not charged. Please book again.`
       : `Your ${b.service_name} booking for ${fmtWhen(b.date, b.start_min)} was not finished and we could not check your payment with Paystack. If money left your account, we will confirm the booking or refund you by ourselves. You do not need to pay again.`, b.id);
   }
   return rows.length;
 }
 
-/** Cheap pre-check (1 indexed read) so ordinary requests don't open a write transaction. */
-export async function expireHolds(db: Db, scope: HoldScope = {}): Promise<number> {
+/** Cheap pre-check (1 indexed read) so ordinary requests don't open a write transaction.
+ *  Before anything is closed, Paystack is asked about its open checkouts (missed webhook + closed browser). Only the attempts that were looked at in this round are closed.
+ *  `budgetMs` caps the Paystack time (ordinary requests use the short default; the sweeper may use more). */
+export async function expireHolds(db: Db, scope: HoldScope = {}, o: { budgetMs?: number; batch?: number } = {}): Promise<number> {
   const params: unknown[] = [isoNow()];
   let where = `status='PENDING_PAYMENT' AND hold_expires_at < $1`;
   if (scope.barberId != null) { params.push(scope.barberId); where += ` AND barber_id=$${params.length}`; }
   if (scope.customerId != null) { params.push(scope.customerId); where += ` AND customer_id=$${params.length}`; }
   if (!(await db.maybeOne(`SELECT 1 FROM bookings WHERE ${where} LIMIT 1`, params))) return 0;
-  // Before closing: ask the gateway whether any of these attempts was in fact paid (missed webhook + closed browser).
-  let verdict: HoldVerdict = { keep: new Set(), unverified: new Set() };
-  {
-    const due = await db.many<{ id: number; hold_expires_at: string }>(`SELECT id, hold_expires_at FROM bookings WHERE ${where} ORDER BY id LIMIT 25`, params);
-    // paystack.ts imports this file, so it is loaded here on first use (a plain import would be circular).
-    try { verdict = await (require('./paystack') as typeof import('./paystack')).verifyBeforeClosing(db, due); } catch { /* verification must never block closing old attempts */ }
+  const started = Date.now(), budget = o.budgetMs ?? 7000, batch = Math.max(1, o.batch ?? 25);
+  const handled: number[] = [];       // already looked at and kept open: do not look again in this call
+  let closed = 0;
+  for (let round = 0; round < 8 && Date.now() - started < budget; round++) {
+    const ps = [...params]; let w = where;
+    if (handled.length) { ps.push(handled); w += ` AND id <> ALL($${ps.length}::int[])`; }
+    const due = await db.many<{ id: number; hold_expires_at: string }>(`SELECT id, hold_expires_at FROM bookings WHERE ${w} ORDER BY id LIMIT ${batch}`, ps);
+    if (!due.length) break;
+    let verdict: HoldVerdict;
+    try {
+      // paystack.ts imports this file, so it is loaded here on first use (a plain import would be circular).
+      verdict = await (require('./paystack') as typeof import('./paystack')).verifyBeforeClosing(db, due, { budgetMs: Math.max(1000, budget - (Date.now() - started)) });
+    } catch (e: any) {
+      // Could not check at all: a recent attempt stays open; an old one closes with the honest "could not check" text, never "not charged".
+      logger.warn('hold_verify_crashed', { err: String(e?.message).slice(0, 120) });
+      verdict = { keep: new Set(), unverified: new Set(), mismatch: new Set() };
+      for (const d of due) (clock.now().getTime() - new Date(d.hold_expires_at).getTime() < 60 * 60000 ? verdict.keep : verdict.unverified).add(d.id);
+    }
+    for (const id of verdict.keep) handled.push(id);
+    const ids = due.map((d) => d.id).filter((id) => !verdict.keep.has(id));
+    if (ids.length) closed += await db.tx((t) => expireHoldsIn(t, scope, { ...verdict, only: ids }));
+    if (due.length < batch) break;
   }
-  return db.tx((t) => expireHoldsIn(t, scope, verdict));
+  return closed;
 }
 
 /* ---------------- create ---------------- */
@@ -202,7 +224,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
       await t.query(`UPDATE bookings SET status='CANCELLED', payment_status='VOID', cancelled_at=$1, cancelled_by='system', hold_expires_at=NULL WHERE id=$2`, [now, b.id]);
       await flagRefund(t, b, reference, 'Slot was taken before payment completed');
       await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_SLOT_TAKEN', { via, amount_kobo: b.price_kobo, note: 'slot no longer free at payment time - booking NOT confirmed; payment flagged NEEDS_REFUND' });
-      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} came in after someone else booked that time. Your booking is not confirmed. We are refunding ${naira(b.price_kobo)} to your card. Please book another time.`, b.id);
+      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} came in after someone else booked that time. Your booking is not confirmed. We are refunding ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} to your card. Please book another time.`, b.id);
       return 'slot_taken';
     }
     assertTransition('PENDING_PAYMENT', 'CONFIRMED');

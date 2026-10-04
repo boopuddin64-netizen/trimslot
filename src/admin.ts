@@ -218,6 +218,18 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     await audit(db, null, ADMIN, 'ADMIN_PAYMENT_REVERIFIED', { reference: ref, result: result.result });
     res.json({ result: result.result, payment: await db.one('SELECT reference, status, refund_status, booking_id, plan_purchase_id FROM payments WHERE reference=$1', [ref]) });
   }));
+  /** A payment whose amount did not fit the booking waits for staff: "retry refund" sends it back, this confirms the booking anyway (the money is kept). Only for an unrefunded "Amount mismatch" payment, and never for another currency. */
+  api.post('/admin/payments/:reference/confirm-anyway', guard, wrap(async (req, res) => {
+    const ref = String(req.params.reference);
+    const p = await db.maybeOne<any>('SELECT reference, status, refund_status, refund_reason, amount_kobo FROM payments WHERE reference=$1', [ref]);
+    if (!p) throw notFound('We could not find that payment.');
+    if (p.status === 'SUCCESS') throw conflict('ALREADY_APPLIED', 'This payment is already applied.');
+    if (p.refund_status !== 'NEEDS_REFUND' || p.refund_reason !== 'Amount mismatch') throw conflict('NOT_A_MISMATCH', p.refund_status ? `This payment is already ${String(p.refund_status).toLowerCase().replace('_', ' ')}, so it cannot be confirmed.` : 'This payment is not waiting for a decision.');
+    await requirePin(db, req);      // keeps money whose amount did not match: a decision, so it needs the PIN
+    const out = await processReference(db, ref, { force: true });
+    await audit(db, null, ADMIN, 'ADMIN_MISMATCH_CONFIRMED', { reference: ref, result: out.result, asked_kobo: p.amount_kobo });
+    res.json({ result: out.result, payment: await db.one('SELECT reference, status, refund_status, booking_id, plan_purchase_id FROM payments WHERE reference=$1', [ref]) });
+  }));
   api.post('/admin/payments/:reference/mark-refunded', guard, wrap(async (req, res) => {
     const ref = String(req.params.reference);
     const note = z.object({ note: z.string().trim().max(200).optional() }).parse(req.body || {}).note;

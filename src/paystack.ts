@@ -82,8 +82,14 @@ export async function initializePayment(db: Db, bookingId: number, customerEmail
   const b = (await getBooking(db, bookingId))!;
   if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not waiting for an online payment.');
   // Double click / two tabs: reuse the open checkout for this booking instead of starting a second one (two live checkouts could both be paid and the second would be a duplicate).
-  const open = await db.maybeOne<any>(`SELECT reference, authorization_url, amount_kobo, price_kobo, booking_fee_kobo, provider FROM payments WHERE booking_id=$1 AND status='INITIATED' AND authorization_url IS NOT NULL AND created_at > $2 ORDER BY id DESC LIMIT 1`,
-    [b.id, new Date(clock.now().getTime() - Math.max(5, (await getSettings(db)).payment_hold_min) * 60000).toISOString()]);
+  // Two requests at the same instant would both see "no open checkout": the first to claim this 10-second slot goes on, the other waits a moment for its checkout to appear and re-uses it.
+  const sec = 10000, bucket = new Date(Math.floor(clock.now().getTime() / sec) * sec).toISOString();
+  const first = (await db.one<{ hits: number }>(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits`, [`init:${b.id}`, bucket])).hits === 1;
+  const holdMin = Math.max(5, (await getSettings(db)).payment_hold_min);
+  const findOpen = () => db.maybeOne<any>(`SELECT reference, authorization_url, amount_kobo, price_kobo, booking_fee_kobo, provider FROM payments WHERE booking_id=$1 AND status='INITIATED' AND authorization_url IS NOT NULL AND created_at > $2 ORDER BY id DESC LIMIT 1`,
+    [b.id, new Date(clock.now().getTime() - holdMin * 60000).toISOString()]);
+  let open = await findOpen();
+  for (let i = 0; !open && !first && i < 10; i++) { await new Promise((r) => setTimeout(r, 400)); open = await findOpen(); }
   if (open && open.amount_kobo === b.price_kobo + (b.booking_fee_kobo || 0) && (open.provider === 'MOCK') === config.mockMode) {
     await extendHold(db, b.id);
     return { reference: open.reference, authorization_url: open.authorization_url, amount_kobo: open.amount_kobo, price_kobo: open.price_kobo, booking_fee_kobo: open.booking_fee_kobo, mock: open.provider === 'MOCK', reused: true };
@@ -197,8 +203,11 @@ async function settledResult(db: Db, pay: any): Promise<ProcessResult> {
   return 'already_processed';
 }
 
+export const MISMATCH_REASON = 'Amount mismatch';
 /** The amount (or currency) Paystack reports does not fit this booking. Never confirm it by itself: tell the customer once, raise an admin alert, and leave the money for staff to refund or confirm. */
 async function flagMismatch(db: Db, pay: any, v: VerifyResult) {
+  // Flag the money for staff (once): the payment row says NEEDS_REFUND / "Amount mismatch" so it shows in Payments and in the open-refunds count. The sweeper does NOT auto-refund this reason: staff choose to refund it or to confirm it anyway.
+  await db.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1 AND refund_status IS NULL AND status<>'SUCCESS'`, [pay.reference, MISMATCH_REASON]);
   if (!pay.booking_id) { await adminEvent(db, 'PAYMENT_MISMATCH', 'A plan payment did not match', `Payment ${pay.reference} reported ${v.amount_kobo ?? '?'} kobo (${v.currency ?? 'no currency'}) but we asked for ${pay.amount_kobo}. It was not applied. Check it in Payments.`, { link: '/admin.html#/payments', refKey: 'mismatch:' + pay.reference, dedupeHours: 24 }); return; }
   await db.tx(async (t) => {
     const b = await t.maybeOne<any>('SELECT id, customer_id, service_name FROM bookings WHERE id=$1', [pay.booking_id]);
@@ -219,17 +228,21 @@ async function flagMismatch(db: Db, pay: any, v: VerifyResult) {
  * If the money cannot be honoured (slot taken meanwhile, duplicate, late) the booking is NOT confirmed, the payment is flagged NEEDS_REFUND
  * and - after the transaction has committed - a gateway refund is requested (best effort; the flag stays if that fails).
  */
-export async function processReference(db: Db, reference: string): Promise<{ result: ProcessResult; booking_id?: number; plan_purchase_id?: number }> {
+export async function processReference(db: Db, reference: string, o: { force?: boolean } = {}): Promise<{ result: ProcessResult; booking_id?: number; plan_purchase_id?: number }> {
   const pay = await db.maybeOne('SELECT * FROM payments WHERE reference=$1', [reference]);
   if (!pay) return { result: 'unknown_reference' };
   const ids = { booking_id: pay.booking_id ?? undefined, plan_purchase_id: pay.plan_purchase_id ?? undefined };
   if (pay.status === 'SUCCESS') return { result: await settledResult(db, pay), ...ids };
   const v = await verifyWithGateway(db, reference);            // network call: no DB transaction is open here
   if (!v.ok) return { result: 'not_paid', ...ids };
-  const am = amountMatches(v, pay.amount_kobo);
+  // `force` (admin "confirm anyway") accepts a different AMOUNT for a payment staff have looked at, never another currency.
+  const am = amountMatches(v, pay.amount_kobo) ?? (o.force && v.amount_kobo !== undefined && (v.currency === undefined || v.currency === 'NGN') ? { fee_kobo: 0, paid_kobo: v.amount_kobo } : null);
   if (!am) { await flagMismatch(db, pay, v).catch((e) => logger.warn('mismatch_flag_failed', { err: String(e?.message).slice(0, 120) })); return { result: 'amount_mismatch', ...ids }; }
   const outcome = await db.tx(async (t): Promise<PaymentOutcome | 'activated' | 'already_active' | null> => {
-    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4, ps_fee_actual_kobo=$5 WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo, v.fees_kobo && v.fees_kobo > 0 ? v.fees_kobo : null]);
+    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4, ps_fee_actual_kobo=$5,
+        refund_status = CASE WHEN refund_status='NEEDS_REFUND' AND refund_reason='${MISMATCH_REASON}' THEN NULL ELSE refund_status END,
+        refund_reason = CASE WHEN refund_status='NEEDS_REFUND' AND refund_reason='${MISMATCH_REASON}' THEN NULL ELSE refund_reason END
+      WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo, v.fees_kobo && v.fees_kobo > 0 ? v.fees_kobo : null]);
     if (claim.rowCount !== 1) return null;                     // someone else already processed it
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);
@@ -250,24 +263,23 @@ export async function processReference(db: Db, reference: string): Promise<{ res
 
 /** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
 export async function requestRefund(db: Db, reference: string): Promise<'requested' | 'failed' | 'not_needed'> {
-  const p = await db.maybeOne('SELECT refund_status FROM payments WHERE reference=$1', [reference]);
-  if (!p || p.refund_status !== 'NEEDS_REFUND') return 'not_needed';
+  // Claim first: two callers (the sweeper and an admin click, or two sweepers) can never both send the refund. Only the one whose UPDATE changes the row goes on.
+  const claim = await db.maybeOne<{ id: number }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id`, [reference, isoNow()]);
+  if (!claim) return 'not_needed';
   try {
     if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify({ transaction: reference }) });
-    await db.tx(async (t) => {
-      await t.query(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1`, [reference, isoNow()]);
-      const pid = await t.maybeOne<{ id: number }>('SELECT id FROM payments WHERE reference=$1', [reference]);
-      if (pid) await reverseNettingForPayment(t, pid.id);          // a refunded payment gives back the commission it had settled
-    });
-    return 'requested';
   } catch (e: any) {
-    await db.query(`UPDATE payments SET refund_error=$2 WHERE reference=$1`, [reference, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});
+    // The gateway refused or was unreachable: hand the claim back so the next try (sweeper / admin) can go again.
+    await db.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_requested_at=NULL, refund_error=$2 WHERE id=$1 AND refund_status='REFUND_REQUESTED'`, [claim.id, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});
     // alert the admin once per payment per 12 h (the sweeper retries every minute; one alert is enough)
     await adminEvent(db, 'REFUND_FAILED', 'Paystack could not send the refund', `The refund for payment ${reference} did not go through (${String(e?.message || 'unknown error').slice(0, 120)}). We will try again by ourselves. Check Payments if it keeps failing.`,
       { link: '/admin.html#/payments?filter=needs_refund', refKey: 'payment:' + reference, dedupeHours: 12 });
     await flushAdminPush(db).catch(() => {});
     return 'failed';
   }
+  // The money is on its way. Giving back the commission the payment had settled must not undo that, so a failure here is logged, not turned into a second refund.
+  await db.tx((t) => reverseNettingForPayment(t, claim.id)).catch((e) => logger.warn('refund_netting_reverse_failed', { ref: reference, err: String(e?.message).slice(0, 120) }));
+  return 'requested';
 }
 
 /** Record a webhook/callback delivery. Identical deliveries (same bytes, same signature validity) collapse into one row (delivery_count++). */
@@ -316,51 +328,67 @@ export async function mockMarkPaid(db: Db, reference: string) {
 export { MOCK_SECRET };
 
 /* ---------- never close an attempt without asking Paystack ---------- */
-/** At most one gateway check per reference per time bucket, shared by all server instances (uses the rate_limits table; rows are cleaned up by the retention job). */
-async function claimCheck(db: Db, reference: string, bucketMin: number): Promise<{ claimed: boolean; release: () => Promise<void> }> {
-  const ms = bucketMin * 60000, bucket = new Date(Math.floor(clock.now().getTime() / ms) * ms).toISOString(), key = `recon:${reference}`;
-  const r = await db.one<{ hits: number }>(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits`, [key, bucket]);
-  return { claimed: r.hits === 1, release: async () => { await db.query('DELETE FROM rate_limits WHERE key=$1 AND window_start=$2', [key, bucket]).catch(() => {}); } };
+/** At most one gateway check per reference per time bucket, shared by all server instances (uses the rate_limits table; rows are cleaned up by the retention job).
+ *  A second marker (`reconok:`) records that the check ANSWERED. A check that failed keeps its claim (so we back off for the whole bucket instead of asking a broken gateway on every request)
+ *  but leaves no marker, and everyone who meets that claim treats the payment as "not checked yet", never as "not paid". */
+async function claimCheck(db: Db, reference: string, bucketMin: number): Promise<{ claimed: boolean; answered: () => Promise<void>; wasAnswered: () => Promise<boolean> }> {
+  const ms = bucketMin * 60000, bucket = new Date(Math.floor(clock.now().getTime() / ms) * ms).toISOString();
+  const r = await db.one<{ hits: number }>(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits`, [`recon:${reference}`, bucket]);
+  return {
+    claimed: r.hits === 1,
+    answered: async () => { await db.query(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO NOTHING`, [`reconok:${reference}`, bucket]).catch(() => {}); },
+    wasAnswered: async () => !!(await db.maybeOne(`SELECT 1 FROM rate_limits WHERE key=$1 AND window_start=$2`, [`reconok:${reference}`, bucket]).catch(() => null)),
+  };
 }
 
 /** Called just before timed-out Pay-now attempts are closed. For each one we ask Paystack about every open checkout: a payment whose webhook never reached us and whose
  *  browser was closed is confirmed here (or refunded if the time is gone) instead of being voided with the customer's money taken.
- *  `keep` = attempts we could not check yet (Paystack unreachable, and the attempt ended less than an hour ago): leave them open and try again.
- *  `unverified` = closed anyway after that hour without an answer: the customer is told the truth about it. */
-export async function verifyBeforeClosing(db: Db, rows: { id: number; hold_expires_at: string }[]): Promise<HoldVerdict> {
-  const keep = new Set<number>(), unverified = new Set<number>();
+ *  `keep` = attempts we could not check yet (Paystack unreachable, out of time, or an amount that needs staff) and that ended less than an hour ago: leave them open and try again.
+ *  `unverified` = closed anyway after that hour without an answer: the customer is told the truth about it (`mismatch` = a payment that did not fit the booking, staff are checking it).
+ *  The whole call is capped (`budgetMs`): this runs on ordinary requests, so a slow Paystack must not hold them up. */
+export async function verifyBeforeClosing(db: Db, rows: { id: number; hold_expires_at: string }[], o: { budgetMs?: number } = {}): Promise<HoldVerdict> {
+  const keep = new Set<number>(), unverified = new Set<number>(), mismatch = new Set<number>();
+  const deadline = Date.now() + (o.budgetMs ?? 7000);
   for (const row of rows) {
-    const pays = await db.many<{ reference: string }>(`SELECT reference FROM payments WHERE booking_id=$1 AND status='INITIATED' ORDER BY id DESC LIMIT 5`, [row.id]);
-    let failed = false;
+    const pays = await db.many<{ reference: string; refund_reason: string | null }>(`SELECT reference, refund_reason FROM payments WHERE booking_id=$1 AND status='INITIATED' ORDER BY id DESC LIMIT 5`, [row.id]);
+    let failed = false, odd = false;
     for (const p of pays) {
+      if (p.refund_reason === MISMATCH_REASON) { odd = true; continue; }        // already flagged for staff
       const c = await claimCheck(db, p.reference, 2);
-      if (!c.claimed) continue;                          // checked a moment ago by someone else
-      try { await processReference(db, p.reference); }
-      catch (e: any) { failed = true; await c.release(); logger.warn('hold_verify_failed', { ref: p.reference, err: String(e?.message).slice(0, 120) }); }
+      if (!c.claimed) { if (!(await c.wasAnswered())) failed = true; continue; }   // asked a moment ago: fine if it answered, otherwise it is still unknown
+      if (Date.now() > deadline) { failed = true; continue; }                       // out of time: leave the claim, try again later
+      try { const r = await processReference(db, p.reference); await c.answered(); if (r.result === 'amount_mismatch') odd = true; }
+      catch (e: any) { failed = true; logger.warn('hold_verify_failed', { ref: p.reference, err: String(e?.message).slice(0, 120) }); }
     }
-    if (failed) { if (clock.now().getTime() - new Date(row.hold_expires_at).getTime() < 60 * 60000) keep.add(row.id); else unverified.add(row.id); }
+    if (failed || odd) {
+      if (clock.now().getTime() - new Date(row.hold_expires_at).getTime() < 60 * 60000) keep.add(row.id);
+      else { unverified.add(row.id); if (odd) mismatch.add(row.id); }
+    }
   }
-  return { keep, unverified };
+  return { keep, unverified, mismatch };
 }
 
-/** Sweep step: open checkouts from the last 24 hours whose booking was closed (or is still waiting) are asked about again, so a payment that arrived after the
- *  attempt closed is confirmed (time still free) or refunded, never just forgotten. Each reference is asked at most every 10 minutes. */
+/** Sweep step: open checkouts from the last 48 hours whose booking was closed (or is still waiting) are asked about again, so a payment that arrived after the
+ *  attempt closed is confirmed (time still free) or refunded, never just forgotten. Each reference is asked at most every 10 minutes (a failed ask also waits that long). */
 export async function reconcileRecentPayments(db: Db, limit = 25): Promise<{ checked: number; confirmed: number; refunds: number }> {
   const holdMin = Math.max(1, (await getSettings(db)).payment_hold_min);
   const now = clock.now().getTime();
   const rows = await db.many<{ reference: string }>(`SELECT p.reference FROM payments p JOIN bookings b ON b.id=p.booking_id
-      WHERE p.status='INITIATED' AND b.status IN ('CANCELLED','PENDING_PAYMENT') AND p.created_at > $1 AND p.created_at < $2 ORDER BY p.id DESC LIMIT $3`,
-    [new Date(now - 24 * 3600000).toISOString(), new Date(now - holdMin * 60000).toISOString(), limit * 4]);
+      WHERE p.status='INITIATED' AND p.refund_status IS NULL AND b.status IN ('CANCELLED','PENDING_PAYMENT') AND p.created_at > $1 AND p.created_at < $2 ORDER BY p.id DESC LIMIT $3`,
+    [new Date(now - RECONCILE_HOURS * 3600000).toISOString(), new Date(now - holdMin * 60000).toISOString(), limit * 4]);
   let checked = 0, confirmed = 0, refunds = 0;
+  const deadline = Date.now() + 20000;
   for (const r of rows) {
-    if (checked >= limit) break;
+    if (checked >= limit || Date.now() > deadline) break;
     const c = await claimCheck(db, r.reference, 10);
     if (!c.claimed) continue;
     checked++;
     try {
       const o = await processReference(db, r.reference);
+      await c.answered();
       if (o.result === 'processed') confirmed++; else if (['slot_taken', 'late_refund', 'duplicate_refund', 'refund_due'].includes(o.result)) refunds++;
-    } catch (e: any) { await c.release(); logger.warn('reconcile_failed', { ref: r.reference, err: String(e?.message).slice(0, 120) }); }
+    } catch (e: any) { logger.warn('reconcile_failed', { ref: r.reference, err: String(e?.message).slice(0, 120) }); }
   }
   return { checked, confirmed, refunds };
 }
+export const RECONCILE_HOURS = 48;

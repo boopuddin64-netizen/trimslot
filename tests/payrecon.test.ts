@@ -150,3 +150,118 @@ test('GET /payments/callback never shows a bare error: Paystack trouble -> booki
     assert.equal(n.headers.get('location'), '/#/bookings');
   } finally { server.close(); setGatewayVerifier(null); resetNow(); }
 });
+
+/* ---------- second round ---------- */
+import { requestRefund, verifyBeforeClosing, reconcileRecentPayments } from '../src/paystack';
+
+test('a mismatched payment is flagged NEEDS_REFUND ("Amount mismatch"), the sweeper leaves it for staff, the booking is not closed as "not charged", and staff can refund it or confirm it anyway', async () => {
+  const { db, mk, customerIds } = await setup();
+  try {
+    const b = await mk(0, '10:00'); const p = await initializePayment(db, b.id, null);
+    setGatewayVerifier(async (_d, ref) => parseGatewayData({ status: 'success', amount: p.amount_kobo - 5000, requested_amount: p.amount_kobo - 5000, currency: 'NGN' }, ref));
+    assert.equal((await processReference(db, p.reference)).result, 'amount_mismatch');
+    const row = await db.one('SELECT status, refund_status, refund_reason FROM payments WHERE reference=$1', [p.reference]);
+    assert.deepEqual([row.status, row.refund_status, row.refund_reason], ['INITIATED', 'NEEDS_REFUND', 'Amount mismatch']);
+    await runSweep(db);
+    assert.equal((await db.one('SELECT refund_status FROM payments WHERE reference=$1', [p.reference])).refund_status, 'NEEDS_REFUND', 'the sweeper does not refund it by itself');
+    // the try ends while staff have not decided: kept open for an hour, then closed with the honest text (never "not charged")
+    setNow(`${WED}T08:30:00+01:00`);
+    assert.equal(await expireHolds(db), 0); assert.equal((await getBooking(db, b.id))!.status, 'PENDING_PAYMENT');
+    setNow(`${WED}T09:40:00+01:00`);
+    assert.equal(await expireHolds(db), 1);
+    const n = (await notifs(db, customerIds[0])).filter((x: any) => x.type === 'BOOKING_INCOMPLETE');
+    assert.equal(n.length, 1); assert.doesNotMatch(n[0].body, /not charged/i); assert.match(n[0].body, /did not match/i);
+    // staff: confirm anyway -> booking confirmed (the time is free), the flag is cleared
+    const o = await processReference(db, p.reference, { force: true });
+    assert.equal(o.result, 'processed');
+    const after = await db.one('SELECT status, refund_status, refund_reason, paid_kobo FROM payments WHERE reference=$1', [p.reference]);
+    assert.deepEqual([after.status, after.refund_status, after.refund_reason, after.paid_kobo], ['SUCCESS', null, null, p.amount_kobo - 5000]);
+    assert.equal((await getBooking(db, b.id))!.status, 'CONFIRMED');
+  } finally { setGatewayVerifier(null); resetNow(); }
+});
+
+test('a mismatched payment can be refunded from the NEEDS_REFUND flag, and a refunded one cannot be forced', async () => {
+  const { db, mk } = await setup();
+  try {
+    const b = await mk(0, '11:00'); const p = await initializePayment(db, b.id, null);
+    setGatewayVerifier(async (_d, ref) => parseGatewayData({ status: 'success', amount: p.amount_kobo + 90000, requested_amount: p.amount_kobo + 90000, currency: 'NGN' }, ref));
+    await processReference(db, p.reference);
+    assert.equal(await requestRefund(db, p.reference), 'requested');
+    assert.equal((await db.one('SELECT refund_status FROM payments WHERE reference=$1', [p.reference])).refund_status, 'REFUND_REQUESTED');
+    assert.equal(await requestRefund(db, p.reference), 'not_needed', 'asking again does nothing');
+  } finally { setGatewayVerifier(null); resetNow(); }
+});
+
+test('two refund requests at the same time send ONE refund', async () => {
+  const { db, mk } = await setup();
+  try {
+    const b = await mk(0, '10:00'); const p = await initializePayment(db, b.id, null); await mockMarkPaid(db, p.reference);
+    const b2 = await mk(1, '10:00'); const p2 = await initializePayment(db, b2.id, null); await mockMarkPaid(db, p2.reference);
+    await processReference(db, p.reference);
+    assert.equal((await processReference(db, p2.reference)).result, 'slot_taken');   // flagged NEEDS_REFUND; the refund call already ran once inside processReference
+    await db.query(`UPDATE payments SET refund_status='NEEDS_REFUND' WHERE reference=$1`, [p2.reference]);
+    const r = await Promise.all([requestRefund(db, p2.reference), requestRefund(db, p2.reference), requestRefund(db, p2.reference)]);
+    assert.equal(r.filter((x) => x === 'requested').length, 1, JSON.stringify(r));
+  } finally { resetNow(); }
+});
+
+test('only the attempts that were checked with Paystack are closed (several batches -> every one is asked first)', async () => {
+  const { db, customerIds, barberId, serviceIds } = await setup();
+  try {
+    const asked = new Set<string>();
+    setGatewayVerifier(async (_d, ref) => { asked.add(ref); return { ok: false, status: 'abandoned', reference: ref }; });
+    const ids: number[] = [];
+    for (let i = 0; i < 30; i++) {
+      const b = await createBooking(db, customerIds[i % customerIds.length], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: `${String(9 + Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`, payment_option: 'ONLINE' }).catch(() => null);
+      if (!b) continue; await initializePayment(db, b.id, null); ids.push(b.id);
+    }
+    setNow(`${WED}T08:30:00+01:00`);
+    assert.ok(ids.length >= 12, 'got ' + ids.length);
+    const closed = await expireHolds(db, {}, { batch: 5 });   // several batches of 5
+    const still = await db.one(`SELECT COUNT(*)::int c FROM bookings WHERE id = ANY($1::int[]) AND status='PENDING_PAYMENT'`, [ids]);
+    assert.equal(closed + still.c, ids.length);
+    assert.equal(asked.size, closed, 'every closed attempt had its checkout asked about');
+    // budget 0: nothing is checked, so nothing is closed
+    setNow(`${WED}T09:00:00+01:00`);
+    assert.equal(await expireHolds(db, {}, { budgetMs: 0 }), 0);
+  } finally { setGatewayVerifier(null); resetNow(); }
+});
+
+test('a Paystack failure is not retried on every request (backs off for the 2-minute window) and a second request does not call it "not paid"', async () => {
+  const { db, mk, customerIds } = await setup();
+  try {
+    const b = await mk(0, '10:00'); await initializePayment(db, b.id, null);
+    let calls = 0; setGatewayVerifier(async () => { calls++; throw new Error('boom'); });
+    setNow(`${WED}T08:30:00+01:00`);
+    await expireHolds(db); await expireHolds(db); await expireHolds(db);
+    assert.equal(calls, 1, 'one failed ask, then quiet until the window ends');
+    assert.equal((await getBooking(db, b.id))!.status, 'PENDING_PAYMENT', 'never closed as "not charged" on a failed check');
+    assert.equal((await notifs(db, customerIds[0])).filter((n: any) => n.type === 'BOOKING_INCOMPLETE').length, 0);
+    // one quick answer ("not paid") is trusted by the callers that meet the same window
+    setNow(`${WED}T08:35:00+01:00`);
+    setGatewayVerifier(async (_d, ref) => ({ ok: false, status: 'abandoned', reference: ref }));
+    assert.equal(await expireHolds(db), 1);
+    assert.match((await notifs(db, customerIds[0])).find((n: any) => n.type === 'BOOKING_INCOMPLETE')!.body, /not charged/i);
+  } finally { setGatewayVerifier(null); resetNow(); }
+});
+
+test('the sweep looks back 48 hours', async () => {
+  const { db, mk } = await setup();
+  try {
+    const b = await mk(0, '10:00'); const p = await initializePayment(db, b.id, null); await mockMarkPaid(db, p.reference);
+    setNow(`${WED}T08:30:00+01:00`);
+    await db.query(`UPDATE payments SET created_at=$2 WHERE reference=$1`, [p.reference, new Date(new Date(`${WED}T08:30:00+01:00`).getTime() - 40 * 3600000).toISOString()]);
+    await db.query(`UPDATE bookings SET status='CANCELLED', payment_status='VOID', cancelled_by='system' WHERE id=$1`, [b.id]);
+    const r = await reconcileRecentPayments(db); assert.equal(r.checked, 1, 'a 40-hour-old open checkout is still asked about');
+  } finally { resetNow(); }
+});
+
+test('concurrent Pay clicks make ONE checkout', async () => {
+  const { db, mk } = await setup();
+  try {
+    const b = await mk(0, '10:00');
+    const r = await Promise.all([initializePayment(db, b.id, null), initializePayment(db, b.id, null), initializePayment(db, b.id, null)]);
+    assert.equal(new Set(r.map((x) => x.reference)).size, 1, JSON.stringify(r.map((x) => x.reference)));
+    assert.equal((await db.one(`SELECT COUNT(*)::int c FROM payments WHERE booking_id=$1`, [b.id])).c, 1);
+  } finally { resetNow(); }
+});
