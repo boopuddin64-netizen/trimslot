@@ -17,6 +17,7 @@ TrimSlot keeps this to the minimum. We **do not use advertising, tracking or ana
 | `trimslot_next` | Browser session storage | Remembers the page you were going to open when you were asked to log in | Until you close the tab | No |
 | Service worker and cache | Browser | Lets the app receive notifications and load faster | Until cleared | Notifications: yes (see Part B) |
 | Admin key (staff only) | Browser session storage | Keeps staff signed in to the admin area | Until you close the tab | No |
+| Profile picture | Served by the app to you and your barbers only; not a cookie | Shows your optional photo | Until you remove it or delete your account | Your choice (you upload it) |
 
 Our payment provider **Paystack** and our host **Vercel** may set their own cookies or collect technical data when you use their pages (for example, the Paystack checkout page). Their notices apply: [PAYSTACK PRIVACY LINK], [VERCEL PRIVACY LINK]. 
 
@@ -43,6 +44,7 @@ TrimSlot sends two kinds of notification:
 * **What we store:** the subscription address and encryption keys your browser gives us, linked to your account, plus which messages were sent. We do not read your contacts or location.
 * **What the messages contain:** booking details such as shop name, service and time. These may appear on your lock screen — turn off lock-screen previews on your device if that matters.
 * **Withdrawing consent:** turn off "Push notifications" in Profile → Notifications (we then delete the subscription), or block notifications for the site in your browser. This does not affect the in-app list.
+* **Staff** can turn on push alerts for refunds waiting, auto-approved refunds, refund failures and deletion requests (with quiet hours); they are separate from customer notifications.
 * **Barbers** receive notifications about new bookings, arrivals, cancellations and balance reminders.
 * **Marketing:** none today. If we ever send marketing, we will ask for a separate consent and you will be able to say no without losing the service.
 * **Legal basis:** consent (for push); contract (for in-app service messages).

@@ -2,7 +2,7 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
-**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+**Effective date:** [EFFECTIVE DATE]  **Version:** {{barber_agreement_version}}
 
 This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**") and you, the person or business that signs up as a barber or shop on TrimSlot ("**you**", "the **Barber**"). It adds to the [Terms of Service](terms.html) and the [Privacy Policy](privacy.html). If they conflict on a barber matter, this agreement wins. By ticking "I agree" when you sign up (or by continuing to use the barber side of the app after we notify you of this agreement) you accept it. If you sign up for a company or partnership, you confirm you have authority to bind it.
 
@@ -61,9 +61,9 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 7. Fees
 
-7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), TrimSlot keeps a **platform fee** and Paystack sends the rest to your bank account. The platform fee is, at the date of this draft, **₦[10] plus [0.15]% of the price** of the booking or plan. [OWNER: confirm; these are admin-configurable settings, and we can set a different fee for you (including no fee) in writing or in the app.] Paystack's own processing fee is [charged to the customer on top of the price / deducted from the amount you receive — OWNER TO CONFIRM; it is currently added to the customer's payment].
+7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), TrimSlot keeps a **platform fee** and Paystack sends the rest to your bank account. The platform fee is, at the date of this draft, **₦{{platform_fee_naira}} plus {{platform_fee_percent}}% of the price** of the booking or plan. [OWNER: confirm; these are admin-configurable settings, and we can set a different fee for you (including no fee) in writing or in the app.] Paystack's own processing fee is [charged to the customer on top of the price / deducted from the amount you receive — OWNER TO CONFIRM; it is currently added to the customer's payment].
 
-7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **commission** accrues on your TrimSlot balance equal to **[50]%** of the platform fee an online booking of the same price would have paid. [OWNER: confirm the percentage; it is an admin setting.] You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
+7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **commission** accrues on your TrimSlot balance equal to **{{commission_percent}}%** of the platform fee an online booking of the same price would have paid. [OWNER: confirm the percentage; it is an admin setting.] You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
 
 7.3 We may change fees or the commission by giving at least [30] days' notice in the app. Changes do not apply to bookings already confirmed.
 
@@ -101,15 +101,15 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 10. Refunds, no-shows and credits — your part
 
-10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for [30] days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The original online payment (less our fee) has already been paid to you and stays with you; it is not refunded to the customer, and no second payment is made when the credit is used.
+10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The original online payment (less our fee) has already been paid to you and stays with you; it is not refunded to the customer, and no second payment is made when the credit is used.
 
-10.2 If you could not serve a customer ("Not served"), the customer's payment is "credit pending": it will be **refunded or converted into a credit** as the Policy says, and we may take the refund from your balance or future payouts. A plan session or credit that the customer used is returned to them.
+10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically after {{refund_auto_approve_hours}} hour(s) if nobody decides. We may take the refunded amount from your balance or future payouts. [OWNER/LAWYER: confirm how Paystack reverses the split on a refund.] A plan session or credit that the customer used is returned to them.
 
 10.3 Duplicate and late payments are refunded to the customer by TrimSlot through Paystack; you do not receive them.
 
 ## 11. Plans you sell
 
-If you create plans, you must follow the [Plan Terms](plan-terms.html). You set the price, number of sessions, validity and included services **within the limits TrimSlot sets** (at the date of this draft: price ₦1,000–₦500,000, up to 90 days, up to 30 sessions). You must honour every plan session a customer has paid for until the plan expires. Changing or deleting a plan does not affect people who already bought it.
+If you create plans, you must follow the [Plan Terms](plan-terms.html). You set the price, number of sessions, validity and included services **within the limits TrimSlot sets** (at the date of this draft: price ₦{{min_plan_price_naira}}–₦{{max_plan_price_naira}}, up to {{max_plan_validity_days}} days, up to {{max_plan_sessions}} sessions). You must honour every plan session a customer has paid for until the plan expires. Changing or deleting a plan does not affect people who already bought it.
 
 ## 12. Suspension, removal and ending
 
@@ -143,7 +143,7 @@ Keep your login private, use a strong password, and tell us immediately of any b
 
 17.1 We may change this agreement on [30] days' notice in the app or by e-mail; if you disagree you can end it under 12.3. 17.2 Notices go to the e-mail or phone on your account, or appear in the app. 17.3 The law of Nigeria applies. 17.4 Disputes: first talk to us ([EMAIL]); then mediation for [30] days; then [courts of [STATE] / arbitration seated in [LAGOS] under the Arbitration and Mediation Act 2023]. [LAWYER: choose; B2B disputes can be arbitrated more safely than consumer ones.] 17.5 If part of this agreement is invalid, the rest remains. 17.6 This is the whole agreement on its subject, together with the documents it names.
 
-**Barber's acceptance** — recorded in the app with the date, time and account ID. [LAWYER: check that a click-wrap acceptance with logging is sufficient; consider also collecting ID and signed e-copy for Verified shops.]
+**Barber's acceptance** — a mandatory tick-box at sign-up, recorded in the app with the document, version, date, time, account ID, IP address and browser details; we ask you to accept again when the version changes. [LAWYER: check that a click-wrap acceptance with logging is sufficient; consider also collecting ID and signed e-copy for Verified shops.]
 
 ## Open questions for the lawyer
 

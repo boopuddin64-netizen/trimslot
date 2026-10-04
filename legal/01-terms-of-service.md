@@ -2,7 +2,7 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
-**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+**Effective date:** [EFFECTIVE DATE]  **Version:** {{terms_version}}
 
 These Terms of Service ("**Terms**") are an agreement between you and **[COMPANY NAME]** (RC [CAC RC NUMBER]), whose registered office is at [REGISTERED ADDRESS] ("**TrimSlot**", "**we**", "**us**"). They apply when you use the TrimSlot website and web app at [WEBSITE URL] (the "**Service**"). If you create an account, make a booking or buy a plan, you agree to these Terms. If you do not agree, please do not use the Service.
 
@@ -26,11 +26,13 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 2.3 One person, one account. Do not use someone else's account or create accounts to get around a suspension.
 
+2.4 **Accepting these Terms.** When you sign up, you tick a box to confirm that you accept these Terms and have read the Privacy Policy (barbers also accept the Barber Agreement). We keep a record of what you accepted: the document, its version, the date and time, and the IP address and browser details of the device. If we publish a new version of a document, we ask you to accept it again before you continue. You can see what you accepted on request.
+
 ## 3. Bookings
 
 3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, Paystack may add a **payment processing fee** at checkout, which is shown before you pay. [LAWYER/OWNER: confirm who bears this fee and that it is clearly disclosed — see open questions.]
 
-3.2 **Pay now (online).** The slot is held for you for **[15] minutes** while you pay. If payment is not completed in that time, the booking is marked "Incomplete", you are not charged, and the slot is released to others. A slot is only confirmed once Paystack confirms your payment to us.
+3.2 **Pay now (online).** The slot is held for you for **{{payment_hold_min}} minutes** while you pay. If payment is not completed in that time, the booking is marked "Incomplete", you are not charged, and the slot is released to others. A slot is only confirmed once Paystack confirms your payment to us.
 
 3.3 **Pay on arrival.** If the barber offers it, you pay the barber directly (cash or bank transfer) at the shop. The barber records the payment in the app. Pay-on-arrival may be switched off for a shop or for the whole Service at any time.
 
@@ -44,12 +46,13 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 The detailed rules are in the **Refund, Cancellation and Credit Policy**. In short:
 
-* You can cancel yourself until **30 minutes before** your appointment.
+* You can cancel yourself until **{{cancel_cutoff_min}} minutes before** your appointment.
 * After that, you cannot cancel in the app. If you do not turn up, the barber may mark you as a no-show.
-* A missed paid session is **not refunded**, but you get **one session credit** with the same barber, valid for **30 days**, which cannot be exchanged for cash.
+* If you cancel **in time** a booking you paid online, you get a **refund** (approved by us, or automatically after {{refund_auto_approve_hours}} hour(s) if nobody has decided). You do not also get a credit.
+* A missed paid session is **not refunded**, but you get **one session credit** with the same barber, valid for **{{credit_expiry_days}} days**, which cannot be exchanged for cash. A booking gets a refund or a credit, never both.
 * If we or the barber cannot serve you, or your online payment is a duplicate or arrives too late, the policy explains what happens (including automatic refund requests).
 
-[LAWYER: confirm this is lawful and fair under the Federal Competition and Consumer Protection Act 2018 and FCCPC rules — in particular "no refund, credit only" for a missed session, and whether a refund right must be offered where the customer cancels in time.]
+[LAWYER: confirm this is lawful and fair under the Federal Competition and Consumer Protection Act 2018 and FCCPC rules — in particular "no refund, credit only" for a missed session.]
 
 Nothing in these Terms takes away rights you have under Nigerian consumer-protection law that cannot lawfully be excluded.
 
@@ -87,19 +90,19 @@ You are responsible for telling the barber about skin conditions, allergies or a
 
 9.3 **We are not responsible for the barber's services.** To the extent the law allows, we are not liable for the quality, safety, hygiene or outcome of any haircut or grooming service, for injury, skin reactions, lost or damaged property at a shop, or for anything a barber or another customer does or fails to do. Your claim for those matters is against the barber.
 
-9.4 To the extent the law allows, our total liability to you for anything connected with the Service (apart from 9.1) is limited to the **greater of** (a) the amount you paid through the Service for the booking or plan in question and (b) ₦[AMOUNT]. We are not liable for indirect or consequential loss (such as lost earnings or lost opportunity), or for loss that was not reasonably foreseeable. [LAWYER: confirm that this cap is reasonable and enforceable.]
+9.4 To the extent the law allows, our total liability to you for anything connected with the Service (apart from 9.1) is limited to the **greater of** (a) the amount you paid through the Service for the booking or plan in question and (b) {{liability_cap_naira}}. We are not liable for indirect or consequential loss (such as lost earnings or lost opportunity), or for loss that was not reasonably foreseeable. [LAWYER: confirm that this cap is reasonable and enforceable.]
 
 9.5 We are not liable for delay or failure caused by events outside our reasonable control (force majeure), such as power or network failure, strikes, riots, fire, flood, government action, or failure of Paystack, banks or hosting providers.
 
 ## 10. Suspension and ending
 
-10.1 You can stop using the Service at any time. To delete your account and data, contact [EMAIL] (see the Privacy Policy). Bookings and payments already made are still governed by these Terms and by the law on record-keeping.
+10.1 You can stop using the Service at any time. You can **delete your account yourself** in the app (Profile → Delete my account) and **download your data** first (Profile → Download my data). Deleting removes your name, contact details and picture; bookings and payment records are kept without your name because the law requires us to keep financial records (see the Privacy Policy). Unused plan sessions and credits are lost when you delete. A barber with upcoming bookings, a balance owed or customers' unused plan sessions sends a deletion request instead, which we complete once those are settled.
 
 10.2 We may suspend or end your account, cancel bookings and refuse service if you break these Terms, abuse others, commit fraud, or if we must by law. Where we can, we will tell you why and how to complain. If a barber's shop is suspended or removed, we may cancel its upcoming bookings; paid bookings are then refunded or restored as set out in the Refund, Cancellation and Credit Policy.
 
 ## 11. Changes to the Service and these Terms
 
-We may change the Service and these Terms. For important changes we will give notice in the app or by e-mail [LAWYER: notice period, e.g. 14 days] before they apply. If you keep using the Service after the change takes effect, you accept it. If you do not agree, stop using the Service and tell us. The date at the top shows the latest version.
+We may change the Service and these Terms. For important changes we will give notice in the app or by e-mail [LAWYER: notice period, e.g. 14 days] before they apply, and we will ask you to accept the new version of the document in the app. If you keep using the Service after the change takes effect, you accept it. If you do not agree, stop using the Service and tell us. The date at the top shows the latest version.
 
 ## 12. Complaints and disputes
 
@@ -129,7 +132,7 @@ We may change the Service and these Terms. For important changes we will give no
 * **Q6.** Courts, mediation or arbitration for consumer disputes (s.12)?
 * **Q7.** Age 18+ vs adults booking for children.
 * **Q8.** Can we change the Terms by in-app notice? What notice period?
-* **Q9.** No acceptance tick-box or acceptance log exists today: what must we record?
+* **Q9.** The sign-up tick-box and acceptance log now exist (document, version, time, IP address, user agent; re-accept when a version changes): is that sufficient, and is storing the IP and user agent proportionate?
 * **Q10.** Reviews: content licence, defamation, notice-and-takedown.
 * **Q2.** Is the marketplace / independent-barber wording safe against agency or employment claims?
 * **Q15.** Is the Paystack fee pass-through lawful and adequately disclosed?

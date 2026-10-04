@@ -1,20 +1,42 @@
 #!/usr/bin/env python3
-"""Build legal/legal-pack.docx (via LibreOffice) and the in-app legal pages from the Markdown.
+"""Build legal/legal-pack.docx/.pdf (via LibreOffice) and the six public legal pages from the Markdown.
 Usage: legal/build.sh   (needs python 'markdown' and soffice)"""
 import re, subprocess, pathlib, shutil, tempfile, html as H
 import markdown
 
 ROOT = pathlib.Path(__file__).resolve().parent
 PUB = ROOT.parent / "public"
-# Only the two EXISTING in-app pages are generated (scope decision: no new app pages, no CSS/JS changes).
 PAGES = {  # md file -> (public page, <title>)
     "01-terms-of-service.md": ("terms.html", "Terms of Service"),
     "03-privacy-policy.md": ("privacy.html", "Privacy Policy"),
+    "04-refund-cancellation-credit-policy.md": ("refunds.html", "Refund, Cancellation and Credit Policy"),
+    "05-plan-subscription-terms.md": ("plan-terms.html", "Plan Terms"),
+    "06-cookie-and-notification-consent.md": ("cookies.html", "Cookie and Notification Notice"),
+    "02-barber-agreement.md": ("barber-agreement.html", "Barber Agreement"),
 }
+# Built-in defaults = the platform defaults. {{key}} in the Markdown is a live number on the web pages (public/legal-live.js
+# fills <span data-s="key"> from /api/public-settings) and this default in the Word/PDF files.
+DEFAULTS = {
+    "cancel_cutoff_min": "30", "payment_hold_min": "15", "credit_expiry_days": "30", "refund_auto_approve_hours": "3",
+    "platform_fee_percent": "0.15", "platform_fee_naira": "10", "commission_percent": "50", "min_barber_payout_percent": "50",
+    "min_plan_price_naira": "1,000", "max_plan_price_naira": "500,000", "max_plan_validity_days": "90", "max_plan_sessions": "30",
+    "liability_cap_naira": "₦[AMOUNT]",
+    "retention_events_days": "400", "retention_bad_events_days": "30", "retention_notifications_days": "180", "retention_push_stale_days": "60",
+    "retention_deleted_days": "30", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
+    "terms_version": "1", "privacy_version": "1", "barber_agreement_version": "1",
+}
+TOKEN = re.compile(r"\{\{([a-z_]+)\}\}")
+
+def fill_tokens(text, live):
+    def one(m):
+        k = m.group(1)
+        if k not in DEFAULTS: raise SystemExit("unknown setting token {{%s}}" % k)
+        return '<span data-s="%s">%s</span>' % (k, H.escape(DEFAULTS[k])) if live else DEFAULTS[k]
+    return TOKEN.sub(one, text)
 DOCS = ["00-open-questions-for-lawyer.md", "01-terms-of-service.md", "02-barber-agreement.md", "03-privacy-policy.md",
         "04-refund-cancellation-credit-policy.md", "05-plan-subscription-terms.md", "06-cookie-and-notification-consent.md",
         "07-compliance-checklist.md", "08-app-behaviour-reference.md"]
-LIVE = {"terms.html", "privacy.html"}
+LIVE = {page for page, _ in PAGES.values()}
 INLINE_CSS = ('<style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}'
   '.legal .tblwrap{overflow-x:auto;margin:12px 0}.legal table{border-collapse:collapse;font-size:13px;min-width:520px}'
   '.legal th,.legal td{border:1px solid var(--ctl);padding:6px 8px;text-align:left;vertical-align:top}.legal th{background:var(--bg2);color:var(--ink)}'
@@ -55,13 +77,14 @@ def strip_first_quote(text):
 
 def web_page(md_name, page, title):
     body = md2html(strip_first_quote((ROOT / md_name).read_text(encoding="utf-8")).split("\n## Open questions for the lawyer")[0])
-    body = unlink_unpublished(mark_placeholders(body))
+    body = unlink_unpublished(mark_placeholders(fill_tokens(body, True)))
     body = re.sub(r"<table>", '<div class="tblwrap"><table>', body).replace("</table>", "</table></div>")
     body = re.sub(r"<h1>.*?</h1>", lambda m: m.group(0) + BANNER, body, count=1, flags=re.S)
-    foot = '<footer class="foot"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></footer>'
+    foot = ('<footer class="foot"><a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/refunds.html">Refunds</a> · '
+            '<a href="/plan-terms.html">Plan terms</a> · <a href="/cookies.html">Cookies</a> · <a href="/barber-agreement.html">Barber agreement</a></footer>')
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>{H.escape(title)} — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script>{INLINE_CSS}</head>
+<meta name="robots" content="noindex"><title>{H.escape(title)} — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script>{INLINE_CSS}<script src="/legal-live.js" defer></script></head>
 <body><header class="topbar"><a class="brand" href="/"><span class="logo"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></span>Trim<b>Slot</b></a><a href="/" class="toplink">← Back to app</a></header>
 <div class="legal">
 {body}
@@ -72,7 +95,7 @@ def web_page(md_name, page, title):
 def docx():
     parts = ['<h1 style="page-break-before:avoid">TrimSlot legal pack — DRAFT</h1><p><b>DRAFT – not legal advice – lawyer review required.</b> Generated from the Markdown files in /legal. Placeholders in [SQUARE BRACKETS] are undecided.</p>']
     for n, name in enumerate(DOCS):
-        h = md2html((ROOT / name).read_text(encoding="utf-8"))
+        h = md2html(fill_tokens((ROOT / name).read_text(encoding="utf-8"), False))
         h = re.sub(r"<a href=\"[^\"]*\.(?:html|md)\">(.*?)</a>", r"\1", h)  # in-pack links are meaningless in Word
         h = re.sub(r"<table>", '<table border="1" cellpadding="4" cellspacing="0" width="100%">', h)
         parts.append('<div style="page-break-before:always"></div>' + h)

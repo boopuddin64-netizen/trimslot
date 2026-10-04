@@ -10,7 +10,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 1.1 A plan is a **prepaid pack of haircut sessions** with **one barber**, for a set price, number of sessions, validity period and list of included services. It is **not a recurring subscription**: you pay once, there is **no automatic renewal** and no card is saved. [LAWYER: confirm no "subscription" or auto-debit rules apply; if renewals are added later this must change.]
 
-1.2 The barber (not TrimSlot) sets the plan's name, price, sessions, validity and included services, within limits that TrimSlot sets. Today the limits are: price **₦1,000 to ₦500,000**; validity **up to 90 days**; **up to 30 sessions**. The limits can change; they never change a plan you have already bought.
+1.2 The barber (not TrimSlot) sets the plan's name, price, sessions, validity and included services, within limits that TrimSlot sets. Today the limits are: price **₦{{min_plan_price_naira}} to ₦{{max_plan_price_naira}}**; validity **up to {{max_plan_validity_days}} days**; **up to {{max_plan_sessions}} sessions**. The limits can change; they never change a plan you have already bought.
 
 1.3 The barber is the seller of the sessions and the provider of the service. TrimSlot runs the platform and collects the payment through Paystack.
 
@@ -20,7 +20,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 2.2 The terms you see are **frozen at purchase**. If the barber later edits or deletes the plan, **your plan does not change.**
 
-2.3 If you start a plan checkout and do not pay, nothing is bought. Unpaid plan checkouts are removed after about two days. If you pay twice for the same plan, the duplicate payment is refunded automatically.
+2.3 If you start a plan checkout and do not pay, nothing is bought. Unpaid plan checkouts are removed after about {{retention_checkout_days}} days. If you pay twice for the same plan, the duplicate payment is refunded automatically.
 
 2.4 Plans are not available while bookings are paused for maintenance, or if the platform has switched plans off.
 
@@ -30,9 +30,9 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 3.2 **The appointment must start before the plan ends.** Plan sessions expire at the end of the validity period (the plan's end date and time, counted from the moment payment was confirmed). You cannot book an appointment that starts after the plan has expired.
 
-3.3 If you **cancel in time** (at least 30 minutes before), the session is **returned** to the plan. If the **barber cannot serve** you, the session is returned. 
+3.3 If you **cancel in time** (at least {{cancel_cutoff_min}} minutes before), the session is **returned** to the plan. If the **barber cannot serve** you, the session is returned. 
 
-3.4 If you **miss** a plan appointment and the barber marks you no-show, the session counts as **used** and you receive **one session credit** with the same barber (30 days, not cashable) as set out in the Refund, Cancellation and Credit Policy.
+3.4 If you **miss** a plan appointment and the barber marks you no-show, the session counts as **used** and you receive **one session credit** with the same barber ({{credit_expiry_days}} days, not cashable) as set out in the Refund, Cancellation and Credit Policy.
 
 3.5 Sessions are personal to you and cannot be transferred, shared, sold or exchanged for cash.
 

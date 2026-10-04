@@ -2,7 +2,7 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
-**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+**Effective date:** [EFFECTIVE DATE]  **Version:** {{privacy_version}}
 
 ## 1. Who we are
 
@@ -15,6 +15,8 @@ This policy explains, in plain English, what personal data we collect, why, who 
 | Group | What | Where it comes from |
 |---|---|---|
 | **Account** | Name; e-mail and/or phone number (at least one); role (customer or barber); password (stored only as a one-way **bcrypt hash**, never the password itself); account status | You |
+| **Profile picture** (customers, optional) | A small square photo you choose to upload or take (cropped and compressed on your device, about 256 × 256 pixels). Barbers you book with, and our staff, can see it so they can tell customers with the same name apart. Staff can remove a photo that breaks our rules. | You |
+| **Acceptance record** | Which documents you accepted (Terms, Privacy Policy, Barber Agreement), the version, the date and time, and the IP address and browser details of the device you used | You, your device |
 | **Barber / shop profile** | Shop name, location (text address), about text, photo, working hours, days off, services and prices, plans you sell, Paystack subaccount code, bank name, last 4 digits of your account number, account name, whether the account name was verified | Barbers |
 | **Bookings** | Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history | You and the barber |
 | **Payments** | Paystack transaction reference, amount, fees, status, refund status; the e-mail we send Paystack for the receipt (yours, or a placeholder address if you have none). **Card and bank-login details are typed into Paystack and never reach us.** We also keep the technical webhook messages Paystack sends us (which may contain payer details such as e-mail, card type, last 4 digits, bank and IP address) as an audit record. | You, Paystack |
@@ -23,7 +25,7 @@ This policy explains, in plain English, what personal data we collect, why, who 
 | **Reviews, reports, notes** | Ratings and comments you write; reports you file or that are filed about you (category and message); private notes a barber writes about a customer; favourites; waitlist entries | You, barbers |
 | **Notifications** | The in-app notifications we send you; if you turn on browser notifications, your **push subscription** (a browser-generated address and keys that let your browser receive our messages) | System, your browser |
 | **Technical** | IP address, browser type, request logs (time, page, response code, account ID), security counters (such as failed log-in counts and rate limits), error logs | Your device |
-| **Admin records** | An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why) | System |
+| **Admin records** | An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why); alerts to staff about refunds waiting, auto-approved refunds, refund failures and deletion requests | System |
 
 We do **not** knowingly collect sensitive personal data (such as health, biometric, religion). Please do not put health or other sensitive information in notes or reviews. We do not track your precise GPS location; shop addresses are text typed by barbers.
 
@@ -33,6 +35,8 @@ We do **not** knowingly collect sensitive personal data (such as health, biometr
 |---|---|
 | Create and run your account; make, show and manage bookings; show queue positions; send booking notifications (confirmation, reminders at about 2 hours and 30 minutes before, "your turn") | Performance of a contract |
 | Take payments, issue refunds and credits, run plans, pay barbers, keep commission balances, detect failed or duplicate payments | Performance of a contract; legal obligation (financial records) |
+| Keep a record that you accepted our documents and ask you to accept new versions | Legal obligation / legitimate interests (evidence) |
+| Show your optional profile picture to barbers you book with | Consent — you choose to upload it and can remove it at any time |
 | Prevent fraud, abuse, fake bookings and misuse; security; rate-limiting; audit trail; resolving disputes and reports | Legitimate interests (safe and fair platform); legal obligation |
 | Reliability label shown to barbers, to reduce no-shows | Legitimate interests [LAWYER: confirm; consider a right to object and a DPIA] |
 | Reviews and shop ratings | Legitimate interests / contract |
@@ -65,26 +69,28 @@ Our database and hosting are outside Nigeria (**United Kingdom**), and our provi
 
 ## 6. How long we keep it
 
-[LAWYER: confirm every period. The first column reflects what the system really does today; the second is a proposal.]
+[LAWYER: confirm every period.] The periods marked "automatic" are run by a clean-up job that runs about once an hour. TrimSlot staff can change these periods in the admin settings and this page shows the current values.
 
-| Data | What happens today | Proposed retention |
+| Data | How long | How |
 |---|---|---|
-| Account and profile | Kept while the account exists. An admin can hide ("soft-delete") an account, restorable for **30 days**, after which it can be erased unless money records exist | Until you ask us to delete, or [24] months after last use |
-| Bookings, plans, credits, reviews | Kept; no automatic deletion yet | [Account life + 6 years] for those linked to payments; others [24] months |
-| Payment and refund records, audit trail | Kept; **cannot be hard-deleted once a payment succeeded** (financial record) | [6] years (tax and accounting) |
-| Raw payment webhook messages | Kept; those with an invalid signature deleted after **30 days** | [400 days] |
-| Notifications | Kept; no automatic deletion yet | [12] months |
-| Push subscriptions | Removed when your browser says the subscription is gone, when you switch notifications off, or when the account is erased | Same |
-| Security counters and rate limits | Deleted automatically after about **2 hours** | Same |
-| Request/application logs | Kept by the hosting provider under its log retention (typically days to weeks) [CHECK] | [30–90] days |
-| Unpaid "Pay now" attempts, abandoned plan checkouts | Marked incomplete; abandoned never-paid plan checkouts deleted after **2 days** | Same |
-| Backups | [Provider backups — CHECK plan; a free-tier database may have none] | [30] days |
+| Account and profile | While the account exists. If you delete your account, your name, contact details, picture, notifications, favourites, waitlist entries, notes and push subscriptions are removed or anonymised at once. If staff hide ("soft-delete") an account, it can be restored for **{{retention_deleted_days}} days**; after that it is erased, or anonymised if payment records exist. | Self-service or automatic |
+| Bookings, payments, refunds, credits, plans and the audit trail | These are **financial records** and are kept for [6] years [LAWYER: confirm]. After deletion they stay but **without your name** (shown as "Deleted customer"). A payment that succeeded cannot be hard-deleted. | Kept; anonymised |
+| Raw payment webhook messages from Paystack | **{{retention_events_days}} days**; messages with an invalid signature **{{retention_bad_events_days}} days** | Automatic |
+| In-app notifications | **{{retention_notifications_days}} days** | Automatic |
+| Push subscriptions | Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, or when unused for **{{retention_push_stale_days}} days** | Automatic |
+| Staff alerts | **{{retention_admin_alerts_days}} days** | Automatic |
+| Security counters and rate limits | **{{retention_rate_limit_hours}} hours** | Automatic |
+| Unpaid "Pay now" attempts, abandoned plan checkouts | Marked incomplete; never-paid plan checkouts are deleted after **{{retention_checkout_days}} days** (after checking with Paystack that no money was taken) | Automatic |
+| Hidden (deleted) reviews, reports and unsold plans | **{{retention_deleted_days}} days** after being deleted | Automatic |
+| Acceptance record | Kept with your account; the IP address and browser details are removed if you delete your account | Kept |
+| Request/application logs | Kept by the hosting provider under its log retention (typically days to weeks) [CHECK] | Provider |
+| Backups | [Provider backups — CHECK plan; a free-tier database may have none] | Provider |
 
 ## 7. Your rights
 
 Under the NDPA you have the right to: **be informed** (this policy); **access** your data and get a copy; **correct** wrong data; **erase** data we no longer need or hold unlawfully; **restrict** processing; **object** to processing based on legitimate interests or for direct marketing; **data portability** (a machine-readable copy of data you gave us); **withdraw consent** at any time (for example, turn off notifications — this does not affect earlier use); and **not to be subject to a decision based only on automated processing** that significantly affects you. 
 
-To use a right, e-mail [PRIVACY EMAIL] or write to [REGISTERED ADDRESS]. We will confirm your identity, and reply within [one month] [LAWYER: confirm NDPA/GAID time limit]. We may keep what the law requires us to (for example payment records). There is currently **no self-service button for data export or account deletion** in the app; requests are handled by e-mail. [OWNER: consider building these.]
+To use a right, e-mail [PRIVACY EMAIL] or write to [REGISTERED ADDRESS]. We will confirm your identity, and reply within [one month] [LAWYER: confirm NDPA/GAID time limit]. We may keep what the law requires us to (for example payment records). You can do the two most common things yourself in the app, under **Profile**: **Download my data** (a JSON file with your account, bookings, payments, plans, credits, reviews, favourites, waitlist, notifications and the documents you accepted; passwords are never included, and private notes a barber keeps about you are not included [LAWYER: confirm]) and **Delete my account** (see section 6 for what is removed and what is kept). For anything else, e-mail [PRIVACY EMAIL].
 
 If you are unhappy with our answer you may complain to the **Nigeria Data Protection Commission (NDPC)**, [NDPC CONTACT DETAILS], or go to court.
 
@@ -119,9 +125,10 @@ We will post changes here and, for important ones, notify you in the app. The "E
 * **Q31.** Are we a data controller of major importance: NDPC registration, DPO, annual audit return?
 * **Q32.** Lawful basis, DPIA and right to object for the reliability label and barbers' private notes.
 * **Q33.** International transfers (London database and hosting, Paystack group): mechanism and notices.
-* **Q34.** Retention periods to publish; most data is not auto-deleted today.
-* **Q35.** Data-subject rights procedure and time limits; no self-service export or delete yet.
-* **Q36.** Raw Paystack webhook payloads stored up to 400 days: data minimisation?
+* **Q34.** Retention periods to publish (now automatic and admin-editable; bookings and payment records are kept anonymised, [6] years proposed).
+* **Q35.** Data-subject rights procedure and time limits; self-service export (JSON) and delete now exist; barber private notes are excluded from the export.
+* **Q36.** Raw Paystack webhook payloads stored up to {{retention_events_days}} days: data minimisation?
 * **Q37.** Barbers as controllers of customer data they receive.
 * **Q38.** Breach notification wording (72 hours to NDPC).
-* **Q7.** Children's data (see Terms, age).
+* **Q7.** Children's data (see Terms, age), including the optional profile picture.
+* **Q41.** Profile pictures (consent, children, moderation) and storing IP address and browser details in the acceptance record.

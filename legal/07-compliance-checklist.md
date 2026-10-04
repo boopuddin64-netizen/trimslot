@@ -22,8 +22,8 @@
 | 13 | **DPIA** | Do a data protection impact assessment for the reliability label, reviews/reports and push notifications. | DPO | ☐ |
 | 14 | Processor contracts | Data processing agreements with Supabase, Vercel and Paystack; transfer mechanism for data leaving Nigeria (UK/EU/US); list sub-processors. | Lawyer | ☐ |
 | 15 | Breach procedure | 72-hour NDPC notification plan; named incident owner; contact list. | DPO | ☐ |
-| 16 | Data-subject requests | Process for access / correction / deletion / export (there is no self-service yet); decide timeline and logging. | DPO | ☐ |
-| 17 | Retention schedule | Approve the retention periods in the Privacy Policy and implement automatic deletion (not built yet for most data). | DPO + dev | ☐ |
+| 16 | Data-subject requests | Process for access / correction / deletion / export. Self-service JSON export and account deletion are built (Profile); decide timeline and logging for requests that arrive by e-mail, and for barber deletion requests (an admin alert is raised). | DPO | ☐ |
+| 17 | Retention schedule | Approve the retention periods in the Privacy Policy. Automatic clean-up is built (hourly) and the periods are admin settings; check the defaults match what you approve. | DPO + dev | ☐ |
 | **Payments** | | | | |
 | 18 | **Paystack business verification (live mode)** | Complete Paystack's business verification (CAC documents, directors' ID, bank account, business description, website with Terms/Privacy/refund policy). Switch from test to live keys only after approval. Keep the webhook URL and secret set. | Owner | ☐ |
 | 19 | Paystack subaccount / split terms | Confirm Paystack allows our marketplace split model; who bears processing fees; settlement schedule; what happens on refunds and chargebacks; whether each barber must complete KYC. | Owner / Paystack | ☐ |
@@ -33,11 +33,11 @@
 | 22 | **Consumer protection (FCCPA 2018 / FCCPC)** | Review Terms and refund rules against the Federal Competition and Consumer Protection Act 2018 and FCCPC regulations (including any rules for digital / online platforms and for complaint handling). In particular: fair terms, clear pricing, refund rights for prepaid services, cooling-off, complaint process. Check if business registration with the FCCPC or a local representative is needed. | Lawyer | ☐ |
 | 23 | Complaint handling | Publish contact, response times, escalation; keep a log of complaints. | Owner | ☐ |
 | 24 | Price transparency | Show Paystack processing fee before payment (the app adds it at checkout). | Dev / owner | ☐ |
-| 25 | Cancel/refund wording in the app | Make the cancellation cut-off, credit rules and "credit pending" outcome visible on the booking and payment screens. | Dev | ☐ |
+| 25 | Cancel/refund wording in the app | Make the cancellation cut-off, the refund (pending approval, auto-approved) and credit rules visible on the booking and payment screens. Built: the booking shows "refund pending / refunded"; confirm the wording. | Dev | ☐ |
 | **Barber side** | | | | |
 | 26 | Barber onboarding checks | Decide ID / business proof / address verification for approving shops. | Owner | ☐ |
 | 27 | Hygiene and local permits | List state/local rules for barber shops (health permits, signage, levies) in launch states and add to the onboarding checklist. | Lawyer | ☐ |
-| 28 | Agreement acceptance | Add a mandatory "I agree to the Barber Agreement and Terms" tick-box at barber sign-up and log version/date/IP; same for customers' Terms and Privacy acknowledgement. **Not built yet.** | Dev | ☐ |
+| 28 | Agreement acceptance | Mandatory tick-boxes (customers: Terms and Privacy; barbers: also the Barber Agreement) with a log of document, version, date, IP and user agent, and a re-accept prompt when a version changes. **Built**; confirm the wording and set the real document versions in admin Controls once the lawyer has approved the texts. | Dev | ☐ |
 | **Insurance** | | | | |
 | 29 | Platform insurance | Consider public liability, professional indemnity and cyber/data-breach cover for TrimSlot. | Owner / broker | ☐ |
 | 30 | Barber insurance | Decide whether public-liability cover is **required** or only **recommended** for barbers (and minimum cover). | Owner / lawyer | ☐ |
