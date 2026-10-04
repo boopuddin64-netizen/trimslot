@@ -31,14 +31,14 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 | You want to cancel **less than {{cancel_cutoff_min}} minutes** before | You **cannot cancel in the app**. Contact the barber. If you do not turn up it is a **missed session** (section 4). |
 | You **do not turn up** and the barber marks you a no-show (only possible after your appointment time) | Paid session: **no refund**, but when your barber marks it a no-show you get **1 session credit with the same barber**, valid **{{credit_expiry_days}} days**, **not cashable**. If the barber never marks it, there is no refund and no credit unless TrimSlot staff decide otherwise. Pay on arrival: nothing is charged; the no-show stays on your record. |
 | The **barber cannot serve you** ("Not served") | Paid online: a **refund** (section 5). Plan session / credit: returned automatically. |
-| You started paying but **did not finish** | Not charged. **No time is reserved while you pay.** After **{{payment_hold_min}} minutes** the try closes and the booking becomes "Incomplete" (section 6). |
+| You started paying but **did not finish** | You should not be charged: before we close the try we ask Paystack whether it was paid. If money did leave your account, we confirm the booking or refund you (section 6). **No time is reserved while you pay.** After **{{payment_hold_min}} minutes** the try closes and the booking becomes "Incomplete" (section 6). |
 | You were **charged twice**, or your payment arrived **after someone else's payment took the time** | Not a booking. The extra payment, or the payment for the time that was taken, is **refunded automatically** to your original payment method (section 7). A payment that arrives late for a time that is **still free** confirms the booking (section 6.2). |
 
 ## 2. Cancelling a booking
 
 2.1 You may cancel in the app **until {{cancel_cutoff_min}} minutes before your appointment starts.** The cut-off is a TrimSlot setting and is shown on the booking before you pay. [LAWYER/OWNER: confirm {{cancel_cutoff_min}} minutes is the policy to publish.]
 
-2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit comes only when the barber marks a no-show.
+2.2 After the cut-off the booking is "locked" so the barber's time is protected. If something urgent came up, call or message your barber (the app shows the barber's phone and WhatsApp on a paid upcoming booking). The barber decides: the barber may mark the booking "Not served" (then a refund, or your plan session or credit comes back, as in section 5), may wait for you, or may leave it for you to arrive. If you do not come and the barber marks a no-show, section 4 applies. A credit for a missed session comes only when your barber marks it a no-show. Other credits are in section 4.2.
 
 2.3 If a barber is removed or suspended, or a customer account is removed, upcoming bookings may be cancelled by us. Paid online bookings are then refunded (flagged for refund and requested from Paystack); plan sessions and credits are returned.
 
@@ -65,11 +65,11 @@ This policy is part of the [Terms of Service](terms.html). "**Barber**" means th
 4.3 Credit rules:
 
 * **Same barber only**, not usable at other shops.
-* **Expires {{credit_expiry_days}} days after it is issued** (a TrimSlot setting). It must be used for an appointment that **starts before it expires**.
+* **Every credit has an expiry date, and the app shows each credit's expiry date.** It must be used for an appointment that **starts before it expires**.
 * **Not cashable** — it cannot be exchanged for money, transferred or sold.
 * Use it on a service **priced at or below the credit's value**; there is no change given and no top-up in the app. [OWNER: confirm top-up is not possible.]
 * A booking you pay for with a credit and then miss does **not** earn a new credit.
-* **Loyalty credits.** If TrimSlot switches a loyalty reward on, you can earn a credit with a barber after a number of completed visits with that barber. The app shows how it works. It follows the same rules as other credits.
+* **Loyalty credits.** If TrimSlot switches a loyalty reward on, you can earn a credit with a barber after a number of completed visits with that barber. The app shows how it works and each credit's expiry date. It follows the same rules as other credits.
 * **Removal.** TrimSlot staff may remove (revoke) a credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking the Terms. You are told in the app and given the reason. [LAWYER: confirm; see question 54.]
 * If you cancel in time a booking paid with a credit, the credit comes back to you (still with the original expiry).
 * A missed **plan session** counts as used: the session is not restored, and you receive the credit described above.

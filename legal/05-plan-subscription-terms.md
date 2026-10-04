@@ -67,7 +67,7 @@ The barber must honour every paid session until the plan expires, provide the in
 
 ## 6. Fees
 
-The barber's charges and payment costs are taken from the barber's side of the plan price, not added to yours. When you buy a plan online you also pay the small **booking fee** shown at checkout, once, at purchase. No fee is charged again when you use a session.
+The barber's charges come from the barber's side; you pay the price plus the booking fee shown. When you buy a plan online you also pay the small **booking fee** shown at checkout, once, at purchase. No fee is charged again when you use a session.
 
 ## 7. Changes and contact
 

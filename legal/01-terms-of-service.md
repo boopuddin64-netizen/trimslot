@@ -95,9 +95,9 @@ You are responsible for telling the barber about skin conditions, allergies or a
 
 ## 8. Fees and payments
 
-8.1 Customers are not charged a TrimSlot fee for a booking. When you pay online you pay the price plus the **booking fee** shown at checkout (see 3.1). Pay-on-arrival bookings, plan sessions and credits have no booking fee. If an online payment is refunded, the booking fee is refunded with it. [OWNER: confirm.]
+8.1 The price you see is what you pay, plus the small **booking fee** shown before you pay online (see 3.1). Pay-on-arrival bookings, plan sessions and credits have no booking fee. If an online payment is refunded, the booking fee is refunded with it. [OWNER: confirm.]
 
-8.2 Barbers pay TrimSlot's charges and payment costs as set out in the Barber Agreement. You do not pay these on top of the price (apart from the booking fee in 8.1).
+8.2 The barber's charges come from the barber's side, as set out in the Barber Agreement; you pay the price plus the booking fee shown.
 
 8.3 We may change prices of our own fees, or switch features on or off, by giving notice in the app. Changes do not affect bookings already confirmed.
 

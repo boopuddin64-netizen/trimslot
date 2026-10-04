@@ -77,7 +77,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. Card payments are paid out to your payout account, through our payment provider, after the deductions shown in the app. **Fees and your payout are shown in the app before you accept a booking, on every booking and in your earnings screen.** They are worked out when the customer pays and do not change afterwards.
 
-7.1.1 **TrimSlot's service charge** is set by TrimSlot and shown in the app and in your earnings screen. We may agree a different charge with you in writing or in the app. The charge is never more than the price.
+7.1.1 **TrimSlot's service charge** is set by TrimSlot and shown in the app and in your earnings screen. We may agree a different charge with you in writing or in the app.
 
 7.1.2 **Payment-processing costs** come from our payment provider. Its rates can change, so this Agreement does not state them as a fixed number. If any of that cost is deducted from what you receive, it is shown on each booking, and the amount shown to you stays as shown.
 
@@ -93,7 +93,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 8.1 The service charge on cash bookings is a **debt you owe TrimSlot**, added to your **balance owed**. You can see it at any time.
 
-8.2 **Taking it from online payments.** When a customer pays you online, we may take what you owe from that payment, so that the balance is paid off from your online income. We never take more than you owe. The amounts are shown in the app, and our staff will review and correct any mistake with you.
+8.2 **Taking it from online payments.** If you owe TrimSlot an amount, we may take it from future online payments to you, and the app shows your balance. Our staff will review and correct any mistake with you.
 
 8.3 **Manual settlement.** You may also settle the balance by another method we agree in writing (for example, bank transfer to [COMPANY BANK ACCOUNT]). We may record manual settlements, waivers or adjustments with a reason, and show them in your balance history.
 

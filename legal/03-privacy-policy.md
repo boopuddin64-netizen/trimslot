@@ -97,7 +97,7 @@ Our database and hosting are outside Nigeria (**United Kingdom**), and our provi
 | Raw payment webhook messages from Paystack | **{{retention_events_days}} days**; messages with an invalid signature **{{retention_bad_events_days}} days** | Automatic |
 | In-app notifications | **{{retention_notifications_days}} days** | Automatic |
 | Help requests | The message you wrote is removed **{{retention_notifications_days}} days** after it was sent (and from the staff report that repeated it, if there was one); the fact that a request happened stays with the booking record. If you delete your account, the message is removed at once. | Automatic / self-service |
-| E-mail verification codes | Only a hash is stored; it is cleared when it is used or has expired. | Automatic |
+| E-mail verification codes | Only a hash is stored; it is cleared when used or replaced, and within about a day after it expires. | Automatic |
 | Push subscriptions (including the browser description) | Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, when it has failed repeatedly, or when unused for **{{retention_push_stale_days}} days** | Automatic |
 | Staff alerts | **{{retention_admin_alerts_days}} days** | Automatic |
 | Security counters and rate limits (IP address, and the e-mail or phone typed at failed log-ins) | **{{retention_rate_limit_hours}} hours** | Automatic |
