@@ -69,11 +69,29 @@
       ]
     },
     {
-      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|favicon\\.svg)",
+      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|favicon\\.svg|account\\.js|forms\\.js|cropmath\\.js|avatar-crop\\.js|legal-live\\.js|offline-cache\\.js|net-banner\\.js|avatars\\.css)",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "public, max-age=300, stale-while-revalidate=86400"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0, must-revalidate"
         }
       ]
     },
@@ -108,7 +126,7 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=86400"
+          "value": "public, max-age=86400, stale-while-revalidate=604800"
         }
       ]
     }

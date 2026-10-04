@@ -3,6 +3,7 @@ import express, { NextFunction, Request, Response } from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import helmet from 'helmet';
+import { basename } from 'path';
 import { Db, isUniqueViolation } from './db';
 import { config, TIMEZONE } from './config';
 import { AppError, badRequest, conflict, notFound } from './errors';
@@ -804,7 +805,16 @@ export function createApp(db: Db) {
   });
 
   // Static frontend: on Vercel the CDN serves /public directly (express.static is ignored there); locally / in Docker Express serves it.
-  if (!config.isVercel) app.use(express.static(config.publicDir, { extensions: ['html'], maxAge: config.isProd ? '5m' : 0, index: 'index.html' }));
+  // Caching rules (same as vercel.json): the page shell, every .html page and the service worker are always revalidated; app files are cached 5 min and refreshed in the background.
+  if (!config.isVercel) app.use(express.static(config.publicDir, {
+    extensions: ['html'], maxAge: config.isProd ? '5m' : 0, index: 'index.html',
+    setHeaders: (res, file) => {
+      const name = basename(file);
+      if (name === 'sw.js') { res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate'); res.setHeader('Service-Worker-Allowed', '/'); }
+      else if (name.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+      else if (config.isProd && /^(?:app|notify|account|forms|cropmath|avatar-crop|legal-live|offline-cache|net-banner|theme)\.js$|^(?:style|avatars)\.css$|^favicon\.svg$/.test(name)) res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');
+    },
+  }));
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof AppError) return res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
