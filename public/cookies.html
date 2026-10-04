@@ -17,7 +17,7 @@
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>
 </div>
 
-<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <mark class="ph">[VERSION]</mark></p>
+<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <span data-s="privacy_version">1</span></p>
 <h2>Part A — Cookies and similar storage (long form, for the website)</h2>
 <p>TrimSlot keeps this to the minimum. We <strong>do not use advertising, tracking or analytics cookies</strong>, and we do not use third-party tracking scripts.</p>
 <div class="tblwrap"><table>
@@ -81,7 +81,7 @@
 <td>No</td>
 </tr>
 <tr>
-<td>Saved filter views for admin lists (staff only)</td>
+<td><code>adm_sf_customers</code>, <code>adm_sf_barbers</code>, <code>adm_sf_bookings</code>, <code>adm_sf_payments</code>, <code>adm_sf_credits</code>, <code>adm_sf_reports</code>, <code>adm_sf_ledger</code>, <code>adm_sf_reviews</code>, <code>adm_sf_waitlist</code>, <code>adm_sf_purchases</code>, <code>adm_sf_plans</code> (staff only; one key per admin list)</td>
 <td>Browser local storage</td>
 <td>Saved filter views in the admin lists (a name and the filter settings, including any search text staff typed)</td>
 <td>Until staff delete the view or clear the browser</td>
@@ -108,16 +108,16 @@
 <p>This is what the app actually shows, on a card on the main screens (the "Not now" button hides it for 7 days):</p>
 <blockquote>
 <p><strong>Never miss your turn</strong>
-Get a heads-up for confirmations, reminders and when you're next in line.
-<strong>[Enable notifications]</strong>  <strong>[Not now]</strong></p>
+Get alerts when your booking is confirmed, for reminders, and when you are next in line.
+<strong>[Turn on alerts]</strong>  <strong>[Not now]</strong></p>
 </blockquote>
 <p>On an iPhone or iPad (where the browser allows notifications only for an installed app) the card says instead:</p>
 <blockquote>
 <p><strong>Get alerts on your iPhone</strong>
-Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>, and open TrimSlot from there. iPhones only allow notifications for installed apps.</p>
+Tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. Then open TrimSlot from your home screen. iPhones only give alerts to apps you add.</p>
 </blockquote>
-<p>After the person taps "Enable notifications", the browser shows its own permission box. The person can later turn push on or off with the "Push notifications" switch on the Profile page.</p>
-<p><strong>Gap found in review:</strong> the card does not say that a push subscription (and a short description of the browser) is stored, does not say that the messages can show on a lock screen, and does not link to the Privacy Policy.</p>
+<p>The iPhone card has no button; a small close button on it hides it for 7 days.</p>
+<p>After the person taps "Turn on alerts", the browser shows its own permission box. The person can later turn push on or off with the "Push notifications" switch on the Profile page. What is stored, and what the messages can show on a lock screen, is explained in the Details below and in the <a href="privacy.html">Privacy Policy</a>.</p>
 <h3>Details</h3>
 <ul>
 <li><strong>What we store:</strong> the subscription address and encryption keys your browser gives us, linked to your account, a short description of your browser and device (the "user agent" text), when the subscription was made and last worked, plus which messages were sent. A subscription belongs to the <strong>browser</strong>: if someone else logs in on the same browser and turns notifications on, the subscription moves to their account. We do not read your contacts or location.</li>

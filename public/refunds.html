@@ -18,7 +18,7 @@
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>
 </div>
 
-<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <mark class="ph">[VERSION]</mark></p>
+<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <span data-s="terms_version">1</span></p>
 <p>This policy is part of the <a href="terms.html">Terms of Service</a>. "<strong>Barber</strong>" means the independent shop you booked with. Times are Lagos time.</p>
 <h2>1. At a glance</h2>
 <p><strong>One booking gets one outcome: a refund <em>or</em> a credit, never both.</strong> An in-time cancellation of a prepaid booking is a <strong>refund</strong>. A missed booking is a <strong>credit</strong>.</p>
@@ -40,7 +40,7 @@
 </tr>
 <tr>
 <td>You <strong>do not turn up</strong> and the barber marks you a no-show (only possible after your appointment time)</td>
-<td>Paid session: <strong>no refund</strong>, but you get <strong>1 session credit with the same barber</strong>, valid <strong><span data-s="credit_expiry_days">30</span> days</strong>, <strong>not cashable</strong>. Pay on arrival: nothing is charged; the no-show stays on your record.</td>
+<td>Paid session: <strong>no refund</strong>, but when your barber marks it a no-show you get <strong>1 session credit with the same barber</strong>, valid <strong><span data-s="credit_expiry_days">30</span> days</strong>, <strong>not cashable</strong>. If the barber never marks it, there is no refund and no credit unless TrimSlot staff decide otherwise. Pay on arrival: nothing is charged; the no-show stays on your record.</td>
 </tr>
 <tr>
 <td>The <strong>barber cannot serve you</strong> ("Not served")</td>
@@ -65,21 +65,23 @@
 <p>3.2 The refund starts as <strong>"refund pending"</strong> and waits for approval by TrimSlot staff. If staff approve it, the refund request is sent to Paystack at once. If staff have <strong>not approved or rejected it within a short time</strong> of your cancellation, it is <strong>approved automatically</strong> and the refund request is sent to Paystack. You are notified when it is approved. You can see the status ("refund pending", "refunded") on your booking.</p>
 <p>3.3 Staff may <strong>reject</strong> a refund only for a stated reason (for example where the service was in fact delivered). You are told the reason, you receive neither a refund nor a credit for that booking, and you can contest it with "Report a problem" or by e-mail to <mark class="ph">[EMAIL]</mark>.</p>
 <p>3.4 If you paid with a <strong>plan session</strong> or a <strong>session credit</strong>, cancelling in time simply <strong>returns</strong> the session or credit to you, with the same expiry as before.</p>
-<p>3.5 [PROPOSED: refunds, when approved, are paid back to the original payment method within [5–10] working days; the time your bank takes is outside our control.] If Paystack cannot process the refund, our staff are alerted and retry it; you do not need to ask again.</p>
+<p>3.5 An approved refund is paid back to the <strong>original payment method</strong>. How long it takes to show depends on Paystack and your bank, which we do not control. If Paystack cannot process the refund, our staff are alerted and retry it; you do not need to ask again. Approval and retries depend on a regular background timer in the app, so they can be a little late if that timer is delayed.</p>
 <p>3.6 <strong>Older bookings.</strong> Before this rule took effect some cancelled prepaid bookings were marked "credit pending". TrimSlot staff decide each of those individually (a credit or a refund, never both).</p>
 <h2>4. Missed sessions and no-shows</h2>
 <p>4.1 A barber can mark a booking <strong>no-show</strong> only after the scheduled time has passed and you have not arrived. Do check-in with "I'm Here" when you arrive.</p>
-<p>4.2 <strong>If you had paid</strong> (online or with a plan session): there is <strong>no refund</strong>, but you receive <strong>one session credit with the same barber</strong>, worth the price of the missed booking. The credit is worth the <strong>service price on the missed booking</strong>; for a missed plan session that is the price of the service booked, even though the session cost you a share of the plan price. The credit is issued straight away; it does not wait for approval. A booking never gets both a credit and a refund.</p>
-<p>4.3 Credit rules:
-* <strong>Same barber only</strong>, not usable at other shops.
-* <strong>Expires <span data-s="credit_expiry_days">30</span> days after it is issued</strong> (a TrimSlot setting). It must be used for an appointment that <strong>starts before it expires</strong>.
-* <strong>Not cashable</strong> — it cannot be exchanged for money, transferred or sold.
-* Use it on a service <strong>priced at or below the credit's value</strong>; there is no change given and no top-up in the app.
-* A booking you pay for with a credit and then miss does <strong>not</strong> earn a new credit.
-* <strong>Loyalty credits.</strong> If TrimSlot switches the loyalty reward on, you earn a credit with a barber after every <span data-s="loyalty_every_n">10</span> completed visits with that barber (worth ₦<span data-s="loyalty_credit_naira">1,000</span>, valid 90 days from the day it is issued). It follows the same rules as other credits.
-* <strong>Removal.</strong> TrimSlot staff may remove (revoke) a credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking the Terms. You are told in the app and given the reason.
-* If you cancel in time a booking paid with a credit, the credit comes back to you (still with the original expiry).
-* A missed <strong>plan session</strong> counts as used: the session is not restored, and you receive the credit described above.</p>
+<p>4.2 <strong>If you had paid</strong> (online or with a plan session): there is <strong>no refund</strong>, but when your barber marks it a no-show you receive <strong>one session credit with the same barber</strong>, worth the price of the missed booking. The credit is worth the <strong>service price on the missed booking</strong>; for a missed plan session that is the price of the service booked, even though the session cost you a share of the plan price. The credit is issued straight away; it does not wait for approval. A booking never gets both a credit and a refund. <strong>If the barber never marks the booking a no-show, there is no refund and no credit, unless TrimSlot staff decide otherwise after you report it.</strong> Other credits can exist too (for example a loyalty reward, a credit from an older cancellation decision, or one that staff give you); they follow the same credit rules.</p>
+<p>4.3 Credit rules:</p>
+<ul>
+<li><strong>Same barber only</strong>, not usable at other shops.</li>
+<li><strong>Expires <span data-s="credit_expiry_days">30</span> days after it is issued</strong> (a TrimSlot setting). It must be used for an appointment that <strong>starts before it expires</strong>.</li>
+<li><strong>Not cashable</strong> — it cannot be exchanged for money, transferred or sold.</li>
+<li>Use it on a service <strong>priced at or below the credit's value</strong>; there is no change given and no top-up in the app.</li>
+<li>A booking you pay for with a credit and then miss does <strong>not</strong> earn a new credit.</li>
+<li><strong>Loyalty credits.</strong> If TrimSlot switches a loyalty reward on, you can earn a credit with a barber after a number of completed visits with that barber. The app shows how it works. It follows the same rules as other credits.</li>
+<li><strong>Removal.</strong> TrimSlot staff may remove (revoke) a credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking the Terms. You are told in the app and given the reason.</li>
+<li>If you cancel in time a booking paid with a credit, the credit comes back to you (still with the original expiry).</li>
+<li>A missed <strong>plan session</strong> counts as used: the session is not restored, and you receive the credit described above.</li>
+</ul>
 <p>4.4 If you did not pay in advance (pay on arrival), nothing is charged for a no-show. The barber's record shows it, and repeated no-shows can change the "reliability" label that barbers see.</p>
 <p>4.5 If you believe a no-show was marked wrongly, report it in the app ("Report a problem") or e-mail <mark class="ph">[EMAIL]</mark>. We may reverse it and cancel the credit.</p>
 <h2>5. When the barber cannot serve you</h2>
@@ -90,8 +92,8 @@
 <p>6.3 If money was taken but the page showed an error, tap "I've paid, check status" on the booking, or contact us with the booking number and Paystack reference. We can verify directly with Paystack.</p>
 <h2>7. Duplicate, late and mismatched payments</h2>
 <p>7.1 Each of these has its own message on the booking page and in the app: <strong>duplicate</strong> (you paid twice for one booking; the booking stays confirmed and the extra payment is refunded), <strong>too late</strong> and <strong>time taken</strong>. A second click or a second browser tab on the same booking re-uses the same open payment, so it does not create a second charge. Duplicate (you paid twice for one booking or plan), <strong>too late</strong> (the payment arrived after the attempt closed and the time was no longer free, or you had cancelled it) and <strong>time taken</strong> (someone else's payment for that time was confirmed first) payments are <strong>never kept as bookings</strong>. They are flagged "needs refund" and <strong>a refund request is sent to Paystack automatically</strong>; if that fails, we retry on a schedule and staff can action it. A payment that arrives late for a time that is still free is not in this group: it confirms the booking (6.2).</p>
-<p>7.2 You get a notification in the app for each of these cases (a second payment, a late payment, and a payment for a time that was taken). The refund goes to the <strong>original payment method</strong>. Time to arrive depends on Paystack and your bank [typically [5–10] working days].</p>
-<p>7.3 If the amount Paystack reports does not match the price (other than Paystack's processing fee), or the payment is <strong>not in Nigerian naira (NGN)</strong>, the booking is <strong>not confirmed automatically</strong>. We tell you, TrimSlot staff get an alert and review it, and you are refunded if you were charged wrongly.</p>
+<p>7.2 You get a notification in the app for each of these cases (a second payment for a booking or a plan, a late payment, a payment for a time that was taken, and a payment whose amount does not match a booking or a plan). The refund goes to the <strong>original payment method</strong>. Time to arrive depends on Paystack and your bank.</p>
+<p>7.3 If the amount Paystack reports does not match the price (other than the usual payment-processing cost), or the payment is <strong>not in Nigerian naira (NGN)</strong>, the booking or plan is <strong>not confirmed automatically</strong>. We tell you, TrimSlot staff get an alert and review it, and you are refunded if you were charged wrongly.</p>
 <p>7.4 <strong>Booking fee.</strong> When you pay online you pay the price plus a small, clearly labelled <strong>booking fee</strong>, shown before you pay. When a payment is refunded (in-time cancellation, "not served", duplicate, late or slot-taken payment), you get back <strong>everything you were charged, including the booking fee</strong>. A <strong>credit</strong> (for a missed booking) is for the <strong>price only</strong>; the booking fee is not turned into credit. Bookings paid by plan session, credit or on arrival have no booking fee.</p>
 <h2>8. Plans</h2>
 <p>Plan purchases and unused sessions are covered by the <a href="plan-terms.html">Plan Terms</a>. In short: unused sessions <strong>expire when the plan ends</strong> and are <strong>not refunded</strong>, unless the platform's plan refund setting is "case by case" and we agree one. A duplicate plan payment is refunded automatically (section 7).</p>

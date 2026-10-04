@@ -53,8 +53,23 @@
 </tr>
 <tr>
 <td><strong>Bookings</strong></td>
-<td>Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history</td>
+<td>Barber and service, price, date and time, status (confirmed, arrived, completed, cancelled, no-show, not served…), check-in / start / finish times, how it was paid, optional note to the barber, queue position, cancellation and no-show history, and how many times a booking was moved to another time and when</td>
 <td>You and the barber</td>
+</tr>
+<tr>
+<td><strong>Help requests</strong></td>
+<td>If you tap the emergency help button on a booking that can no longer be cancelled, the short message you write (up to 200 characters), its status and the times it was sent and answered. The barber sees it. If the barber does not answer in time, our staff get a report that repeats your message.</td>
+<td>You</td>
+</tr>
+<tr>
+<td><strong>Contact details shown</strong></td>
+<td>For a confirmed paid booking that has not happened yet, you see the barber's phone number and WhatsApp link, and the barber sees your phone number, so you can reach each other.</td>
+<td>You, the barber</td>
+</tr>
+<tr>
+<td><strong>E-mail verification</strong> (only if TrimSlot switches it on)</td>
+<td>Whether your e-mail is verified and when; for a few minutes, a one-way <strong>hash</strong> of the one-time code we e-mail you (never the code itself), when it expires and how many wrong tries were made.</td>
+<td>You, system</td>
 </tr>
 <tr>
 <td><strong>Payments</strong></td>
@@ -109,7 +124,7 @@
 </thead>
 <tbody>
 <tr>
-<td>Create and run your account; make, show and manage bookings; show queue positions; send booking notifications (confirmation, reminders at about 2 hours and 30 minutes before, "your turn")</td>
+<td>Create and run your account; make, show and manage bookings; show queue positions; send booking notifications (confirmation, reminders before your visit, "your turn")</td>
 <td>Performance of a contract</td>
 </tr>
 <tr>
@@ -149,6 +164,10 @@
 <td>Contract / legitimate interests</td>
 </tr>
 <tr>
+<td>Handle your help requests and send e-mail verification codes (only if switched on)</td>
+<td>Performance of a contract; legitimate interests (safety and security of accounts)</td>
+</tr>
+<tr>
 <td>Marketing messages</td>
 <td><strong>We do not send marketing today.</strong> If we start, we will ask for consent first.</td>
 </tr>
@@ -171,14 +190,14 @@
 <li><strong>Supabase</strong> — managed database (PostgreSQL) where account, booking and payment records are stored. Project region: <strong>London, United Kingdom (eu-west-2)</strong>.</li>
 <li><strong>Vercel</strong> — web hosting and serverless functions that run the app (functions run in <strong>London, UK</strong>; content is delivered through a global network) and application logs.</li>
 <li><strong>Browser push services</strong> (for example those run by Google, Mozilla and Apple) — only if you enable notifications; they carry the message to your browser.</li>
-<li>[Any e-mail/SMS provider, analytics or error-monitoring tool — NONE TODAY. Add here if one is added.]</li>
+<li><strong>Resend</strong> — e-mail provider. Used <strong>only if TrimSlot switches e-mail verification on</strong>. It receives your e-mail address and the message with your one-time code so it can deliver it. We use no SMS, analytics or error-monitoring provider.</li>
 <li><strong>Authorities, courts, regulators, banks</strong> where the law or a valid order requires, or to protect rights and safety.</li>
 <li><strong>A buyer or successor</strong> if the business is sold, under the same protections.</li>
 </ul>
 <p><strong>We do not sell personal data.</strong> We do not share it for third-party advertising.</p>
 <h2>5. Sending data outside Nigeria</h2>
 <p>Our database and hosting are outside Nigeria (<strong>United Kingdom</strong>), and our providers (Supabase, Vercel, Paystack and its group companies) are international companies that may process data in other countries, including the United States and the European Economic Area. Where personal data leaves Nigeria we rely on the transfer rules in the NDPA (Part VIII): We ask providers to protect data to a standard at least equal to the NDPA.</p>
-<h2>6. How long we keep it The periods marked "automatic" are run by a clean-up job. The job starts from TrimSlot's scheduled "sweep" and runs at most once an hour. The scheduled sweep runs <strong>once a day</strong> by default; if TrimSlot also uses an external one-minute timer it runs far more often. So an item can be kept up to about a day longer than the period shown. TrimSlot staff can change these periods in the admin settings and this page shows the current values.</h2>
+<h2>6. How long we keep it The periods marked "automatic" are run by a clean-up job that runs regularly in the background, at most once an hour. If that background timer is delayed, an item can be kept a little longer than the period shown. TrimSlot staff can change these periods in the admin settings and this page shows the current values.</h2>
 <div class="tblwrap"><table>
 <thead>
 <tr>
@@ -190,7 +209,7 @@
 <tbody>
 <tr>
 <td>Account and profile</td>
-<td>While the account exists. If you delete your account, your name, contact details, picture, notifications, favourites, waitlist entries, notes and push subscriptions are removed or anonymised at once. If staff hide ("soft-delete") an account, it can be restored for <strong><span data-s="retention_deleted_days">30</span> days</strong>; after that it is erased, or anonymised if payment records exist.</td>
+<td>While the account exists. If you delete your account, your name, contact details, picture, notifications, favourites, waitlist entries, notes, help-request messages and push subscriptions are removed or anonymised at once. If staff hide ("soft-delete") an account, it can be restored for <strong><span data-s="retention_deleted_days">30</span> days</strong>; after that it is erased, or anonymised if payment records exist.</td>
 <td>Self-service or automatic</td>
 </tr>
 <tr>
@@ -206,6 +225,16 @@
 <tr>
 <td>In-app notifications</td>
 <td><strong><span data-s="retention_notifications_days">180</span> days</strong></td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Help requests</td>
+<td>The message you wrote is removed <strong><span data-s="retention_notifications_days">180</span> days</strong> after it was sent (and from the staff report that repeated it, if there was one); the fact that a request happened stays with the booking record. If you delete your account, the message is removed at once.</td>
+<td>Automatic / self-service</td>
+</tr>
+<tr>
+<td>E-mail verification codes</td>
+<td>Only a hash is stored; it is cleared when it is used or has expired.</td>
 <td>Automatic</td>
 </tr>
 <tr>
@@ -240,19 +269,19 @@
 </tr>
 <tr>
 <td>Request/application logs</td>
-<td>Kept by the hosting provider under its log retention (typically days to weeks) <mark class="ph">[CHECK]</mark></td>
+<td>Kept by the hosting provider under its own log retention (typically days to weeks)</td>
 <td>Provider</td>
 </tr>
 <tr>
 <td>Backups</td>
-<td>[Provider backups — CHECK plan; a free-tier database may have none]</td>
+<td>Our database provider may keep backups for a limited time under its own plan. Data we delete can stay in a backup until that backup expires.</td>
 <td>Provider</td>
 </tr>
 </tbody>
 </table></div>
 <h2>7. Your rights</h2>
 <p>Under the NDPA you have the right to: <strong>be informed</strong> (this policy); <strong>access</strong> your data and get a copy; <strong>correct</strong> wrong data; <strong>erase</strong> data we no longer need or hold unlawfully; <strong>restrict</strong> processing; <strong>object</strong> to processing based on legitimate interests or for direct marketing; <strong>data portability</strong> (a machine-readable copy of data you gave us); <strong>withdraw consent</strong> at any time (for example, turn off notifications — this does not affect earlier use); and <strong>not to be subject to a decision based only on automated processing</strong> that significantly affects you. </p>
-<p>To use a right, e-mail <mark class="ph">[PRIVACY EMAIL]</mark> or write to <mark class="ph">[REGISTERED ADDRESS]</mark>. We will confirm your identity, and reply within [one month]. We may keep what the law requires us to (for example payment records). You can do the two most common things yourself in the app, under <strong>Profile</strong>: <strong>Download my data</strong> (a JSON file with your account, bookings, payments, plans, credits, reviews, favourites, waitlist, notifications and the documents you accepted; passwords are never included, and private notes a barber keeps about you are not included) and <strong>Delete my account</strong> (see section 6 for what is removed and what is kept). For anything else, e-mail <mark class="ph">[PRIVACY EMAIL]</mark>.</p>
+<p>To use a right, e-mail <mark class="ph">[PRIVACY EMAIL]</mark> or write to <mark class="ph">[REGISTERED ADDRESS]</mark>. We will confirm your identity, and reply within [one month]. We may keep what the law requires us to (for example payment records). You can do the two most common things yourself in the app, under <strong>Profile</strong>: <strong>Download my data</strong> (a JSON file with your account, bookings, payments, plans, credits, reviews, favourites, waitlist, help requests, notifications and the documents you accepted; passwords are never included, and private notes a barber keeps about you are not included) and <strong>Delete my account</strong> (see section 6 for what is removed and what is kept). For anything else, e-mail <mark class="ph">[PRIVACY EMAIL]</mark>.</p>
 <p>If you are unhappy with our answer you may complain to the <strong>Nigeria Data Protection Commission (NDPC)</strong>, <mark class="ph">[NDPC CONTACT DETAILS]</mark>, or go to court.</p>
 <h2>8. Security</h2>
 <p>We use HTTPS; password hashing; login cookies that scripts cannot read; access controls and staff PIN protection for destructive admin actions; audit logging; rate limits and lock-outs against guessing; and payment details that stay with Paystack. No system is perfectly secure. If a personal-data breach is likely to harm you, we will tell the NDPC within <strong>72 hours</strong> and tell you without undue delay, as the NDPA requires.</p>
