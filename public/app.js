@@ -11,6 +11,7 @@ const state = { user: null, cfg: null, unread: 0, wiz: null, poll: null, open: n
 
 /* outline icon set (24px grid, stroke = currentColor) */
 const ICONS = {
+  share: '<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h14M19 12v7"/>', copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.4-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>', chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.7-.8L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5Z"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
@@ -336,12 +337,13 @@ async function customerHome() {
     ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b) => `<div class="card row mybarber" data-bid="${b.id}"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
         ${avatar(b)}
         <div class="grow" style="min-width:0"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div></div></a>
-        <div class="row" style="gap:6px"><a class="btn sm" href="#/book/${b.id}">Book</a><button class="mini red" data-rmb="${b.id}" aria-label="Remove ${esc(b.shop_name)} from My barbers">${ic('trash', 'sm')}</button></div></div>`).join('')
+        <div class="row" style="gap:6px"><a class="btn sm" href="#/book/${b.id}">Book</a>${b.share ? `<button class="mini" data-shb="${b.id}" aria-label="Share ${esc(b.shop_name)}">${ic('share', 'sm')}</button>` : ''}<button class="mini red" data-rmb="${b.id}" aria-label="Remove ${esc(b.shop_name)} from My barbers">${ic('trash', 'sm')}</button></div></div>`).join('')
       || '<div class="card center muted" id="nobarbers"><b>No barbers yet.</b><br><span class="small">Ask your barber for their TrimSlot link or QR code. Open it, then tap Add barber.</span></div>'}
     <form class="card" id="addlink" novalidate><label for="linkin">Add a barber with their link</label>
       <div class="row" style="gap:8px"><input id="linkin" class="grow" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the link you were sent"><button class="btn sm" type="submit">Open</button></div>
       <div id="linkerr" class="err small hidden" role="alert"></div></form>`;
   const lf = $('#addlink'); lf.onsubmit = (ev) => { ev.preventDefault(); const m = /([a-f0-9]{12,32})\s*$/i.exec($('#linkin').value.trim().replace(/[\/#?]+$/, '')); if (!m) { const er = $('#linkerr'); er.textContent = 'That does not look like a TrimSlot barber link. Ask the barber to send it again.'; er.classList.remove('hidden'); return; } location.hash = '#/b/' + m[1].toLowerCase(); };
+  document.querySelectorAll('[data-shb]').forEach((el) => el.onclick = () => { const b = bs.barbers.find((x) => x.id === Number(el.dataset.shb)); if (b) openShareSheet(b); });
   document.querySelectorAll('[data-rmb]').forEach((el) => el.onclick = async () => { const nm = el.closest('.mybarber').querySelector('h3').textContent.trim(); if (!confirm(`Remove ${nm} from My barbers? You can add them again with their link.`)) return; el.disabled = true; try { await api('/me/barbers/' + el.dataset.rmb, { method: 'DELETE' }); toast('Removed'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   document.querySelectorAll('[data-rb]').forEach((el) => el.onclick = () => {
     const [d, t] = el.dataset.rb.split('|');
@@ -510,18 +512,41 @@ async function profile(editing) {
   wireAccount(() => profile(true)); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
+/* ---------- sharing a private barber link (the barber's own, and a customer passing a barber on) ---------- */
+const canShare = () => typeof navigator.share === 'function';
+/** QR + link + Copy + Share. `ids` keeps the old element ids for the barber's own card. */
+const shareCardHtml = (o) => `<div class="card share" id="${o.id}"><div class="row" style="gap:14px;align-items:flex-start"><img class="qr" src="${esc(o.qr)}" alt="QR code for ${esc(o.name)}" width="132" height="132"><div class="grow" style="min-width:0"><b>${esc(o.title)}</b><p class="small muted" style="margin:4px 0 8px">${esc(o.hint)}</p><div class="linkbox small" data-linkbox>${esc(o.url)}</div></div></div>
+  <div class="btns" style="margin-top:12px"><button class="btn sm" type="button" data-copy>${ic('copy', 'sm')} Copy link</button>${canShare() ? `<button class="btn sm sec" type="button" data-share>${ic('share', 'sm')} Share</button>` : ''}${o.extra || ''}</div></div>`;
+async function copyLink(url, box) {
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); }
+  catch { if (box) { const rg = document.createRange(); rg.selectNodeContents(box); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(rg); } toast('Press and hold the link to copy it'); }
+}
+const wireShareCard = (root, url, name) => {
+  if (!root) return;
+  const c = root.querySelector('[data-copy]'); if (c) c.onclick = () => copyLink(url, root.querySelector('[data-linkbox]'));
+  const sh = root.querySelector('[data-share]'); if (sh) sh.onclick = () => navigator.share({ title: name + ' on TrimSlot', text: 'Book ' + name + ' on TrimSlot', url }).catch(() => {});
+};
+/** A small sheet from "My barbers": QR, link, Copy, Share. */
+function openShareSheet(b) {
+  const prev = document.activeElement, el = document.createElement('div'); el.className = 'scrim';
+  el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shs-t"><h3 id="shs-t" style="margin:0 0 4px">Share ${esc(b.shop_name)}</h3><p class="small muted" style="margin:0 0 12px">Anyone with this link can see the shop. Send it only to people you trust.</p>${shareCardHtml({ id: 'shs-card', qr: b.share.qr_url, name: b.shop_name, title: 'Link and QR code', hint: 'A friend can scan the code or open the link.', url: b.share.url })}<div class="btns cta"><button class="btn sec" type="button" id="shs-close">Close</button></div></div>`;
+  const close = () => { document.removeEventListener('keydown', onKey, true); el.remove(); if (prev && prev.focus) prev.focus(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  document.addEventListener('keydown', onKey, true);
+  el.addEventListener('click', (e) => { if (e.target === el) close(); });
+  document.body.appendChild(el); wireShareCard(el.querySelector('#shs-card'), b.share.url, b.shop_name);
+  const x = el.querySelector('#shs-close'); x.onclick = close; x.focus();
+}
+
 /* ---------- barber: profile hub ---------- */
 async function barberProfile() {
-  const [r, po, shr] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null), api('/barber/share').catch(() => null)]);
+  const [r, po] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null)]);
   const p = r.profile, u = state.user;
-  const shareCard = shr ? `<div class="card share" id="sharecard"><div class="row" style="gap:14px;align-items:flex-start"><img class="qr" src="${shr.qr_url}" alt="QR code of your shop link" width="132" height="132"><div class="grow" style="min-width:0"><b>Your private shop link</b><p class="small muted" style="margin:4px 0 8px">Customers only find your shop through this link or QR code. Send it to the people you want to book you.</p><div class="linkbox small" id="sharelink">${esc(shr.url)}</div></div></div>
-      ${shr.active ? '' : `<div class="warn small notice" style="margin-top:10px">${ic('warn', 'sm')}<div>The link starts working when TrimSlot approves your shop.</div></div>`}
-      <div class="btns" style="margin-top:12px"><button class="btn sm" id="copylink">Copy link</button><button class="btn sm sec hidden" id="sharebtn">Share</button><button class="btn sm sec" id="regen">Make a new link</button></div></div>` : '';
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
   app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
     <h2>My shop</h2>
-    ${shareCard}
-    <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
+    <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Share your shop<span class="sub">Your link and QR code</span></span><span class="end">${ic('right', 'sm')}</span></a>
+      <a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
@@ -534,11 +559,6 @@ async function barberProfile() {
     <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
-  if (shr) {
-    $('#copylink').onclick = async () => { try { await navigator.clipboard.writeText(shr.url); toast('Link copied'); } catch { const el = $('#sharelink'); const rg = document.createRange(); rg.selectNodeContents(el); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(rg); toast('Press and hold the link to copy it'); } };
-    if (navigator.share) { const sb = $('#sharebtn'); sb.classList.remove('hidden'); sb.onclick = () => navigator.share({ title: p.shop_name + ' on TrimSlot', text: 'Book ' + p.shop_name + ' on TrimSlot', url: shr.url }).catch(() => {}); }
-    $('#regen').onclick = async () => { if (!confirm('Make a new link? The old link and QR code stop working at once. Customers who already added you keep you in My barbers.')) return; const b = $('#regen'); b.disabled = true; try { await api('/barber/share/regenerate', { method: 'POST', body: {} }); toast('New link ready. Share the new QR code.'); barberProfile(); } catch (e) { fail(e); b.disabled = false; } };
-  }
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
@@ -624,6 +644,7 @@ async function barberPage(id, shareCode) {
   const queueTxt = q.serving ? `Chair in use · ${q.waiting} waiting today` : q.waiting ? `${q.waiting} booked today` : 'No bookings yet today';
   const rv = sh ? { reviews: data.reviews || [] } : data.rating && data.rating.count ? await api('/barbers/' + id + '/reviews?limit=5').catch(() => null) : null;
   const lo = data.loyalty;
+  const shareInfo = isCustomer ? (data.share_link || (sh && sh.url ? { url: sh.url, qr_url: sh.qr_url } : null)) : null;   // a customer who can see this barber can pass the link on
   app.innerHTML = `${state.user ? `<a href="${state.user.role === 'barber' ? '#/profile' : '#/'}" class="back">${ic('back', 'sm')} ${state.user.role === 'barber' ? 'Profile' : 'My barbers'}</a>` : ''}
     ${sh && state.user?.role === 'barber' ? `<div class="info small notice">${ic('ticket', 'sm')}<div>This is how customers see your shop when they open your link.</div></div>` : ''}
     <div class="row" style="align-items:flex-start">${avatar(barber, 'lg')}<div class="grow"><h1>${esc(barber.shop_name)}</h1>${data.rating ? `<div style="margin:2px 0">${ratingChip(data.rating) || '<span class="small muted">No reviews yet</span>'}</div>` : ''}<div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
@@ -641,7 +662,9 @@ async function barberPage(id, shareCode) {
     ${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
     <h2>Opening hours</h2>
     <div class="card"><table class="hours">${hoursRows}</table>${brk ? `<div class="small muted" style="margin-top:8px">Break ${t12(brk.break_start)} – ${t12(brk.break_end)}</div>` : ''}</div>
+    ${isCustomer && shareInfo ? `<h2>Share this barber</h2>${shareCardHtml({ id: 'bshare', qr: shareInfo.qr_url, name: barber.shop_name, title: 'Send this barber to a friend', hint: 'Anyone with this link can see the shop. Send it only to people you trust.', url: shareInfo.url })}` : ''}
     ${!state.user && !sh ? `<div class="btns" style="margin-top:16px"><a class="btn" href="#/signup?role=customer">Sign up to book</a></div>` : ''}`;
+  if (shareInfo) wireShareCard($('#bshare'), shareInfo.url, barber.shop_name);
   const ab = $('#addbtn'); if (ab) ab.onclick = async () => { ab.disabled = true; try { await api(`/b/${shareCode}/add`, { method: 'POST' }); toast('Added to My barbers'); ab.className = 'btn sec'; ab.innerHTML = ic('check', 'sm') + ' In My barbers'; } catch (e) { fail(e); ab.disabled = false; } };
   document.querySelectorAll('[data-buy]').forEach((el) => el.onclick = () => buyPlan(Number(el.dataset.buy), el));
   const fb = $('#favbtn'); if (fb) fb.onclick = async () => { const on = fb.getAttribute('aria-pressed') !== 'true'; fb.disabled = true; try { await api(`/barbers/${id}/favourite`, { method: 'POST', body: { on } }); fb.classList.toggle('faved', on); fb.setAttribute('aria-pressed', String(on)); toast(on ? 'Added to favourites' : 'Removed from favourites'); } catch (e) { fail(e); } fb.disabled = false; };
@@ -1110,13 +1133,14 @@ function wirePlans(po, guard) {
 const acc = (id, icon, title, sub, body) => `<details class="acc" data-k="${id}" ${state.open.has(id) ? 'open' : ''}><summary><span class="ico">${ic(icon)}</span><span>${title}<span class="sub">${sub}</span></span><span class="chev">${ic('chev')}</span></summary><div class="body">${body}</div></details>`;
 
 async function settings() {
-  const r = await api('/barber/profile'); const po = null;
+  const [r, shr] = await Promise.all([api('/barber/profile'), api('/barber/share').catch(() => null)]); const po = null;
   const p = r.profile;
   const needsSetup = state.setup ? !state.setup.done : r.services.length === 0; // once started, stay in the flow until "Finish setup"
   if (needsSetup) return setupFlow(r);
   const activeDays = r.schedule.filter((d) => d.is_working);
   const hoursSub = activeDays.length ? `${activeDays.length} days · ${t12(activeDays[0].start)}–${t12(activeDays[0].end)}` : 'No working days';
   app.innerHTML = `${pendingBanner()}${payoutBanner()}<a href="#/profile" class="back">${ic('back', 'sm')} Profile</a><h1>Shop settings</h1><p class="muted">Shop details, services and opening hours.</p><div id="msg"></div>
+    ${shr ? `<h2 id="shareh">Share your shop</h2>${shareCardHtml({ id: 'sharecard', qr: shr.qr_url, name: p.shop_name, title: 'Your private shop link', hint: 'Customers only find your shop through this link or QR code. Send it to the people you want to book you.', url: shr.url, extra: '<button class="btn sm sec" type="button" id="regen">Make a new link</button>' })}${shr.active ? '' : `<div class="warn small notice" style="margin-top:10px">${ic('warn', 'sm')}<div>The link starts working when TrimSlot approves your shop.</div></div>`}` : ''}
     ${acc('profile', 'store', 'Shop profile', 'Name, photo, location, about', `<form id="pf">${photoBlock(p)}
       <label>Your name</label><input name="name" value="${esc(state.user.name)}"><label>Shop name</label><input name="shop_name" value="${esc(p.shop_name)}">
       <label>Location</label><input name="location" value="${esc(p.location || '')}"><label>About</label><textarea name="about" rows="3">${esc(p.about || '')}</textarea>
@@ -1129,6 +1153,10 @@ async function settings() {
   const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const refreshMe = async () => { const me = await api('/auth/me'); state.user = me.user; };
   const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { const out = await fn(ev); await refreshMe(); const extra = out && out.notified_bookings ? ` We told ${out.notified_bookings} customer${out.notified_bookings === 1 ? '' : 's'}.` : ''; await settings(); msg(okmsg + extra); } catch (e) { msg(e.message, true); } };
+  if (shr) {
+    wireShareCard($('#sharecard'), shr.url, p.shop_name);
+    $('#regen').onclick = async () => { if (!confirm('Make a new link? The old link and QR code stop working at once. Customers who already added you keep you in My barbers.')) return; const b = $('#regen'); b.disabled = true; try { await api('/barber/share/regenerate', { method: 'POST', body: {} }); toast('New link ready. Share the new QR code.'); settings(); } catch (e) { fail(e); b.disabled = false; } };
+  }
   wirePhoto(p, () => settings());
   wireDayRows(app);
   $('#pf').onsubmit = guard(() => api('/barber/profile', { method: 'PUT', body: Object.fromEntries(new FormData($('#pf'))) }), 'Profile saved');
