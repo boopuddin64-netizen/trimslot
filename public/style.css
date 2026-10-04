@@ -465,3 +465,11 @@ a.crow{text-decoration:none}
   .topbar a.txt{display:inline-flex;align-items:center;min-height:44px;padding:0 8px}
   .seg button{min-height:40px}
 }
+
+/* ---- press feedback (visual only; the haptics setting does not change it). Added with public/haptics.js ---- */
+:is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *){transition:transform .1s ease-out,background-color .15s,border-color .15s,color .15s,opacity .15s}
+:is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *):active{transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){
+  :is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *){transition:none}
+  :is(.btn,.chip,.svc,.tabs a,a.card,a.lrow,button.lrow,.seg button):not(:disabled):not([aria-disabled=true]):not(.crop *):not(table *):active{transform:none;opacity:.8}
+}

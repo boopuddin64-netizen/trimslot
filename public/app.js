@@ -94,7 +94,7 @@ async function apiCall(path, opts = {}) {
 window.addEventListener('offline', () => toast("You are offline. Your changes will not save until you go online.", true));
 window.addEventListener('online', () => toast('Back online'));
 function toast(msg, bad) {
-  const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); if (bad && window.haptics) haptics.error();
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
 const emailCheckOn = () => !!(state.cfg && state.cfg.email_verification);   // email checking is paused unless the server says it is on
@@ -459,7 +459,7 @@ async function bookWizard(barberId) {
             const p = await api(`/bookings/${r.booking.id}/pay`, { method: 'POST' });
             location.href = p.authorization_url; return;
           }
-          toast('Booking confirmed'); location.hash = '#/booking/' + r.booking.id;
+          toast('Booking confirmed'); if (window.haptics) haptics.success(); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
           if (e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
           if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(e.message); } else draw(e.message);
@@ -663,6 +663,7 @@ const expTxt = (iso) => dateLabel(String(iso).slice(0, 10));
 async function wallet(planResult, ppId) {
   if (planResult && ppId && !['processed', 'already_processed', 'refund_due', 'checked', 'amount_mismatch'].includes(planResult)) {
     const r = await confirmReturn('plan', ppId, 'Checking your plan payment…');
+    if ((r === 'processed' || r === 'already_processed') && window.haptics) haptics.success();
     history.replaceState(null, '', '#/wallet?plan=' + (r === 'processed' || r === 'already_processed' || r === 'refund_due' || r === 'amount_mismatch' ? r : 'checked'));
     planResult = new URLSearchParams(location.hash.split('?')[1] || '').get('plan');
   }
@@ -739,6 +740,7 @@ async function bookingDetail(id, payResult, quiet) {
   const { booking: b } = await api('/bookings/' + id);
   if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch'].includes(payResult)) {   // back from Paystack (or Paystack was slow to answer): ask again before showing anything
     const r = await confirmReturn('booking', id, 'Checking your payment…');
+    if ((r === 'processed' || r === 'already_processed') && window.haptics) haptics.success();
     history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : PAY_TERMINAL.includes(r) ? r : 'checked'));
     return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'), true);
   }

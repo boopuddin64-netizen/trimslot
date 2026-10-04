@@ -26,7 +26,8 @@
     "account-ui": "node scripts/account-ui.mjs",
     "plans-ui": "node scripts/plans-ui.mjs",
     "share-ui": "node scripts/sharelinks-ui.mjs",
-    "avatar-ui": "tsx scripts/avatar-crop-run.ts"
+    "avatar-ui": "tsx scripts/avatar-crop-run.ts",
+    "haptics-ui": "node scripts/haptics-ui.mjs"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
