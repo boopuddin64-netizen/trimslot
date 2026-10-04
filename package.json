@@ -19,6 +19,7 @@
     "migrate": "tsx scripts/migrate.ts",
     "vercel:local": "tsx scripts/vercel-local.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
+    "contact-ui": "tsx scripts/contact-ui-run.ts",
     "contrast": "node scripts/contrast-check.mjs",
     "compact-ui": "node scripts/compact-ui.mjs",
     "rows": "node scripts/rows-per-screen.mjs",
