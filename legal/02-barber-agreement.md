@@ -8,7 +8,7 @@
 <li>You run your own business. You are not a TrimSlot worker.</li>
 <li>We check every new shop first. Customers can see and book your shop only after we approve it. We can suspend or remove a shop that breaks the rules.</li>
 <li>Keep your shop clean and safe. Follow the law. You pay your own taxes.</li>
-<li>To get paid online, add your bank account in the app. Paystack sends online payments to your bank account. Until you do this, customers can only pay at your shop.</li>
+<li>To get paid online, add your bank account in the app. Online card payments are paid out to your bank account through our payment provider. Until you do this, customers can only pay at your shop.</li>
 <li>When a customer pays you at the shop, you record it in the app. TrimSlot adds its service charge for that booking to a balance you owe. You can see the balance in the app.</li>
 <li>If you mark a customer who paid as a no-show, they get one credit with you. You must give them a service for that credit.</li>
 </ul>
@@ -74,7 +74,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 7. Fees
 
-7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. Paystack sends the rest to your bank account after two things are taken from your price: a **Paystack fee** (your part of the payment-processing cost) and **TrimSlot's service charge**. So: *your payout = your price − the Paystack fee − TrimSlot's service charge*. The exact amounts for every booking are shown in the app, in your bookings and in your earnings screen. They are worked out when the customer pays and do not change afterwards.
+7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. the rest is paid to your payout account, through our payment provider, after two things are taken from your price: a **Paystack fee** (your part of the payment-processing cost) and **TrimSlot's service charge**. So: *your payout = your price − the Paystack fee − TrimSlot's service charge*. The exact amounts for every booking are shown in the app, in your bookings and in your earnings screen. They are worked out when the customer pays and do not change afterwards.
 
 7.1.1 **TrimSlot's service charge** is set by TrimSlot and shown in the app and in your earnings screen. We may agree a different charge with you in writing or in the app. The charge is never more than the price.
 
@@ -100,19 +100,19 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 8.5 If you owe money and stop using TrimSlot, you must pay what you owe within [14] days of our written request, and we may recover it through the courts. [LAWYER: enforceability, interest, recovery.]
 
-## 9. Payouts, bank account and Paystack subaccount
+## 9. Payouts and your payout account
 
-9.1 To receive online payments you must set up a **payout account** in the app: choose your bank and enter your 10-digit account number. We create a **Paystack subaccount** in your name. Online payments are split by Paystack when the customer pays: your share is paid into that bank account by Paystack, on Paystack's settlement schedule, and TrimSlot's charge goes to TrimSlot. **The app does not receive or hold your share of the customer's money.** Until payouts are set up, customers cannot pay you online and can only choose Pay on arrival at your shop.
+9.1 To receive online payments you must set up a **payout account** in the app: choose your bank and enter your 10-digit account number. Card payments are paid out to your linked payout account through our payment provider, after any deductions shown in your earnings screen, on the payment provider's settlement schedule. **The app does not receive or hold your share of the customer's money.** Until payouts are set up, customers cannot pay you online and can only choose Pay on arrival at your shop.
 
-9.2 We look up the **account name** with Paystack to check that the account belongs to you. If the lookup is unavailable (it sometimes is, especially in Paystack test mode), you may type the account name yourself. It will then be marked **"name not verified"**. **You confirm that the account is yours (or your business's) and that the name you type is exactly the name on the account.** Paystack also checks the account when it creates the subaccount.
+9.2 We check the **account name** with our payment provider to confirm that the account belongs to you. If the check is unavailable (it sometimes is), you may type the account name yourself. It will then be marked **"name not verified"**. **You confirm that the account is yours (or your business's) and that the name you type is exactly the name on the account.**
 
-9.3 We store only the bank name, the **last 4 digits** of the account number, the account name and the Paystack subaccount code — not the full number. Paystack holds the full details.
+9.3 We store only the bank name, the **last 4 digits** of the account number, the account name and a payout account reference, not the full number. Our payment provider holds the full details.
 
-9.4 You are responsible for entering correct details. If money is sent to a wrong account because of what you entered, TrimSlot is not responsible for recovering it. If you change your bank details, we check the account name again and create a new Paystack subaccount; the change applies to payments made after it, not to earlier ones.
+9.4 You are responsible for entering correct details. If money is sent to a wrong account because of what you entered, TrimSlot is not responsible for recovering it. If you change your bank details, we check the account name again; the change applies to payments made after it, not to earlier ones.
 
-9.5 Paystack's terms apply to settlements. Delays, holds, reversals, chargebacks, disputes and payment-provider fees are governed by Paystack's rules; TrimSlot is not liable for Paystack's acts or delays. **The app has no feature that takes money back from your balance or later payouts for a chargeback or a refund.** How Paystack treats your share when a split payment is refunded or charged back is set by Paystack and your bank, and we do not promise any particular result. [LAWYER/OWNER: decide whether TrimSlot should have a right to recover a chargeback or refund from a barber who caused it, and check with Paystack how a refunded split payment is reversed; see questions 17 and 55.]
+9.5 The payment provider's terms apply to settlements. Delays, holds, reversals, chargebacks, disputes and provider fees are governed by the provider's rules; TrimSlot is not liable for the provider's acts or delays. **The app has no feature that takes money back from your balance or later payouts for a chargeback or a refund.** How your payout is treated when a payment is refunded or charged back is set by the provider and your bank, and we do not promise any particular result. [LAWYER/OWNER: decide whether TrimSlot should have a right to recover a chargeback or refund from a barber who caused it, and check with Paystack how a refunded payment is reversed; see questions 17 and 55.]
 
-9.6 You may need to complete Paystack's verification (KYC) for your business. Paystack may refuse or close your subaccount; we are not responsible for its decisions.
+9.6 You may need to complete the payment provider's verification (KYC) for your business. The provider may refuse or close your payout account; we are not responsible for its decisions.
 
 ## 10. Refunds, no-shows and credits — your part
 

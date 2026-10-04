@@ -92,6 +92,8 @@ NOTE = re.compile(r"\s*\[(?:LAWYER|OWNER)[^\]]*\]")   # drafting notes for the o
 def web_page(md_name, page, title):
     body = md2html(NOTE.sub("", strip_first_quote((ROOT / md_name).read_text(encoding="utf-8")).split("\n## Open questions for the lawyer")[0]))
     body = unlink_unpublished(mark_placeholders(fill_tokens(body, True)))
+    leak = re.search(r"subaccount|\bsplit(?:s|ting)?\b|commission factor|three ways|netting", re.sub(r"<[^>]+>", " ", body), re.I)
+    if leak: raise SystemExit("public page %s mentions an internal payment mechanic (%r): reword it" % (page, leak.group(0)))
     body = re.sub(r"<table>", '<div class="tblwrap"><table>', body).replace("</table>", "</table></div>")
     body = re.sub(r"<h1>.*?</h1>", lambda m: m.group(0) + BANNER, body, count=1, flags=re.S)
     foot = ('<footer class="foot"><a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/refunds.html">Refunds</a> · '
