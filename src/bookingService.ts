@@ -356,7 +356,7 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     await setStatus(t, b, 'CANCELLED', { payment_status: payStatus, cancelled_at: now, cancelled_by: 'customer', hold_expires_at: null });
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'CANCELLED', {
       payment_status: payStatus,
-      ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : note ? { note } : {}),
+      ...(refundDue ? { note: 'Refund waiting for approval' } : note ? { note } : {}),
     });
     if (!abandoned) await notify(t, await barberUserId(t, b.barber_id), 'BOOKING_CANCELLED', 'Booking cancelled', `${await customerName(t, customerId)} cancelled ${b.service_name} on ${fmtWhen(b.date, b.start_min)}. The time is free again.`, b.id);
     await notify(t, customerId, abandoned ? 'BOOKING_INCOMPLETE' : 'BOOKING_CANCELLED', abandoned ? 'Booking incomplete' : 'Booking cancelled', abandoned ? 'You left before you paid, so this booking is cancelled. If any money left your account, it will be returned to you.' : `Your booking is cancelled. The time is free again. ${note}`.trim(), b.id);
@@ -457,7 +457,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         if (entitlement) await restoreEntitlement(t, b);
         const refundDue = credit ? await openRefundRequest(t, b, 'barber could not serve the booking') : null;
         await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'REFUND_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
-        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : entitlement ? { note: 'plan session / credit returned' } : {}) });
+        await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(refundDue ? { note: 'Refund waiting for approval' } : entitlement ? { note: 'plan session / credit returned' } : {}) });
         await notify(t, b.customer_id, 'NOT_SERVED', "We could not serve you", `Sorry. Your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` We got your refund request for ${naira(b.price_kobo + (b.booking_fee_kobo || 0))}. We will approve it soon.` : entitlement ? ' We gave your session back.' : ''}`, b.id);
         break;
       }

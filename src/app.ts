@@ -111,7 +111,7 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
       : { mode: 'ONLINE', price_kobo: b.price_kobo, barber_fee_kobo: b.barber_fee_kobo, platform_charge_kobo: b.platform_charge_kobo, payout_kobo: b.payout_kobo };
     else out.money = { mode: 'ONLINE', price_kobo: b.price_kobo, booking_fee_kobo: b.booking_fee_kobo, total_kobo: b.price_kobo + b.booking_fee_kobo };
   } else if (b.payment_option === 'ON_ARRIVAL') {
-    if (opts.forBarber) { const f = Number((await getSettingsCached(db)).commission_factor); out.money = { mode: 'ON_ARRIVAL', price_kobo: b.price_kobo, platform_charge_kobo: b.platform_charge_kobo, commission_owed_kobo: Math.round(b.platform_charge_kobo * f), commission_percent: Math.round(f * 100) }; }
+    if (opts.forBarber) { const f = Number((await getSettingsCached(db)).commission_factor); out.money = { mode: 'ON_ARRIVAL', price_kobo: b.price_kobo, platform_charge_kobo: b.platform_charge_kobo, commission_owed_kobo: Math.round(b.platform_charge_kobo * f) }; }
     else out.money = { mode: 'ON_ARRIVAL', price_kobo: b.price_kobo, booking_fee_kobo: 0, total_kobo: b.price_kobo };
   }
   // Customer-facing only: an unpaid Pay-now booking that expired/was abandoned is "Incomplete" (no credit/refund implications).
@@ -161,6 +161,18 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     if (st.feature_barber_notes && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) { const ins = await getCustomerInsights(db, b.barber_id, b.customer_id); out.customer.note = ins.note || null; out.customer.usual = ins.usual || null; }
   }
   return out;
+}
+
+/** What a barber may see of a booking's audit trail: only the steps of the visit itself, and only the short note / reason text. Payment problems, refunds, staff and
+ *  system details (amounts, times, settings, ledger) stay with the staff. */
+const BARBER_TIMELINE_ACTIONS = new Set(['BOOKED', 'PAYMENT_CONFIRMED', 'CHECKED_IN', 'MARKED_PRESENT', 'STARTED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'NOT_SERVED', 'PAYMENT_RECORDED', 'SKIPPED', 'WAITING_FOR_CUSTOMER', 'RESCHEDULED', 'CREDIT_ISSUED']);
+export function barberTimeline(rows: any[]) {
+  return rows.filter((r) => BARBER_TIMELINE_ACTIONS.has(r.action)).map((r) => {
+    const d = r.details && typeof r.details === 'object' ? r.details : {};
+    const keep: Record<string, string> = {};
+    for (const k of ['note', 'reason']) if (typeof d[k] === 'string' && !/\d+\s?h\b|hours?\b|kobo|₦/i.test(d[k])) keep[k] = d[k].slice(0, 200);
+    return { id: r.id, action: r.action, actor_role: r.actor_role, actor_name: r.actor_name, created_at: r.created_at, details: keep };
+  });
 }
 
 export function createApp(db: Db) {
@@ -556,7 +568,7 @@ export function createApp(db: Db) {
   barberR.get('/ledger', wrap(async (req, res) => {
     const st = await getSettings(db); const id = bid(req);
     const entries = await db.many(`SELECT l.id, l.booking_id, l.kind, l.amount_kobo, l.remaining_kobo, l.status, l.note, l.created_at, l.settled_at FROM commission_ledger l WHERE l.barber_id=$1 ORDER BY l.id DESC LIMIT 100`, [id]);
-    res.json({ enabled: st.commission_enabled, owed_kobo: await outstandingKobo(db, id), blocked: await ledgerBlocked(db, id, st), factor: st.commission_factor, entries });
+    res.json({ enabled: st.commission_enabled, owed_kobo: await outstandingKobo(db, id), blocked: await ledgerBlocked(db, id, st), entries });
   }));
   /** A rejected shop (or one asked for more info) fixes things and goes back to the review queue. */
   barberR.post('/resubmit', wrap(async (req, res) => {
@@ -739,8 +751,8 @@ export function createApp(db: Db) {
   };
   barberR.get('/bookings/:id', wrap(async (req, res) => {
     const b = await ownedBarberBooking(req);
-    const timeline = await db.many(`SELECT a.id, a.action, a.actor_role, a.details, a.created_at, u.name AS actor_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id WHERE a.booking_id=$1 ORDER BY a.id`, [b.id]);
-    res.json({ booking: await decorate(db, b, { forBarber: true }), timeline });
+    const rows = await db.many<any>(`SELECT a.id, a.action, a.actor_role, a.details, a.created_at, u.name AS actor_name FROM audit_log a LEFT JOIN users u ON u.id=a.actor_user_id WHERE a.booking_id=$1 ORDER BY a.id`, [b.id]);
+    res.json({ booking: await decorate(db, b, { forBarber: true }), timeline: barberTimeline(rows) });
   }));
   barberR.post('/bookings/:id/:action', wrap(async (req, res) => {
     const action = req.params.action as BarberAction;

@@ -363,7 +363,7 @@ function custMoney(b) {
 function barberMoney(b) {
   const m = b.money; if (!m) return '';
   if (m.mode === 'ONLINE' && m.payout_kobo != null) return `<div class="money" aria-label="Your earnings">${mrow('Price', naira(m.price_kobo))}${m.barber_fee_kobo ? mrow('Paystack fee', '−' + naira(m.barber_fee_kobo)) : ''}${mrow('TrimSlot charge', '−' + naira(m.platform_charge_kobo))}${mrow('You receive', naira(m.payout_kobo), 'tot')}</div>`;
-  if (m.mode === 'ON_ARRIVAL' && m.platform_charge_kobo) return `<div class="money" aria-label="Your earnings">${mrow('Customer pays you', naira(m.price_kobo))}${mrow('TrimSlot charge', naira(m.platform_charge_kobo))}${mrow('Added to your balance (' + m.commission_percent + '%)', naira(m.commission_owed_kobo), 'tot')}</div>`;
+  if (m.mode === 'ON_ARRIVAL' && m.platform_charge_kobo) return `<div class="money" aria-label="Your earnings">${mrow('Customer pays you', naira(m.price_kobo))}${mrow('TrimSlot charge', naira(m.platform_charge_kobo))}${mrow('Added to your balance', naira(m.commission_owed_kobo), 'tot')}</div>`;
   return '';
 }
 function bookingCard(b) {
