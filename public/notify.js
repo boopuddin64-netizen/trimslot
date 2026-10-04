@@ -58,7 +58,7 @@ const Notify = (() => {
   function iconFor(type) {
     if (/^(YOUR_TURN|YOURE_NEXT|QUEUE|LEAVE_NOW|REMINDER|BARBER_MESSAGE)/.test(type)) return 'clock';
     if (/^(PAYMENT|PLAN_|CREDIT|LOYALTY|REFUND)/.test(type)) return /^PAYMENT/.test(type) ? 'card' : 'ticket';
-    if (/^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW)/.test(type)) return 'warn';
+    if (/^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|HELP_REQUEST|HELP_ESCALATED)/.test(type)) return 'warn';
     if (/^(REVIEW|WAITLIST)/.test(type)) return 'check';
     if (/^(BOOKING|NEW_BOOKING|CUSTOMER_ARRIVED)/.test(type)) return 'cal';
     return 'bell';

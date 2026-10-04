@@ -5,6 +5,10 @@ import path from 'path';
 export const CANCEL_CUTOFF_MIN = 30;
 export const SLOT_STEP_MIN = 15;
 export const MAX_ADVANCE_DAYS = 30;
+/** An "Emergency, please help" request nobody answered after this many minutes is flagged to staff. Internal: never shown on public pages. */
+export const HELP_ESCALATE_MIN = 15;
+/** A customer may move one booking this many times (keeps the barber's day stable). */
+export const RESCHEDULE_MAX = 3;
 export const TIMEZONE = 'Africa/Lagos';
 export const MOCK_SECRET = 'mock_secret_key_not_for_real_use';
 

@@ -11,6 +11,7 @@ import { feeSettingsOf, offAppBreakdown, onlineBreakdown } from './fees';
 import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 import { logger } from './logger';
+import { answerHelpOnAction } from './help';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
 export interface BookingRow {
@@ -465,6 +466,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         break;
       }
     }
+    await answerHelpOnAction(t, b, action);   // an open "Emergency, please help" request counts as answered when the barber acts on the booking
     await refreshQueueNotifications(t, b.barber_id, b.date);
     return (await getBooking(t, b.id))!;
   });

@@ -9,9 +9,10 @@ import { autoApproveDueRefunds } from './refundFlow';
 import { flushAdminPush } from './adminNotify';
 import { runRetentionIfDue } from './retention';
 import { getSettings } from './plans';
+import { escalateUnansweredHelp } from './help';
 
 /** Periodic housekeeping, safe to run at any frequency and from several callers at once (all statements are idempotent). */
-export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked: number; confirmed: number; refunds: number }; smart: { reminders: number; waitlist: number }; push: { claimed: number; sent: number; removed: number }; ledger_reminders: number; holds_released: number; rate_limit_rows_purged: number; expired_events_purged: number; refunds_retried: number; refunds_auto_approved: number; admin_push: { claimed: number; sent: number; removed: number; held: boolean }; retention: unknown }> {
+export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked: number; confirmed: number; refunds: number }; smart: { reminders: number; waitlist: number }; push: { claimed: number; sent: number; removed: number }; ledger_reminders: number; holds_released: number; help_escalated: number; rate_limit_rows_purged: number; expired_events_purged: number; refunds_retried: number; refunds_auto_approved: number; admin_push: { claimed: number; sent: number; removed: number; held: boolean }; retention: unknown }> {
   const holds_released = await expireHolds(db, {}, { budgetMs: 25000 });
   // A payment whose webhook never reached us (and whose browser was closed) is found here, within 24 hours: confirmed if the time is still free, otherwise refunded.
   const reconciled = await reconcileRecentPayments(db).catch(() => ({ checked: 0, confirmed: 0, refunds: 0 }));
@@ -37,8 +38,9 @@ export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked
   await db.query(`DELETE FROM payments WHERE plan_purchase_id IN (${stale})`).catch(() => {});
   await db.query(`DELETE FROM plan_purchases WHERE id IN (${stale})`).catch(() => {});
   const ledger_reminders = await db.tx((t) => sendLedgerReminders(t)).catch(() => 0);
+  const help_escalated = await escalateUnansweredHelp(db).catch(() => 0);
   const smart = await runSmartTick(db, true).catch(() => ({ reminders: 0, waitlist: 0 }));
   const push = await flushPush(db, 200).catch(() => ({ claimed: 0, sent: 0, removed: 0 }));
   const admin_push = await flushAdminPush(db, 50).catch(() => ({ claimed: 0, sent: 0, removed: 0, held: false }));
-  return { payments_reconciled: reconciled, smart, push, ledger_reminders, refunds_retried, refunds_auto_approved: auto.approved, admin_push, retention, holds_released, rate_limit_rows_purged: rl.rowCount, expired_events_purged: ev.rowCount };
+  return { payments_reconciled: reconciled, smart, push, ledger_reminders, refunds_retried, refunds_auto_approved: auto.approved, admin_push, retention, holds_released, help_escalated, rate_limit_rows_purged: rl.rowCount, expired_events_purged: ev.rowCount };
 }

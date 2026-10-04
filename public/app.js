@@ -693,6 +693,14 @@ async function confirmReturn(kind, id, title) {
   return last ? last.result : 'not_paid';
 }
 /** Call + WhatsApp buttons. `c` has tel_url / whatsapp_url from the server (links are built there). */
+const helpHtml = (b) => {
+  const h = b.help;
+  if (h && h.status === 'OPEN') return `<div class="${h.escalated ? 'warn' : 'info'} small notice" id="helpstatus">${ic('clock', 'sm')}<div><b>${h.escalated ? 'Your barber has not answered yet.' : 'We told your barber. Waiting for an answer.'}</b><div>${h.escalated ? 'We told the TrimSlot team. They will help you. You can also call your barber.' : 'You can also call your barber.'}</div><div class="muted">You wrote: “${esc(h.note)}”</div></div></div>`;
+  if (h && h.status === 'COME_LATER') return `<div class="ok small" id="helpstatus">${ic('check', 'sm')} <b>Your barber will wait for you.</b> Come as soon as you can.</div>`;
+  if (h && h.status === 'RELEASED') return `<div class="info small notice" id="helpstatus">${ic('check', 'sm')}<div><b>Your barber released this booking.</b> See below what happens with your money.</div></div>`;
+  if (b.can_ask_help) return `<div class="card" id="helpbox"><b>Emergency, please help</b><p class="small muted" style="margin:4px 0 8px">Use this only if something urgent came up. Your barber gets an urgent message. Your barber decides.</p><textarea id="helpnote" rows="2" maxlength="200" placeholder="What happened? (a few words)"></textarea><div class="btns" style="margin-top:8px"><button class="btn sm red" id="helpsend">Send to my barber</button></div></div>`;
+  return '';
+};
 const contactBtns = (c) => c && c.tel_url ? `<div class="btns contact-btns" style="margin-top:8px"><a class="btn sm" href="${esc(c.tel_url)}">${ic('phone', 'sm')} Call</a><a class="btn sm sec" href="${esc(c.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${ic('chat', 'sm')} WhatsApp</a></div>` : '';
 async function bookingDetail(id, payResult, quiet) {
   const { booking: b } = await api('/bookings/' + id);
@@ -730,6 +738,7 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button shows on the day of your visit.</div>` : ''}
     ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
     ${locked ? `<div class="info small notice" id="lockedbox">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you do not come and your barber marks a no-show, you get no refund. If you paid, you get 1 credit with this barber instead.${b.barber_contact ? `<div style="margin-top:8px"><b>Something urgent? Call or WhatsApp your barber.</b> Your barber decides what happens to the booking.</div>${contactBtns(b.barber_contact)}` : ''}</div></div>` : ''}
+    ${helpHtml(b)}
     ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time, and we found no payment for it. If you still see a charge, tap “Report a problem” and we will sort it out.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
     <div class="btns" style="margin-top:14px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} We did not refund this session, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
@@ -742,6 +751,7 @@ async function bookingDetail(id, payResult, quiet) {
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
   on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); const done = r.booking.status === 'CONFIRMED'; toast(done ? 'Payment confirmed' : ['slot_taken', 'late_refund', 'refund_due'].includes(r.result) ? 'That time was taken. We are refunding you' : r.result === 'duplicate_refund' ? 'Already paid. We are returning the extra payment' : r.result === 'amount_mismatch' ? 'Payment received. Our team will check it' : 'We have not got your payment yet', !done && r.result !== 'duplicate_refund'); route(); });
+  on('#helpsend', async () => { const note = ($('#helpnote').value || '').trim(); if (note.length < 3) throw new Error('Write a few words about what happened.'); await api(`/bookings/${id}/help`, { method: 'POST', body: { note } }); toast('We told your barber'); route(); });
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) throw new Error('Not cancelled'); await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
@@ -779,7 +789,7 @@ async function barberBalance() {
 }
 
 /* ---------- notifications ---------- */
-const NOTIF_TONE = (t) => /^(YOUR_TURN|YOURE_NEXT|LEAVE_NOW|WAITLIST_OPEN)$/.test(t) ? 'hot' : /^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|BOOKING_CANCELLED)/.test(t) ? 'warn' : /^(PLAN_|CREDIT|LOYALTY|PAYMENT|REVIEW)/.test(t) ? 'money' : '';
+const NOTIF_TONE = (t) => /^(YOUR_TURN|YOURE_NEXT|LEAVE_NOW|WAITLIST_OPEN|HELP_REQUEST)$/.test(t) ? 'hot' : /^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|BOOKING_CANCELLED)/.test(t) ? 'warn' : /^(PLAN_|CREDIT|LOYALTY|PAYMENT|REVIEW)/.test(t) ? 'money' : '';
 const agoTxt = (iso) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 1 ? 'Just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : lagosStamp(iso).replace(/, \d+:\d+:\d+/, ',').replace(/:\d\d (?=[AP]M)/, ' '); };
 const notifItem = (n) => `<a class="nitem ${n.is_read ? '' : 'unread'} ${NOTIF_TONE(n.type)}" href="${Notify.urlOf(n)}" data-nid="${n.id}"><span class="nico">${ic(Notify.iconFor(n.type))}</span><span class="nbody"><span class="ntop"><b>${esc(n.title)}</b><span class="small muted">${agoTxt(n.created_at)}</span></span><span class="small ntext">${esc(n.body)}</span></span>${n.is_read ? '' : '<i class="udot" aria-label="unread"></i>'}</a>`;
 async function notifications() {
@@ -844,7 +854,9 @@ async function barberToday(keepScroll) {
     <div class="small muted" style="margin:-2px 0 8px">${sm.yesterday.completed ? `Yesterday: ${sm.yesterday.completed} cuts · ${naira(sm.yesterday.earned)}` : 'No cuts yesterday'}${sm.rating && sm.rating.count ? ` · ${ratingChip(sm.rating)}` : ''}${sm.waitlisted ? ` · ${sm.waitlisted} on waitlist` : ''}</div>` : '';
   const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you are late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Move everyone's start time later</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
       <div class="small muted" style="margin:12px 0 6px">Or send a message to everyone still waiting</div><div class="btns">${tp.templates.map((t) => `<button class="btn sm sec" data-tpl="${t.key}">${esc(t.label)}</button>`).join('')}</div></div></details>` : '';
-  app.innerHTML = `${pendingBanner()}${payoutBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
+  const urgent = [d.now_serving, d.next, ...d.waiting].filter((x) => x && x.help);
+  const urgentHtml = urgent.map((x) => `<a class="notice warn" role="alert" href="#/b/${x.id}" style="text-decoration:none;color:inherit">${ic('warn')}<div><b>Urgent: ${esc(x.customer.name)} needs help</b><div class="small">“${esc(x.help.note)}” Tap to answer.</div></div></a>`).join('');
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}${urgentHtml}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
     ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else is in line.</p>'}
@@ -883,7 +895,11 @@ async function barberUpcoming() {
 const ACTION_LABEL = { BOOKED: 'Booked', PAYMENT_CONFIRMED: 'Payment confirmed', CHECKED_IN: 'Customer checked in ("I\'m Here")', MARKED_PRESENT: 'Barber marked present', STARTED: 'Service started', COMPLETED: 'Service completed', CANCELLED: 'Cancelled', NO_SHOW: 'Marked no-show', NOT_SERVED: 'Marked not served', PAYMENT_RECORDED: 'Payment recorded', SKIPPED: 'Skipped (moved back in line)', WAITING_FOR_CUSTOMER: 'Barber is waiting for the customer', HOLD_EXPIRED: 'Payment time ran out', CREDIT_ISSUED: 'Session credit given (no refund)', PAYMENT_SLOT_TAKEN: 'Payment came after someone took the time', LATE_PAYMENT: 'Late payment marked', DUPLICATE_PAYMENT: 'Double payment marked' };
 async function barberBooking(id) {
   const { booking: b, timeline } = await api('/barber/bookings/' + id);
-  app.innerHTML = `<a href="#/today" class="back" id="goback">${ic('back', 'sm')} Back</a>
+  const hp = b.help;
+  const helpCard = hp ? `<div class="warn notice" id="helpcard" role="alert">${ic('warn')}<div><b>Urgent: this customer needs help.</b><div style="margin:4px 0">“${esc(hp.note)}”</div>${hp.escalated ? '<div class="small">You have not answered for a while, so the TrimSlot team was told.</div>' : ''}${contactBtns(b.customer)}
+      <div class="btns" style="margin-top:8px"><button class="btn sm" id="helprel">OK, release it</button><button class="btn sm sec" id="helplater">Come later</button></div>
+      <div class="small muted" style="margin-top:6px">“Release it” marks the booking as not served: a paid online booking is refunded, and a plan session or credit goes back. “Come later” tells the customer you will wait.</div></div></div>` : '';
+  app.innerHTML = `<a href="#/today" class="back" id="goback">${ic('back', 'sm')} Back</a>${helpCard}
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:20px;display:flex;align-items:center;gap:10px">${cav(b.customer, 'lg')}${esc(b.customer.name)}</h1>${statusBadge(b.status)}</div>
       <div class="muted small">${esc(b.customer.phone || '')} ${esc(b.customer.email || '')}</div>${contactBtns(b.customer)}<hr>
       <div class="row between"><b>${esc(b.service_name)}</b><b>${naira(b.price_kobo)}</b></div>
@@ -896,6 +912,9 @@ async function barberBooking(id) {
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded yet. The shop or admin will give a refund or a session credit.'))}</div>` : ''}</div>`).join('')}</div></div>`;
+  const helpAct = (sel, action, ask, done) => { const el = $(sel); if (el) el.onclick = async () => { if (ask && !confirm(ask)) return; el.disabled = true; try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: action === 'not-served' ? { reason: 'Customer asked for help; barber released it' } : {} }); toast(done); route(); } catch (e) { fail(e); el.disabled = false; } }; };
+  helpAct('#helprel', 'not-served', 'Release this booking? It will be marked as not served.', 'Booking released');
+  helpAct('#helplater', 'wait', null, 'We told the customer you will wait');
 }
 
 /* ---------- barber: customers ---------- */

@@ -42,6 +42,7 @@ import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 import { feeSettingsOf, onlineBreakdown } from './fees';
+import { helpEligible, helpView, requestHelp } from './help';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
   Promise.resolve(fn(req, res)).catch(next);
@@ -128,6 +129,10 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
       out.queue.eta = b.status === 'IN_SERVICE' ? null : etaFrom(qq, b, await dm);
     }
   }
+  // "Emergency, please help": the customer's status line, and (for the barber) the open request they must answer.
+  { const h = await helpView(db, b.id);
+    if (h) out.help = opts.forBarber ? (h.status === 'OPEN' ? { id: h.id, note: h.note, created_at: h.created_at, escalated: h.escalated } : null) : h;
+    if (!opts.forBarber) out.can_ask_help = !(h && h.status === 'OPEN') && helpEligible(b, cutoffMin); }
   if (b.note_to_barber) out.note_to_barber = b.note_to_barber;
   if (!opts.forBarber && b.status === 'COMPLETED') {
     const st = await getSettingsCached(db);
@@ -437,6 +442,12 @@ export function createApp(db: Db) {
     res.json({ result: best.result, reference: bestRef, booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));
   api.post('/bookings/:id/cancel', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCancel(db, req.user!.id, (await ownBooking(req)).id)) })));
+  /** "Emergency, please help": only on a locked, paid, upcoming booking. One open request per booking. */
+  api.post('/bookings/:id/help', limits.payment, cust, wrap(async (req, res) => {
+    const b = await ownBooking(req);
+    await requestHelp(db, req.user!.id, b.id, req.body?.note);
+    res.status(201).json({ booking: await decorate(db, (await getBooking(db, b.id))!) });
+  }));
   api.post('/bookings/:id/check-in', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCheckIn(db, req.user!.id, (await ownBooking(req)).id)) })));
 
   /* ---------- customer: plans & credits (customers only browse, buy and use) ---------- */
