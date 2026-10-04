@@ -1,4 +1,4 @@
--- 015: email verification with a one-time code (6 digits, 10 minutes, 5 tries). Only a HASH of the code is stored.
+-- 016: email verification with a one-time code (6 digits, 10 minutes, 5 tries). Only a HASH of the code is stored.
 -- Additive only. Nobody is locked out of login: existing accounts stay unverified until they verify; existing BARBER accounts are exempt
 -- from the "verified email before the shop is bookable" rule (new barbers are not). Existing customers are prompted on their next first-time booking
 -- (customers who already have a booking are never blocked).
