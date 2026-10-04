@@ -38,6 +38,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 ## 3. Standards: hygiene, safety and the law
 
 3.1 You are responsible for running a safe, clean shop. As a minimum you must:
+
 * clean and disinfect clippers, blades, scissors, combs and other tools between customers; use fresh or laundered towels, capes and neck strips for each customer; use new or sterilised razor blades for each customer; never share items that have touched broken skin or blood;
 * have first-aid supplies; stop work and follow safe practice if a customer bleeds; tell the customer;
 * keep the shop reasonably clean, ventilated, safe and accessible, with working electrics and safe handling of chemicals (dyes, relaxers, disinfectants);
@@ -74,15 +75,15 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 7. Fees
 
-7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. the rest is paid to your payout account, through our payment provider, after two things are taken from your price: a **Paystack fee** (your part of the payment-processing cost) and **TrimSlot's service charge**. So: *your payout = your price − the Paystack fee − TrimSlot's service charge*. The exact amounts for every booking are shown in the app, in your bookings and in your earnings screen. They are worked out when the customer pays and do not change afterwards.
+7.1 **Online payments.** On each payment made through the app (Pay now, plan purchase), the customer pays your price plus a small **booking fee**. Card payments are paid out to your payout account, through our payment provider, after the deductions shown in the app. **Fees and your payout are shown in the app before you accept a booking, on every booking and in your earnings screen.** They are worked out when the customer pays and do not change afterwards.
 
 7.1.1 **TrimSlot's service charge** is set by TrimSlot and shown in the app and in your earnings screen. We may agree a different charge with you in writing or in the app. The charge is never more than the price.
 
-7.1.2 **The Paystack fee** is a processing cost that comes from Paystack. Its rates are set by Paystack and can change, so this Agreement does not state them as a fixed number. Your part is shown to you as "Paystack fee" on each booking. If the fee Paystack really charges is different from our estimate, TrimSlot keeps or covers the difference; the amount shown to you stays as shown.
+7.1.2 **Payment-processing costs** come from our payment provider. Its rates can change, so this Agreement does not state them as a fixed number. If any of that cost is deducted from what you receive, it is shown on each booking, and the amount shown to you stays as shown.
 
-7.1.3 If a booking is refunded, the payment is returned to the customer and no payout is made for it.
+7.1.3 If a booking is refunded, the payment is returned to the customer; see 9.5.
 
-7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **service charge** accrues on your TrimSlot balance. The amount is shown on the booking and in your earnings screen. There is no booking fee and no Paystack fee on these bookings. You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
+7.2 **Pay-on-arrival bookings (cash or transfer).** These payments go straight from the customer to you and do not pass through TrimSlot. When you mark such a booking **completed** and **paid**, a **service charge** accrues on your TrimSlot balance. The amount is shown on the booking and in your earnings screen. There is no booking fee and no payment-processing cost on these bookings. You will always see the amount owed in the app under "Platform balance owed". You agree to be honest in recording payments; understating or failing to record payments is a breach.
 
 7.3 We may change fees or charges by giving at least [30] days' notice in the app. Changes do not apply to bookings already confirmed.
 
@@ -92,11 +93,11 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 8.1 The service charge on cash bookings is a **debt you owe TrimSlot**, added to your **balance owed**. You can see it at any time.
 
-8.2 **Taking it from online payments.** When a customer pays you online, we may take part of what you owe from that payment, so that the balance is paid off from your online income. We never take more than you owe, the oldest debt is paid first, you always keep a fair part of every payment, and if the customer is refunded the amount is put back on your balance. The amounts are shown in the app. If your balance is settled in another way while a customer is still in checkout, that payment can take more than you owed. The app records this and TrimSlot staff will review it with you and correct it.
+8.2 **Taking it from online payments.** When a customer pays you online, we may take what you owe from that payment, so that the balance is paid off from your online income. We never take more than you owe. The amounts are shown in the app, and our staff will review and correct any mistake with you.
 
 8.3 **Manual settlement.** You may also settle the balance by another method we agree in writing (for example, bank transfer to [COMPANY BANK ACCOUNT]). We may record manual settlements, waivers or adjustments with a reason, and show them in your balance history.
 
-8.4 **Limits.** We may set limits on how large and how old your balance can be. If you go over a limit, the app **switches off "pay on arrival"** for your shop (customers then have to pay online) until the balance is back within the limits. It also sends you **reminders** when the oldest part of your balance is more than 7 days old or a limit is exceeded (at most one every three days). **The app does not suspend your shop by itself**: any suspension is a decision by TrimSlot staff (section 12). 
+8.4 **Limits.** We may set limits on how large and how old your balance can be. If you go over a limit, the app **switches off "pay on arrival"** for your shop (customers then have to pay online) until the balance is back within the limits. It also sends you **reminders** about your balance. **The app does not suspend your shop by itself**: any suspension is a decision by TrimSlot staff (section 12). 
 
 8.5 If you owe money and stop using TrimSlot, you must pay what you owe within [14] days of our written request, and we may recover it through the courts. [LAWYER: enforceability, interest, recovery.]
 
@@ -116,7 +117,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 10. Refunds, no-shows and credits — your part
 
-10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The money the customer paid (less our fee) has already been paid to you and stays with you (for a plan session, you were paid when the customer bought the plan); it is not refunded to the customer, and no second payment is made when the credit is used. The credit is worth the **service price on the missed booking**. For a missed plan session that can be more than that one session cost the customer under the plan, and you honour it at that value. [OWNER: confirm this is intended; see question 57.]
+10.1 Customers' refund and credit rights are in the [Refund, Cancellation and Credit Policy](refunds.html). In particular: when you mark a **prepaid** customer as a **no-show** the customer receives **one session credit with you** (same barber), valid for {{credit_expiry_days}} days, not cashable. You then **honour that credit**: when the customer books with you using it, you provide a service priced at or below the credit's value **without further payment**. The money the customer paid (after the deductions shown in the app) has already been paid to you and stays with you (for a plan session, you were paid when the customer bought the plan); it is not refunded to the customer, and no second payment is made when the credit is used. The credit is worth the **service price on the missed booking**. For a missed plan session that can be more than that one session cost the customer under the plan, and you honour it at that value. [OWNER: confirm this is intended; see question 57.]
 
 10.2 If you could not serve a customer ("Not served"), or the customer cancels in time a booking that was paid online, the customer is **refunded** (not given a credit) as the Policy says: the refund is pending approval and is approved automatically if nobody decides within a short time. The app does not take the refunded amount from your balance or your payouts.  A plan session or credit that the customer used is returned to them.
 
@@ -124,7 +125,7 @@ This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED A
 
 ## 11. Plans you sell
 
-If you create plans, you must follow the [Plan Terms](plan-terms.html). You set the price, number of sessions, validity and included services **within the limits TrimSlot sets** (at the date of this draft: price ₦{{min_plan_price_naira}}–₦{{max_plan_price_naira}}, up to {{max_plan_validity_days}} days, up to {{max_plan_sessions}} sessions). You must honour every plan session a customer has paid for until the plan expires. Changing or deleting a plan does not affect people who already bought it.
+If you create plans, you must follow the [Plan Terms](plan-terms.html). You set the price, number of sessions, validity and included services **within the limits TrimSlot sets**, which the app shows you when you create a plan. You must honour every plan session a customer has paid for until the plan expires. Changing or deleting a plan does not affect people who already bought it.
 
 ## 12. Suspension, removal and ending
 
@@ -136,7 +137,7 @@ If you create plans, you must follow the [Plan Terms](plan-terms.html). You set 
 
 12.4 Sections that by their nature should continue (balance owed, indemnity, data protection, liability, disputes) continue after the agreement ends.
 
-12.5 Removed shops and their data may be hidden for [30] days, during which we can restore them, and are then deleted or archived as the Privacy Policy explains — except financial records, which we must keep. [LAWYER: confirm retention periods.]
+12.5 Removed shops and their data may be hidden for {{retention_deleted_days}} days, during which we can restore them, and are then deleted or archived as the Privacy Policy explains — except financial records, which we must keep. [LAWYER: confirm retention periods.]
 
 ## 13. Indemnity
 

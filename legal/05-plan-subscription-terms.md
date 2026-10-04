@@ -15,7 +15,7 @@
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>
 </div>
 
-**Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
+**Effective date:** [EFFECTIVE DATE]  **Version:** {{terms_version}}
 
 These terms apply when you buy a **plan** from a barber on TrimSlot. They are part of the [Terms of Service](terms.html) and should be read with the [Refund, Cancellation and Credit Policy](refunds.html).
 
@@ -23,7 +23,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 1.1 A plan is a **prepaid pack of haircut sessions** with **one barber**, for a set price, number of sessions, validity period and list of included services. It is **not a recurring subscription**: you pay once, there is **no automatic renewal** and no card is saved. [LAWYER: confirm no "subscription" or auto-debit rules apply; if renewals are added later this must change.]
 
-1.2 The barber (not TrimSlot) sets the plan's name, price, sessions, validity and included services, within limits that TrimSlot sets. Today the limits are: price **₦{{min_plan_price_naira}} to ₦{{max_plan_price_naira}}**; validity **up to {{max_plan_validity_days}} days**; **up to {{max_plan_sessions}} sessions**. The limits can change; they never change a plan you have already bought.
+1.2 The barber (not TrimSlot) sets the plan's name, price, sessions, validity and included services, within limits that TrimSlot sets. The limits can change; they never change a plan you have already bought.
 
 1.3 The barber is the seller of the sessions and the provider of the service. TrimSlot runs the platform and collects the payment through Paystack.
 
@@ -57,7 +57,7 @@ These terms apply when you buy a **plan** from a barber on TrimSlot. They are pa
 
 4.3 If you have paid and the plan did not activate, or you were charged twice, tell us — we will verify with Paystack and refund where due.
 
-4.4 If the barber's shop is **removed or suspended** while you have unused sessions, [PROPOSED: we will try to arrange the sessions with another route, or refund the value of unused sessions on a pro-rata basis]. [OWNER/LAWYER: decide — the app does not do this automatically today; the admin can handle cases manually.]
+4.4 If the barber's shop is **removed or suspended** while you have unused sessions, contact us. We look at each case and tell you what we can do. [OWNER/LAWYER: decide the rule; the app does not do this automatically today, and the admin handles cases by hand. Proposed: arrange the sessions with another barber, or refund the value of unused sessions pro rata. See question 19.]
 
 4.5 If the barber closes for a period (days off), the plan does **not** automatically extend. [OWNER: consider extending in that case.]
 
@@ -67,7 +67,7 @@ The barber must honour every paid session until the plan expires, provide the in
 
 ## 6. Fees
 
-TrimSlot's charge and the barber's share of the payment processing fee are taken from the barber's side of the plan price. When you buy a plan online you also pay the small **booking fee** shown at checkout, once, at purchase. No fee is charged again when you use a session.
+The barber's charges and payment costs are taken from the barber's side of the plan price, not added to yours. When you buy a plan online you also pay the small **booking fee** shown at checkout, once, at purchase. No fee is charged again when you use a session.
 
 ## 7. Changes and contact
 

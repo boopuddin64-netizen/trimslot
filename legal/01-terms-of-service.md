@@ -53,7 +53,13 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 3.5 **Check-in and queue.** On the day, tap "I'm Here" when you arrive. The barber serves customers in the order the app shows, which depends on arrival, appointment time and the barber's own decisions (for example, skipping someone who is late). A barber may mark you as a **no-show** once your appointment time has passed.
 
-3.6 **Pausing.** We may pause new bookings (for example, for maintenance). Existing confirmed bookings are not cancelled by a pause.
+3.6 **Changing the time.** While you can still cancel, you can move a confirmed booking to another free time with the **same barber and the same service**. You can do this up to **3 times** for one booking. Moving a booking does not change what you paid or how you paid (plan session or credit stays attached). The barber is told. When the cancel cut-off has passed, you can no longer move it.
+
+3.7 **Contact and emergency help.** For a confirmed booking that you paid for and that has not happened yet, the app shows you the barber's phone number and WhatsApp link, and shows the barber your phone number, so you can reach each other. If the booking is already locked and something urgent comes up, you can use the **emergency help** button to send the barber a short message. Use it only for a real emergency. The barber can release the booking ("Not served") or wait for you. If the barber does not answer in time, TrimSlot staff are told and will help. Do not use these details for anything else.
+
+3.8 **E-mail check.** If TrimSlot switches it on, we may ask you to confirm your e-mail address with a one-time code before you make a first booking, use emergency help, or (for barbers) before your shop can be booked.
+
+3.9 **Pausing.** We may pause new bookings (for example, for maintenance). Existing confirmed bookings are not cancelled by a pause.
 
 ## 4. Cancellations, no-shows, refunds and credits
 
@@ -62,8 +68,8 @@ The detailed rules are in the **Refund, Cancellation and Credit Policy**. In sho
 * You can cancel yourself until **{{cancel_cutoff_min}} minutes before** your appointment.
 * After that, you cannot cancel in the app. If you do not turn up, the barber may mark you as a no-show.
 * If you cancel **in time** a booking you paid online, you get a **refund** (approved by us, or approved automatically if nobody has decided within a short time). You do not also get a credit.
-* A missed paid session is **not refunded**, but you get **one session credit** with the same barber, valid for **{{credit_expiry_days}} days**, which cannot be exchanged for cash. A booking gets a refund or a credit, never both.
-* **Loyalty credits.** If TrimSlot switches the loyalty reward on, you may earn a session credit with a barber after every {{loyalty_every_n}} completed visits with that barber (worth ₦{{loyalty_credit_naira}}, valid 90 days). It is a free reward, not something you buy. We can switch the reward off or change it at any time; credits already issued are kept, except as set out in the next point.
+* A missed paid session is **not refunded**. When your barber marks it a no-show, you get **one session credit** with the same barber, valid for **{{credit_expiry_days}} days**, which cannot be exchanged for cash. If the barber never marks it, there is no refund and no credit unless TrimSlot staff decide otherwise. A booking gets a refund or a credit, never both.
+* **Loyalty credits.** If TrimSlot switches a loyalty reward on, you may earn a session credit with a barber after a number of completed visits with that barber. The app shows how it works. It is a free reward, not something you buy. We can switch the reward off or change it at any time; credits already issued are kept, except as set out in the next point.
 * **Removing a credit.** We may remove (revoke) a session credit that was issued by mistake or obtained unfairly or by fraud, or when an account is closed for breaking these Terms. We tell you by notification and give the reason. [LAWYER: confirm this clause is acceptable for credits that were paid for (a missed paid session).]
 * If we or the barber cannot serve you, or your online payment is a duplicate or arrives too late, the policy explains what happens (including automatic refund requests).
 
@@ -91,7 +97,7 @@ You are responsible for telling the barber about skin conditions, allergies or a
 
 8.1 Customers are not charged a TrimSlot fee for a booking. When you pay online you pay the price plus the **booking fee** shown at checkout (see 3.1). Pay-on-arrival bookings, plan sessions and credits have no booking fee. If an online payment is refunded, the booking fee is refunded with it. [OWNER: confirm.]
 
-8.2 Barbers pay TrimSlot a service charge and the payment processing fees as set out in the Barber Agreement. You do not pay these on top of the price (apart from the booking fee in 8.1).
+8.2 Barbers pay TrimSlot's charges and payment costs as set out in the Barber Agreement. You do not pay these on top of the price (apart from the booking fee in 8.1).
 
 8.3 We may change prices of our own fees, or switch features on or off, by giving notice in the app. Changes do not affect bookings already confirmed.
 
