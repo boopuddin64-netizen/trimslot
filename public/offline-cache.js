@@ -17,7 +17,7 @@
   var READ = /^\/(?:config|auth\/me|barbers|me\/barbers|me\/wallet|bookings|me\/rebook|me\/favourites|waitlist)$/;
   var GLOBAL = /^\/config$/;
   /* keys we refuse to keep, anywhere in an answer (belt and braces: the server does not send these to the list/profile calls anyway) */
-  var FORBIDDEN = /token|secret|otp|dev_code|passw|passcode|authorization|access_code|reference|signature|cookie|cvv|pan$/i;
+  var FORBIDDEN = /token|secret|otp|dev_code|passw|passcode|authorization|access_code|reference|signature|cookie|cvv|pan$|^share$/i;   // `share` = a barber's private share link (a capability URL; also changes when the barber makes a new one)
   var OFFLINE_MSG = 'You are offline. Try again when you are online.';
 
   function isReadable(method, path) { return (method || 'GET') === 'GET' && READ.test(path); }

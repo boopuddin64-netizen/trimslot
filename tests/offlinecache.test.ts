@@ -67,9 +67,10 @@ test('no tokens, passwords, one-time codes or payment references are ever writte
   const { s, c } = mk();
   c.save('/auth/me', me(1, { token: 'jwt.aaa.bbb', password: 'hunter2', otp: '123456', email_otp_code: '1' }));
   c.save('/config', { email_dev_code: '123456', paystack_secret: 'sk_x', maintenance: null, features: { push: true }, vapid_public_key: 'BPub' });
+  c.save('/me/barbers', { barbers: [{ id: 3, shop_name: 'S', share: { url: 'https://app/b/abcdef0123456789', code: 'abcdef0123456789' } }] });
   c.save('/bookings', { bookings: [{ id: 1, reference: 'TS-1-abc', authorization_url: 'https://pay/x', access_code: 'ac', price_kobo: 5000, money: { total_kobo: 5000 }, payment_status: 'PAID' }] });
   const all = keys(s).map((k) => s.getItem(k)).join('\n');
-  for (const bad of ['jwt.aaa.bbb', 'hunter2', '123456', 'sk_x', 'TS-1-abc', 'https://pay/x', '"ac"']) assert.ok(!all.includes(bad), 'leaked: ' + bad);
+  for (const bad of ['jwt.aaa.bbb', 'hunter2', '123456', 'sk_x', 'TS-1-abc', 'https://pay/x', '"ac"', 'abcdef0123456789']) assert.ok(!all.includes(bad), 'leaked: ' + bad);
   assert.ok(all.includes('"price_kobo":5000') && all.includes('"payment_status":"PAID"'), 'normal fields are kept');
   assert.ok(all.includes('vapid_public_key'), 'public key (not a secret) is kept');
 });
