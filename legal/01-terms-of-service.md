@@ -30,7 +30,7 @@ Please also read our [Privacy Policy](privacy.html), our [Refund, Cancellation a
 
 ## 3. Bookings
 
-3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, Paystack may add a **payment processing fee** at checkout, which is shown before you pay. [LAWYER/OWNER: confirm who bears this fee and that it is clearly disclosed — see open questions.]
+3.1 When you book, you choose a barber, a service, a date and a time. Prices are in Nigerian Naira and are fixed when you book. The price shown includes the barber's service price. If you pay online, you also pay a small **booking fee**. It is shown as its own line, and the total is shown, before you pay. The booking fee is your share ({{fee_share_customer_percent}}%) of the payment company's processing fee; the barber and TrimSlot share the rest. We do not quote the payment company's own rates, because they can change. [LAWYER/OWNER: confirm this disclosure — see open questions.]
 
 3.2 **Pay now (online).** The slot is held for you for **{{payment_hold_min}} minutes** while you pay. If payment is not completed in that time, the booking is marked "Incomplete", you are not charged, and the slot is released to others. A slot is only confirmed once Paystack confirms your payment to us.
 
@@ -74,7 +74,7 @@ You are responsible for telling the barber about skin conditions, allergies or a
 
 ## 8. Fees and payments
 
-8.1 Customers are not charged a TrimSlot fee for a booking, other than any Paystack processing fee shown at checkout. [OWNER: confirm.]
+8.1 Customers are not charged a TrimSlot fee for a booking. When you pay online you pay the price plus the **booking fee** shown at checkout (see 3.1). Pay-on-arrival bookings, plan sessions and credits have no booking fee. If an online payment is refunded, the booking fee is refunded with it. [OWNER: confirm.]
 
 8.2 Barbers pay TrimSlot fees under the Barber Agreement. Fees are deducted automatically from online payments through the Paystack split; you do not pay them on top of the price (apart from 8.1).
 
@@ -135,4 +135,4 @@ We may change the Service and these Terms. For important changes we will give no
 * **Q9.** The sign-up tick-box and acceptance log now exist (document, version, time, IP address, user agent; re-accept when a version changes): is that sufficient, and is storing the IP and user agent proportionate?
 * **Q10.** Reviews: content licence, defamation, notice-and-takedown.
 * **Q2.** Is the marketplace / independent-barber wording safe against agency or employment claims?
-* **Q15.** Is the Paystack fee pass-through lawful and adequately disclosed?
+* **Q15.** Is the "booking fee" (the customer's share of the payment-processor fee) lawful and adequately disclosed at checkout? Is it refunded with the booking? (See 24a and 24b.)

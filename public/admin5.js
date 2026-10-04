@@ -131,10 +131,22 @@ const NUMS = [
     ['payment_hold_min', 'Pay-now hold (minutes)', 1, 1, 180, 'How long a slot is held while the customer pays.'],
     ['credit_expiry_days', 'Credit expiry (days)', 1, 1, 3650, 'A missed-booking credit is valid this long.'],
     ['refund_auto_approve_hours', 'Refund auto-approve after (hours)', 1, 0, 168, 'An undecided refund is approved automatically after this. 0 = on the next sweep.']]],
-  ['Fees and liability', [
-    ['platform_fee_percent', 'Platform fee (%)', 0.01, 0, 100, '0 with a 0 flat fee = use the server default.'],
-    ['platform_fee_naira', 'Platform fee, flat (₦)', 1, 0, 1000000, ''],
-    ['commission_pct', 'Off-app commission (% of the in-app fee)', 1, 0, 100, 'Saved as the commission factor.'],
+  ['Who pays the card-payment fee (must add up to 100%)', [
+    ['fee_share_customer_pct', 'Customer share (%)', 0.01, 0, 100, 'Shown to the customer as a small "booking fee".'],
+    ['fee_share_barber_pct', 'Barber share (%)', 0.01, 0, 100, 'Taken from the barber payout.'],
+    ['fee_share_platform_pct', 'Platform share (%)', 0.01, 0, 100, 'TrimSlot pays this part.']]],
+  ['Paystack rate (we use it to estimate the fee)', [
+    ['ps_percent', 'Percent of the payment (%)', 0.001, 0, 20, ''],
+    ['ps_flat_naira', 'Flat part (₦)', 1, 0, 100000, ''],
+    ['ps_flat_waived_below_naira', 'No flat part below (₦)', 1, 0, 10000000, ''],
+    ['ps_cap_naira', 'Fee cap (₦)', 1, 0, 10000000, 'The cap is applied before VAT.'],
+    ['ps_vat_percent', 'VAT on the fee (%)', 0.01, 0, 50, 'When Paystack reports the real fee, we record that too.']]],
+  ['TrimSlot charge on each booking', [
+    ['charge_percent', 'Percent of the price (%)', 0.01, 0, 50, ''],
+    ['charge_flat_naira', 'Flat part (₦)', 1, 0, 1000000, ''],
+    ['charge_min_naira', 'Minimum charge (₦)', 1, 0, 1000000, 'Taken from the barber payout. Pay on arrival carries this charge only.'],
+    ['commission_pct', 'Pay-on-arrival: share of the charge that is owed (%)', 1, 0, 100, 'Saved as the commission factor. 100 = the whole charge.']]],
+  ['Liability', [
     ['liability_cap_naira', 'Liability cap (₦, 0 = not set)', 1, 0, 1000000000, 'Shown in the Terms once set.']]],
   ['Plan limits', [
     ['min_plan_price_naira', 'Minimum plan price (₦)', 1, 0, 100000000, ''], ['max_plan_price_naira', 'Maximum plan price (₦)', 1, 0, 100000000, ''],
@@ -154,11 +166,16 @@ async function addNumbersCard() {
   const field = ([k, l, step, min, max, help]) => `<div><label>${esc(l)}</label><input type="number" name="${k}" step="${step}" min="${min}" max="${max}" value="${esc(v(k))}">${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`;
   const html = `<div class="card" id="numcard"><form id="nf"><h2 style="margin-top:0">Published numbers</h2><p class="muted small">These are the numbers quoted in the Terms, Refund policy and Privacy Policy. The public pages read them live, so a change here updates the pages at once. Every change is saved in the audit log.</p>
     ${NUMS.map(([g, fs]) => `<h2>${esc(g)}</h2><div class="formgrid">${fs.map(field).join('')}</div>`).join('')}
-    <p class="small muted">Fee now in force: ${esc(eff.platform_fee_percent ?? '?')}% + ₦${esc(eff.platform_fee_naira ?? '?')}.</p>
+    <div id="feeprev" class="small"></div>
     <h2>Document versions</h2><p class="muted small">Raise a version when that document changes in a way people must agree to again. Everyone is asked to accept it at their next visit.</p>
     <div class="formgrid">${VERS.map(([k, l]) => `<div><label>${esc(l)}</label><input name="${k}" maxlength="30" value="${esc(s[k])}"></div>`).join('')}</div>
     <div class="btns cta"><button class="btn" type="submit">Save published numbers</button><button class="btn sec" type="button" id="runret">Run data clean-up now</button></div></form></div>`;
   const host = app.querySelector('.card:last-of-type'); (host || app).insertAdjacentHTML(host ? 'afterend' : 'beforeend', html);
+  const prev = await api('/fee-preview').catch(() => null);
+  if (prev) $('#feeprev').innerHTML = `<h3>What the saved numbers mean in naira</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>Price</th><th>Customer pays</th><th>Booking fee</th><th>Barber receives</th><th>TrimSlot keeps*</th><th>Pay on arrival charge</th></tr></thead><tbody>${prev.rows.map((r) => `<tr><td>${naira(r.price_kobo)}</td><td>${naira(r.total_kobo)}</td><td>${naira(r.booking_fee_kobo)}</td><td>${naira(r.payout_kobo)}</td><td>${naira(r.platform_net_kobo)}</td><td>${naira(r.cash)}</td></tr>`).join('')}</tbody></table></div><small class="muted">*After Paystack takes its fee (estimated from the rate above). Pay now only.</small>`;
+  // the three shares must add up: the platform share follows the other two
+  const fr = $('#nf').elements; const sync = () => { fr.fee_share_platform_pct.value = String(Math.round((100 - Number(fr.fee_share_customer_pct.value) - Number(fr.fee_share_barber_pct.value)) * 10000) / 10000); };
+  fr.fee_share_customer_pct.addEventListener('input', sync); fr.fee_share_barber_pct.addEventListener('input', sync);
   // the old commission factor input and this % input must agree
   const fac = app.querySelector('#cf [name=commission_factor]');
   $('#nf').elements.commission_pct.addEventListener('input', (e) => { if (fac) fac.value = String(Math.round(Number(e.target.value) * 10) / 1000); });

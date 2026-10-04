@@ -444,3 +444,7 @@ a.crow{text-decoration:none}
 .crow .c1,.crow .c2{min-width:0}
 .crow .ct,.crow .cm{display:block}
 .crow .badge{margin:0}
+/* money breakdown (booking fee, barber earnings) */
+.money{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;color:var(--mut)}
+.money .mrow{margin-top:3px}
+.money .mrow.tot{color:var(--ink);font-weight:700;font-size:14px}

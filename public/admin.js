@@ -340,7 +340,6 @@ async function credits() {
 const FIELDS = [
   ['min_plan_price_naira', 'Minimum plan price (₦)', 'number'], ['max_plan_price_naira', 'Maximum plan price (₦)', 'number'],
   ['max_plan_validity_days', 'Maximum plan duration (days)', 'number'], ['max_plan_sessions', 'Maximum sessions per plan', 'number'],
-  ['platform_fee_percent', 'Platform fee (%)', 'number'], ['platform_fee_naira', 'Platform fee, flat (₦)', 'number'],
   ['credit_expiry_days', 'Credit expiry (days)', 'number'], ['plan_refund_policy', 'Unused plan sessions', 'select'],
   ['credit_on_missed_session', 'A missed paid session (no-show or late cancel) gives 1 credit', 'checkbox'],
 ];

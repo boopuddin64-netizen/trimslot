@@ -81,7 +81,7 @@ If the barber marks the booking "**Not served**": a **plan session or credit is 
 
 7.3 If the amount Paystack reports does not match the price (other than Paystack's processing fee), the booking is **not confirmed automatically**; staff review it, and you are refunded if you were charged wrongly.
 
-7.4 Paystack's **processing fee**, if charged on top, [is / is not] refunded with the payment. [OWNER/LAWYER: decide; the app currently refunds the transaction through Paystack, whose fee rules apply.]
+7.4 **Booking fee.** When you pay online you pay the price plus a small, clearly labelled **booking fee**, which is part of the payment-processor fee (the current share is {{fee_share_customer_percent}}%). When a payment is refunded (in-time cancellation, "not served", duplicate, late or slot-taken payment), you get back **everything you were charged, including the booking fee**. A **credit** (for a missed booking) is for the **price only**; the booking fee is not turned into credit. Bookings paid by plan session, credit or on arrival have no booking fee. [LAWYER: confirm this treatment; see question 24b.]
 
 ## 8. Plans
 
@@ -103,6 +103,6 @@ Use "Report a problem" on the booking, or contact [EMAIL] / [PHONE] with the boo
 * **Q12.** In-time cancellation of an online-paid booking is now a refund (pending approval, auto-approved after the hold time). Are the hold time, the right to reject, and the refund timeline acceptable?
 * **Q13.** Is the credit expiry ({{credit_expiry_days}} days) lawful and fair?
 * **Q14.** Is the {{cancel_cutoff_min}}-minute cancel lock reasonable and sufficiently disclosed before payment?
-* **Q15.** Paystack fee: refunded with the booking?
+* **Q15.** Booking fee (the customer's share of the processor fee): refunded in full with the booking on a refund, not credited on a credit. Right? (See 24b.)
 * **Q16.** Time limit to promise for duplicate/late payment refunds.
 * **Q17.** Chargebacks.

@@ -59,7 +59,7 @@ Vercel → Project → Settings → **Environment Variables** (apply to *Product
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys`; subject = your https URL or `mailto:` | enables Web Push. Private key = Sensitive. Optional: without them the app still works with in-app notifications |
 | `PG_POOL_MAX` | `3` (default) | keep 1–3 per instance |
 | `DATABASE_SSL_CA` | *(optional)* PEM | to verify Supabase's certificate |
-| `PLATFORM_FEE_KOBO`, `PLATFORM_FEE_PERCENT`, `PAYMENT_HOLD_MINUTES`, `LOG_LEVEL`, `BCRYPT_ROUNDS` | optional | see `.env.example` |
+| `PAYMENT_HOLD_MINUTES`, `LOG_LEVEL`, `BCRYPT_ROUNDS` | optional | see `.env.example` |
 | `SEED_DEMO`, `TRIMSLOT_FAKE_NOW` | **never set** | the second is refused in production |
 
 `TRUST_PROXY` needs no setting on Vercel. Generate secrets locally and paste them into Vercel; don't reuse them elsewhere. Env var changes only take effect on the **next deployment** (Redeploy).
@@ -145,7 +145,7 @@ Each barber needs a Paystack **subaccount code** (`ACCT_xxxxxxxx`), created unde
   # bank codes: GET https://api.paystack.co/bank?country=nigeria   → response.data.subaccount_code = "ACCT_..."
   ```
 - **Store it**: barber logs in → **Settings → Paystack subaccount code** → paste `ACCT_…` → Save (or `UPDATE barbers SET paystack_subaccount='ACCT_...' WHERE id=…`).
-- **How the split works in this app**: `subaccount` is sent on initialize. If `PLATFORM_FEE_*` > 0 it is sent as a flat `transaction_charge` (that amount goes to *your* main account, the rest to the barber). If the platform fee is 0, Paystack applies the subaccount's own `percentage_charge` (the share **you, the main account, keep**) — so use `0` for "barber gets everything", or your commission %. Paystack's processing fees are borne by your main account by default.
+- **How the split works in this app**: the customer is charged price + booking fee. `subaccount` is sent with `bearer: 'account'` and a `transaction_charge` equal to (total − barber payout), so the barber's subaccount settles exactly the payout (price − barber's fee share − TrimSlot charge) and the main account keeps the rest and bears Paystack's real fee. The fee split, Paystack rate, and TrimSlot charge are admin settings (Controls > Published numbers). The real fee from the verify call is stored for reporting.
 - A barber **without** a subaccount is still payable: money lands in your main Paystack account and you must pay them out yourself.
 - **Test-mode subaccounts don't exist in live mode** — you must create them again in live mode and update each barber's code.
 
@@ -206,7 +206,7 @@ Nothing is stored on Vercel; **the Supabase database is the only copy of your da
 - [ ] **Privacy policy & NDPR/NDPA**: the operative law is now the **Nigeria Data Protection Act 2023** (NDPR's successor) with the NDPC's **GAID 2025** implementing directive. Have counsel confirm: your role as *data controller*; lawful bases; whether you must **register with the NDPC** as a data controller/processor of major importance (depends on volume/category — designation is by the Commission); appoint/name a **DPO** (or contact); a compliance audit timeline (GAID: within 15 months of starting business and yearly after); **72-hour breach notification** to the NDPC; cross-border transfer safeguards (your host may be outside Nigeria, and Paystack is a processor/recipient); retention periods; data-subject request handling (access/correction/deletion — there is **no self-service export/delete yet**, so define a manual process and SLA); consent wording for any marketing (none is sent today).
 - [ ] **Terms of service**: marketplace role (barbers are independent), liability limits lawful under consumer law, dispute forum, support contact.
 - [ ] Register the business / obtain any licences you need; make sure Paystack's business verification matches your legal entity.
-- [ ] Barber agreement: settlement schedule, commission (`PLATFORM_FEE_*` / subaccount %), who bears Paystack fees, no-show/late rules.
+- [ ] Barber agreement: settlement schedule, charge, fee split and booking fee (admin settings), who bears Paystack fees, no-show/late rules.
 - [ ] Support channel (WhatsApp/phone/email) published; an owner process for verifying barbers (`admin verify-barber`).
 
 **Known MVP limits to accept for a pilot**: in-app notifications only (no push/SMS/email); no password reset or email/phone verification; no self-service account deletion; admin portal uses one shared key (no per-admin accounts or 2FA); the general-API and webhook rate limits are in-memory per serverless instance (sign-up, login and payment limits are DB-backed and shared).

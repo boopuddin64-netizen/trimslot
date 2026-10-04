@@ -26,7 +26,7 @@ Copy `.env.example` to `.env` to configure (never commit `.env`).
 | `ADMIN_KEY` | Optional separate admin key for `/admin.html` and `/api/admin/*` (≥16 chars, else ignored). Does not open the cron endpoint |
 | `APP_BASE_URL` | Public URL, used for the Paystack `callback_url` and origin checks |
 | `PAYSTACK_SECRET_KEY` | Paystack **test** secret key. **Empty => MOCK mode** (banner shown on every page + fake checkout) |
-| `PLATFORM_FEE_KOBO`, `PLATFORM_FEE_PERCENT` | Optional platform fee, sent as `transaction_charge` when the barber has a subaccount |
+| _(retired)_ `PLATFORM_FEE_*` | Fees are admin settings now (fee split, Paystack rates, TrimSlot charge); the env vars are ignored |
 | `PAYMENT_HOLD_MINUTES` | How long an unpaid pay-now booking holds its slot (default 15) |
 | `TRUST_PROXY`, `CORS_ORIGINS`, `SEED_DEMO`, `LOG_LEVEL`, `SWEEP_EVERY_SECONDS`, `AUTO_MIGRATE`, `BCRYPT_ROUNDS` | See `.env.example` and DEPLOY.md |
 | `TRIMSLOT_FAKE_NOW` | Demo/test only (refused in production): pretend "now" is e.g. `2026-09-30T10:00:00+01:00` |
@@ -82,7 +82,7 @@ What the tests do **not** prove: behaviour against Supabase's Supavisor pooler, 
 - **Audit log** for every critical action (BOOKED, PAYMENT_CONFIRMED, CHECKED_IN, MARKED_PRESENT, STARTED, PAYMENT_RECORDED, COMPLETED, CANCELLED, NO_SHOW, NOT_SERVED, SKIPPED…) with actor + timestamp; the barber sees it as a timeline on the booking page.
 
 ## Paystack
-- `POST /api/bookings/:id/pay` → initializes a transaction: reference `TS-BOOKING-<id>-<random>`, amount = the booking's snapshotted price in **kobo**, `subaccount` = the barber's `paystack_subaccount` (set in Settings, e.g. `ACCT_xxxx`), optional `transaction_charge` from `PLATFORM_FEE_*`.
+- `POST /api/bookings/:id/pay` → initializes a transaction: reference `TS-BOOKING-<id>-<random>`, amount = price + booking fee in **kobo** (snapshotted on the booking), `subaccount` = the barber's `paystack_subaccount`, `bearer: 'account'`, and `transaction_charge` = total − barber payout (see `src/fees.ts`).
 - `GET /api/payments/callback` (Paystack `callback_url`) and `POST /api/payments/webhook` both call the same server-side `processReference()` which calls Paystack `GET /transaction/verify/:reference`, checks `status=success` and that the amount equals what we asked for, then atomically (row-locked transaction, conditional `UPDATE … WHERE status<>'SUCCESS'`) flips the payment INITIATED→SUCCESS and the booking PENDING_PAYMENT→CONFIRMED/PAID. Already-processed references do nothing (idempotent, race-safe).
 - Webhook: HMAC-SHA512 of the **raw body** with `PAYSTACK_SECRET_KEY` vs `x-paystack-signature` (timing-safe). Every webhook (valid or not) is stored in `payment_events`. Point Paystack's dashboard webhook URL at `https://<your-host>/api/payments/webhook`.
 - **MOCK mode** (no `PAYSTACK_SECRET_KEY`): a fake checkout page marks the reference as "paid at the mock gateway"; the app still verifies through the same code path, and webhooks are signed with a fixed, public mock key. Do not run MOCK mode in production.
@@ -147,3 +147,6 @@ Home with "needs attention" cards; grouped left navigation (People, Bookings, Mo
 - **Published numbers** (cutoff, hold, credit expiry, fee, commission, plan limits, liability cap, versions) are edited in admin Controls and read live by the legal pages through `GET /api/public-settings` + `public/legal-live.js`. Legal sources are `legal/*.md` with `{{setting}}` tokens; rebuild pages with `legal/build.sh`.
 - **Admin alerts** (`src/adminNotify.ts`): in-app list with per-type preferences, quiet hours, optional web push (needs VAPID keys).
 - `npm run account-ui` is the browser smoke test for sign-up tick-boxes, avatars, export/delete and the new admin pages.
+
+## Fee model (migration 012)
+Paystack's fee is split three ways by admin settings that add to 100% (default thirds): the customer (a labelled **booking fee** added at checkout), the barber (taken from the payout) and TrimSlot. TrimSlot also takes its own **charge** (percent + flat, with a minimum; default 2%, ₦50). **Payout = price − barber's fee share − TrimSlot's charge.** Pay-on-arrival bookings carry only the TrimSlot charge (through the cash commission ledger). The estimate is frozen on each booking; the real fee from Paystack verify is stored too. See `src/fees.ts`, `tests/fees.test.ts`, and the live preview in Admin > Controls.

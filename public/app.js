@@ -313,6 +313,18 @@ async function customerHome() {
 /* compact tappable row (~58px): t title, p pills, m one-line meta, r trailing figure, x optional third line */
 const crowA = (d, href) => `<a class="crow" href="${href}"><span class="cb"><span class="c1"><span class="ct">${d.t}</span>${d.p ? `<span class="cp">${d.p}</span>` : ''}</span><span class="c2"><span class="cm">${d.m || ''}</span>${d.r ? `<span class="cr">${d.r}</span>` : ''}</span>${d.x ? `<span class="cx">${d.x}</span>` : ''}</span><span class="cgo" aria-hidden="true">›</span></a>`;
 const clist = (arr) => `<div class="clist">${arr.join('')}</div>`;
+/* money lines: customer sees price + booking fee; barber sees their share of the card fee, the TrimSlot charge and what they receive */
+const mrow = (l, v, cls) => `<div class="row between mrow ${cls || ''}"><span>${l}</span><span>${v}</span></div>`;
+function custMoney(b) {
+  const m = b.money; if (!m || m.mode !== 'ONLINE' || !m.booking_fee_kobo) return '';
+  return `<div class="money" aria-label="Payment breakdown">${mrow('Price', naira(m.price_kobo))}${mrow('Booking fee', naira(m.booking_fee_kobo))}${mrow('Total', naira(m.total_kobo), 'tot')}</div>`;
+}
+function barberMoney(b) {
+  const m = b.money; if (!m) return '';
+  if (m.mode === 'ONLINE' && m.payout_kobo != null) return `<div class="money" aria-label="Your earnings">${mrow('Price', naira(m.price_kobo))}${m.barber_fee_kobo ? mrow('Your share of the card fee', '−' + naira(m.barber_fee_kobo)) : ''}${mrow('TrimSlot charge', '−' + naira(m.platform_charge_kobo))}${mrow('You receive', naira(m.payout_kobo), 'tot')}</div>`;
+  if (m.mode === 'ON_ARRIVAL' && m.platform_charge_kobo) return `<div class="money" aria-label="Your earnings">${mrow('Customer pays you', naira(m.price_kobo))}${mrow('TrimSlot charge', naira(m.platform_charge_kobo))}${mrow('Added to your balance (' + m.commission_percent + '%)', naira(m.commission_owed_kobo), 'tot')}</div>`;
+  return '';
+}
 function bookingCard(b) {
   const q = b.queue;
   return crowA({ t: esc(b.service_name), p: statusBadge(b.status, b) + payBadge(b), m: `${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}`, r: naira(b.price_kobo), x: q && q.state !== 'NOT_ACTIVE' && q.is_today ? esc(q.message) : '' }, '#/booking/' + b.id);
@@ -373,20 +385,22 @@ async function bookWizard(barberId) {
       if (!w.payTouched) w.pay = cr ? 'CREDIT' : pl ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : onlineOk ? 'ONLINE' : null;   // credit / plan session are auto-applied by default
       if (!opts.includes(w.pay)) w.pay = opts[0];
       const free = w.pay === 'PLAN' || w.pay === 'CREDIT';
+      const pn = w.service.pay_now || { booking_fee_kobo: 0, total_kobo: w.service.price_kobo };
       app.innerHTML = head + `<h2>Summary &amp; payment</h2>
         <div class="card"><div class="row between"><b>${esc(w.service.name)}</b><b>${free ? '<s class="muted">' + naira(w.service.price_kobo) + '</s> ₦0' : naira(w.service.price_kobo)}</b></div>
-          <div class="muted small">${w.service.duration_min} min · ${dateLabel(w.date)} at ${t12(w.time)}</div><div class="muted small">${esc(barber.shop_name)}, ${esc(barber.location || '')}</div></div>
+          <div class="muted small">${w.service.duration_min} min · ${dateLabel(w.date)} at ${t12(w.time)}</div><div class="muted small">${esc(barber.shop_name)}, ${esc(barber.location || '')}</div>
+          ${w.pay === 'ONLINE' && pn.booking_fee_kobo ? `<div class="money">${mrow('Price', naira(w.service.price_kobo))}${mrow('Booking fee <small class="muted">· helps cover card payment costs</small>', naira(pn.booking_fee_kobo))}${mrow('Total to pay', naira(pn.total_kobo), 'tot')}</div>` : ''}</div>
         <h3 style="margin-top:16px">How would you like to pay?</h3>
         ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · valid until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
         ${pl ? `<button class="svc ${w.pay === 'PLAN' ? 'on' : ''}" data-p="PLAN"><div><b>Use plan session</b><div class="muted small">${esc(pl.plan_name)} · ${pl.sessions_left} left · ends ${dateLabel(pl.expires_at.slice(0, 10))}</div></div></button>` : ''}
-        ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}. Paystack may add a small processing fee at checkout.</div></div></button>`
+        ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Secure online payment via Paystack${state.cfg.mock ? ' (MOCK checkout)' : ''}. A small booking fee is added: ${naira(pn.booking_fee_kobo)}.</div></div></button>`
           : `<div class="svc off" aria-disabled="true" id="online-off"><div><b>Pay now</b><div class="muted small">Not available: this barber hasn't set up online payments yet.</div></div></div>`}
         ${bk.pay_on_arrival ? `<button class="svc ${w.pay === 'ON_ARRIVAL' ? 'on' : ''}" data-p="ON_ARRIVAL"><div><b>Pay on arrival</b><div class="muted small">Cash or transfer at the shop</div></div></button>` : `<div class="info small notice" id="poa-off">${ic('warn', 'sm')}<div>${onlineOk ? "Pay on arrival isn't available for this booking right now. Please pay online." : "Neither online payment nor pay on arrival is available for this barber right now. Please pick another barber or try again later."}</div></div>`}
         ${bk.paused || bk.maintenance ? `<div class="warn small notice">${ic('warn', 'sm')}<div>${bk.maintenance ? esc(state.cfg.maintenance || 'TrimSlot is briefly paused for maintenance.') : 'This shop has paused new bookings for now.'} You can't confirm a booking at the moment.</div></div>` : ''}
         ${w.pay === 'ONLINE' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Your slot is only secured once payment completes.</b> Until then it stays open to other customers. If someone books it first, your booking won't be confirmed and any payment is refunded.</div></div>` : ''}
         <div class="info small">Once booked, this time is yours until you cancel. You can cancel until ${state.cfg.cancel_cutoff_min} minutes before (a prepaid booking is then refunded to your card); after that the slot stays booked and a missed <b>paid</b> session is not refunded — you get one credit with this barber instead.</div>
         ${(state.cfg.features || {}).booking_note ? `<label for="bnote">Note to your barber <span class="muted small">(optional)</span></label><textarea id="bnote" rows="2" maxlength="200" placeholder="e.g. low fade, keep the beard">${esc(w.note || '')}</textarea>` : ''}
-        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(w.service.price_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
+        <div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="confirm" ${bk.paused || bk.maintenance || !w.pay ? 'disabled' : ''}>${w.pay === 'ONLINE' ? 'Continue to pay ' + naira(pn.total_kobo) : free ? 'Book with ' + (w.pay === 'CREDIT' ? 'credit' : 'plan session') : 'Confirm booking'}</button></div>`;
       document.querySelectorAll('[data-p]').forEach((el) => el.onclick = () => { w.pay = el.dataset.p; w.payTouched = true; draw(); });
       const bn = $('#bnote'); if (bn) bn.oninput = () => { w.note = bn.value; };
       $('#back').onclick = () => stepBack(2);
@@ -656,7 +670,7 @@ async function bookingDetail(id, payResult) {
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:18px">${esc(b.service_name)}</h1>${statusBadge(b.status, b)}</div>
       <div class="muted">${esc(b.shop_name)} · ${esc(b.barber_name)}</div><div class="muted small">${ic('pin', 'sm')} ${esc(b.location || '')}</div>
       <hr><div class="row between"><span>${ic('cal', 'sm')} ${dateLabel(b.date)}</span><b>${esc(b.start_label)}</b></div>
-      <div class="row between" style="margin-top:6px"><span>${ic('clock', 'sm')} ${b.duration_min} min</span><b>${naira(b.price_kobo)}</b></div>
+      <div class="row between" style="margin-top:6px"><span>${ic('clock', 'sm')} ${b.duration_min} min</span><b>${naira(b.price_kobo)}</b></div>${custMoney(b)}
       <div class="row between" style="margin-top:8px"><span class="small muted">Payment</span>${payBadge(b)}</div>
       ${b.arrival_time ? `<div class="small muted" style="margin-top:6px">Checked in ${lagosWhen(b.arrival_time, b.scheduled_time)}${lateBy(b.arrival_time, b.scheduled_time)}</div>` : ''}</div>
     ${b.note_to_barber ? `<div class="card small"><span class="muted">Your note to the barber:</span> ${esc(b.note_to_barber)}</div>` : ''}
@@ -825,7 +839,7 @@ async function barberBooking(id) {
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:20px;display:flex;align-items:center;gap:10px">${cav(b.customer, 'lg')}${esc(b.customer.name)}</h1>${statusBadge(b.status)}</div>
       <div class="muted small">${esc(b.customer.phone || '')} ${esc(b.customer.email || '')}</div><hr>
       <div class="row between"><b>${esc(b.service_name)}</b><b>${naira(b.price_kobo)}</b></div>
-      <div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${b.duration_min} min</div><div style="margin-top:6px">${payBadge(b)} <span class="small muted">${b.paid_via ? 'via ' + esc(b.paid_via) : ''}</span></div>
+      <div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${b.duration_min} min</div>${barberMoney(b)}<div style="margin-top:6px">${payBadge(b)} <span class="small muted">${b.paid_via ? 'via ' + esc(b.paid_via) : ''}</span></div>
       ${b.payment_option === 'PLAN' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a customer <b>plan session</b> — nothing to collect.</div>` : b.payment_option === 'CREDIT' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} Paid with a <b>session credit</b> — nothing to collect.</div>` : ''}
       ${b.payment_status === 'CREDITED' ? `<div class="small muted" style="margin-top:6px">Missed paid session: customer received one credit with you (no refund).</div>` : ''}
       ${['REFUND_PENDING', 'REFUNDED'].includes(b.payment_status) ? `<div class="small muted" style="margin-top:6px">Paid session not delivered or cancelled in time: the customer is being refunded (no credit).</div>` : ''}

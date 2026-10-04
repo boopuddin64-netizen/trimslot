@@ -18,7 +18,10 @@ PAGES = {  # md file -> (public page, <title>)
 # fills <span data-s="key"> from /api/public-settings) and this default in the Word/PDF files.
 DEFAULTS = {
     "cancel_cutoff_min": "30", "payment_hold_min": "15", "credit_expiry_days": "30", "refund_auto_approve_hours": "3",
-    "platform_fee_percent": "0.15", "platform_fee_naira": "10", "commission_percent": "50", "min_barber_payout_percent": "50",
+    "platform_charge_percent": "2", "platform_charge_flat_naira": "0", "platform_charge_min_naira": "50",
+    "fee_share_customer_percent": "33.333", "fee_share_barber_percent": "33.333", "fee_share_platform_percent": "33.334",
+    "ps_percent": "1.5", "ps_flat_naira": "100", "ps_flat_waived_below_naira": "2,500", "ps_cap_naira": "2,000", "ps_vat_percent": "7.5",
+    "commission_percent": "50", "min_barber_payout_percent": "50",
     "min_plan_price_naira": "1,000", "max_plan_price_naira": "500,000", "max_plan_validity_days": "90", "max_plan_sessions": "30",
     "liability_cap_naira": "₦[AMOUNT]",
     "retention_events_days": "400", "retention_bad_events_days": "30", "retention_notifications_days": "180", "retention_push_stale_days": "60",

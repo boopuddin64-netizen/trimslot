@@ -54,7 +54,7 @@ The barber must honour every paid session until the plan expires, provide the in
 
 ## 6. Fees
 
-The platform fee for a plan sale is taken from the plan price when you pay and is not charged to you on top (a Paystack processing fee may be shown at checkout). No fee is charged again when you use a session.
+TrimSlot's charge and the barber's share of the payment processing fee are taken from the barber's side of the plan price. When you buy a plan online you also pay the small **booking fee** shown at checkout, once, at purchase. No fee is charged again when you use a session.
 
 ## 7. Changes and contact
 
