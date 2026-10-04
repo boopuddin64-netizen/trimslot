@@ -29,3 +29,14 @@ export function fmtWhen(date: string, startMin: number): string {
   return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${fmtTime12(startMin)}`;
 }
 export { minToHhmm };
+
+/** Tap-to-call and WhatsApp links for a phone number (Nigerian local 0803... -> +234803...). Returns null when the number is not usable. */
+export function phoneLinks(phone: string | null | undefined): { tel: string; whatsapp: string } | null {
+  const raw = String(phone ?? '').replace(/[\s\-()]/g, '');
+  if (!raw) return null;
+  let digits: string;
+  if (/^0\d{10}$/.test(raw)) digits = '234' + raw.slice(1);
+  else if (/^\+?\d{8,15}$/.test(raw)) digits = raw.replace(/^\+/, '');
+  else return null;
+  return { tel: `tel:+${digits}`, whatsapp: `https://wa.me/${digits}` };
+}

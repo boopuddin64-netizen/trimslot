@@ -10,7 +10,7 @@ import { authenticate, requireAuth, requireRole, setAuthCookie, signToken } from
 import * as V from './validation';
 import { parse } from './validation';
 import { getAvailableSlots } from './slots';
-import { audit, fmtTime12 } from './helpers';
+import { audit, fmtTime12, phoneLinks } from './helpers';
 import {
   BarberAction, barberAction, canCustomerCancel, cancelCutoff, createBooking, customerCancel, customerCheckIn,
   expireHolds, getBooking, orderedQueue, queueInfo, BookingRow, isIncomplete, barberVisible,
@@ -62,7 +62,7 @@ type Memo = { barbers: Map<number, Promise<any>>; queues: Map<string, Promise<Bo
 const newMemo = (): Memo => ({ barbers: new Map(), queues: new Map(), delays: new Map() });
 async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queue?: BookingRow[]; memo?: Memo } = {}) {
   const memo = opts.memo;
-  const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
+  const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name, u.phone AS barber_phone FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
   let barberP: Promise<any>;
   if (memo) { barberP = memo.barbers.get(b.barber_id) ?? barberQ(); memo.barbers.set(b.barber_id, barberP); } else barberP = barberQ();
   const barber = await barberP;
@@ -85,6 +85,11 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     allowed_next: TRANSITIONS[b.status],
     created_at: b.created_at,
   };
+  // The barber's number is shared with the customer ONLY while a paid booking is upcoming (confirmed or arrived) - never in the directory, share-link page or other states.
+  if (!opts.forBarber && b.payment_status === 'PAID' && ['CONFIRMED', 'ARRIVED'].includes(b.status)) {
+    const links = phoneLinks(barber?.barber_phone);
+    if (links) out.barber_contact = { name: barber.barber_name, phone: barber.barber_phone, tel_url: links.tel, whatsapp_url: links.whatsapp };
+  }
   // Money lines. Customer: price + booking fee = what they pay. Barber: their Paystack share and the platform charge come out of the payout.
   if (b.payment_option === 'ONLINE') {
     if (opts.forBarber) out.money = b.payout_kobo == null ? { mode: 'ONLINE', price_kobo: b.price_kobo }
@@ -131,6 +136,7 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   if (opts.forBarber) {
     const c = await db.one('SELECT id, name, phone, email, avatar_url FROM users WHERE id=$1', [b.customer_id]);
     out.customer = { id: c.id, name: c.name, phone: c.phone, email: c.email, avatar_url: c.avatar_url ?? null };
+    const pl = phoneLinks(c.phone); if (pl) { out.customer.tel_url = pl.tel; out.customer.whatsapp_url = pl.whatsapp; }
     const st = await getSettingsCached(db);
     if (st.feature_reliability && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) out.customer.reliability = await reliabilityFor(db, b.customer_id);
     if (st.feature_barber_notes && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) { const ins = await getCustomerInsights(db, b.barber_id, b.customer_id); out.customer.note = ins.note || null; out.customer.usual = ins.usual || null; }
