@@ -130,7 +130,7 @@ export function createApp(db: Db) {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"], // the SPA uses inline style="" attributes
-        imgSrc: ["'self'", 'data:', 'https:'],    // barber photo URLs are arbitrary https images
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],    // barber photo URLs are arbitrary https images
         connectSrc: ["'self'"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],

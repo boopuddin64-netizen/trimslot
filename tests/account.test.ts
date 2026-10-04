@@ -152,7 +152,7 @@ test('customer avatar: upload (JPEG only by content), shown to me and to a barbe
     const C = { Cookie: (cl.headers.get('set-cookie') || '').split(';')[0] };
     const bl = await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'mike@trimslot.demo', password: 'Barber123!' } });
     const B = { Cookie: (bl.headers.get('set-cookie') || '').split(';')[0] };
-    const put = (buf: Buffer, type = 'image/jpeg', h: any = C) => fetch(s.base + '/api/me/avatar', { method: 'PUT', headers: { ...h, 'Content-Type': type }, body: buf });
+    const put = (buf: Buffer, type = 'image/jpeg', h: any = C) => fetch(s.base + '/api/me/avatar', { method: 'PUT', headers: { ...h, 'Content-Type': type }, body: new Uint8Array(buf) });
     assert.equal((await put(Buffer.from('not an image at all, just text'), 'image/jpeg')).status, 400);
     assert.equal((await put(jpeg(), 'image/png')).status, 400, 'declared type must match');
     assert.equal((await put(Buffer.alloc(130 * 1024, 1), 'image/jpeg')).status >= 400, true, 'too large');
