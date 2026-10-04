@@ -68,7 +68,7 @@
 </tr>
 <tr>
 <td><strong>Plans, credits, balance</strong></td>
-<td>Plans bought, sessions used, expiry, session credits; for barbers, the commission balance owed and its history</td>
+<td>Plans bought, sessions used, expiry, session credits (including free loyalty credits, if that reward is switched on, earned after a number of completed visits with the same barber, and credits that staff have removed); for barbers, the commission balance owed and its history</td>
 <td>System</td>
 </tr>
 <tr>
@@ -83,12 +83,12 @@
 </tr>
 <tr>
 <td><strong>Notifications</strong></td>
-<td>The in-app notifications we send you; if you turn on browser notifications, your <strong>push subscription</strong> (a browser-generated address and keys that let your browser receive our messages)</td>
+<td>The in-app notifications we send you; if you turn on browser notifications, your <strong>push subscription</strong>: a browser-generated address and keys that let your browser receive our messages, the date it was created and when it last worked, and a short description of your browser and device (the "user agent" text your browser sends). A push subscription belongs to the <strong>browser</strong>, not to the account: if a different person logs in on the same browser and turns notifications on, the subscription <strong>moves to that account</strong> and the earlier account stops receiving pushes on that browser.</td>
 <td>System, your browser</td>
 </tr>
 <tr>
 <td><strong>Technical</strong></td>
-<td>IP address, browser type, request logs (time, page, response code, account ID), security counters (such as failed log-in counts and rate limits), error logs</td>
+<td>IP address, browser type, request logs (time, page, response code, account ID), security counters, error logs. The security counters (the <code>rate_limits</code> records) store, for a short time, your <strong>IP address</strong> and, for failed log-ins, the <strong>e-mail or phone number you typed</strong>, with a count of attempts; they are deleted automatically after about <span data-s="retention_rate_limit_hours">2</span> hours.</td>
 <td>Your device</td>
 </tr>
 <tr>
@@ -137,8 +137,12 @@
 <td>Legitimate interests / contract</td>
 </tr>
 <tr>
-<td>Browser (push) notifications</td>
+<td>Browser (push) notifications, including storing a short description of your browser with the subscription (to help us find and remove dead subscriptions)</td>
 <td><strong>Consent</strong> — you choose to switch them on and can switch them off at any time</td>
+</tr>
+<tr>
+<td>Free loyalty credits (only if TrimSlot switches the reward on) and removing a credit that was issued by mistake or unfairly</td>
+<td>Contract / legitimate interests</td>
 </tr>
 <tr>
 <td>Service announcements and important changes</td>
@@ -176,7 +180,7 @@
 <h2>5. Sending data outside Nigeria</h2>
 <p>Our database and hosting are outside Nigeria (<strong>United Kingdom</strong>), and our providers (Supabase, Vercel, Paystack and its group companies) are international companies that may process data in other countries, including the United States and the European Economic Area. Where personal data leaves Nigeria we rely on the transfer rules in the NDPA (Part VIII): <mark class="ph">[LAWYER: choose and document the basis — adequacy of the destination, standard contractual clauses / binding corporate rules, or another permitted basis — and check each provider's data processing agreement.]</mark> We ask providers to protect data to a standard at least equal to the NDPA.</p>
 <h2>6. How long we keep it</h2>
-<p><mark class="ph">[LAWYER: confirm every period.]</mark> The periods marked "automatic" are run by a clean-up job that runs about once an hour. TrimSlot staff can change these periods in the admin settings and this page shows the current values.</p>
+<p><mark class="ph">[LAWYER: confirm every period.]</mark> The periods marked "automatic" are run by a clean-up job. The job starts from TrimSlot's scheduled "sweep" and runs at most once an hour. The scheduled sweep runs <strong>once a day</strong> by default; if TrimSlot also uses an external one-minute timer it runs far more often. So an item can be kept up to about a day longer than the period shown. <mark class="ph">[OWNER: confirm which timer is in use.]</mark> TrimSlot staff can change these periods in the admin settings and this page shows the current values.</p>
 <div class="tblwrap"><table>
 <thead>
 <tr>
@@ -207,8 +211,8 @@
 <td>Automatic</td>
 </tr>
 <tr>
-<td>Push subscriptions</td>
-<td>Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, or when unused for <strong><span data-s="retention_push_stale_days">60</span> days</strong></td>
+<td>Push subscriptions (including the browser description)</td>
+<td>Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, when it has failed repeatedly, or when unused for <strong><span data-s="retention_push_stale_days">60</span> days</strong></td>
 <td>Automatic</td>
 </tr>
 <tr>
@@ -217,7 +221,7 @@
 <td>Automatic</td>
 </tr>
 <tr>
-<td>Security counters and rate limits</td>
+<td>Security counters and rate limits (IP address, and the e-mail or phone typed at failed log-ins)</td>
 <td><strong><span data-s="retention_rate_limit_hours">2</span> hours</strong></td>
 <td>Automatic</td>
 </tr>
@@ -257,7 +261,7 @@
 <h2>9. Cookies and device storage</h2>
 <p>We use one essential cookie to keep you logged in, and small items in your browser's storage for settings. We use no advertising or analytics cookies. See the <a href="cookies.html">Cookie and Notification Notice</a>.</p>
 <h2>10. Children</h2>
-<p>The Service is for people aged <strong>18 and over</strong>. <mark class="ph">[LAWYER: the app lets an adult book for a child; decide whether to allow this and how to treat children's data under NDPA s.31.]</mark> If you think a child has given us data, contact us and we will remove it.</p>
+<p>The Service is for people aged <strong>18 and over</strong>. The app has no feature for booking on behalf of a child and we do not knowingly collect children's data. <mark class="ph">[LAWYER: confirm whether an age check is needed; NDPA s.31.]</mark> If you think a child has given us data, contact us and we will remove it.</p>
 <h2>11. Third-party links and content</h2>
 <p>Shop photos and some links may point to other websites. We are not responsible for their privacy practices.</p>
 <h2>12. Changes</h2>

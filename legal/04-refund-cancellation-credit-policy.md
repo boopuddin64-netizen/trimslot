@@ -10,7 +10,7 @@
 <li>If you cancel in time and you paid online, you get a refund. TrimSlot staff approve it. If no one decides in {{refund_auto_approve_hours}} hour(s), it is approved by itself.</li>
 <li>If you paid with a plan session or a credit, you get it back.</li>
 <li>If you miss a visit that you paid for, you get no refund. You get one credit with the same barber instead. It lasts {{credit_expiry_days}} days. You cannot cash it out.</li>
-<li>If the barber cannot serve you, you get a refund. If you pay twice, or your payment comes too late, you also get a refund.</li>
+<li>If the barber cannot serve you, you get a refund. If you pay twice, or your payment comes after someone else took that time, you also get a refund. If your payment comes late but the time is still free, the booking is confirmed.</li>
 <li>One booking gets a refund or a credit. It never gets both.</li>
 </ul>
 <p class="ps-note">This is a short summary. The full text below is what counts.</p>
