@@ -45,6 +45,10 @@ export function parseGatewayData(d: any, reference: string): VerifyResult {
   const num = (v: unknown) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? undefined : Math.round(Number(v)));
   return { ok: d?.status === 'success', status: String(d?.status), amount_kobo: num(d?.amount), requested_amount_kobo: num(d?.requested_amount), fees_kobo: num(d?.fees), currency: d?.currency == null || d.currency === '' ? undefined : String(d.currency).toUpperCase(), reference };
 }
+/** Statuses where Paystack itself tells us nothing was taken. Any other answer that is not 'success' ('pending', 'ongoing', 'processing', 'queued', 'reversed', an empty or new status...)
+ *  is NOT proof of "unpaid": the money may be on its way or may already have left the customer's account. Callers must never say "not charged" for those. */
+const SURE_UNPAID = new Set(['abandoned', 'failed', 'not_found']);
+export const isSureUnpaid = (v: VerifyResult) => !v.ok && SURE_UNPAID.has(String(v.status).trim().toLowerCase());
 /** Does what the gateway reports match the price on our payment row? Returns the processing fee the customer paid on top (0 if none), or null on a real mismatch. */
 export function amountMatches(v: VerifyResult, expectedKobo: number): { fee_kobo: number; paid_kobo: number } | null {
   if (v.amount_kobo === undefined) return null;
@@ -193,7 +197,7 @@ export async function verifyWithGateway(db: Db, reference: string): Promise<Veri
 /** What happened to a payment. Each case has its own text on the return page:
  *  processed / already_processed = the booking is confirmed; slot_taken = someone else's payment took the time first; late_refund = the payment came after the
  *  try closed and the time was no longer free; duplicate_refund = a second payment for a booking that was already paid; refund_due = a duplicate plan payment. */
-export type ProcessResult = 'processed' | 'already_processed' | 'not_paid' | 'unknown_reference' | 'amount_mismatch' | 'slot_taken' | 'late_refund' | 'duplicate_refund' | 'refund_due';
+export type ProcessResult = 'processed' | 'already_processed' | 'not_paid' | 'unverified' | 'unknown_reference' | 'amount_mismatch' | 'slot_taken' | 'late_refund' | 'duplicate_refund' | 'refund_due';
 
 /** A payment that was already settled earlier (webhook first, or a second tab): say what really happened to it, not just "already processed". */
 async function settledResult(db: Db, pay: any): Promise<ProcessResult> {
@@ -246,7 +250,7 @@ export async function processReference(db: Db, reference: string, o: { force?: b
   const ids = { booking_id: pay.booking_id ?? undefined, plan_purchase_id: pay.plan_purchase_id ?? undefined };
   if (pay.status === 'SUCCESS') return { result: await settledResult(db, pay), ...ids };
   const v = await verifyWithGateway(db, reference);            // network call: no DB transaction is open here
-  if (!v.ok) return { result: 'not_paid', ...ids };
+  if (!v.ok) return { result: isSureUnpaid(v) ? 'not_paid' : 'unverified', ...ids };   // 'unverified' = Paystack has not settled it (pending, processing...): keep waiting and ask again, never claim "not charged"
   // `force` (admin "confirm anyway") accepts a different AMOUNT for a payment staff have looked at, never another currency.
   const am = amountMatches(v, pay.amount_kobo) ?? (o.force && v.amount_kobo !== undefined && (v.currency === undefined || v.currency === 'NGN') ? { fee_kobo: 0, paid_kobo: v.amount_kobo } : null);
   if (!am) { await flagMismatch(db, pay, v).catch((e) => logger.warn('mismatch_flag_failed', { err: String(e?.message).slice(0, 120) })); return { result: 'amount_mismatch', ...ids }; }
@@ -277,7 +281,6 @@ export async function processReference(db: Db, reference: string, o: { force?: b
   return { result, ...ids };
 }
 
-/** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
 /** The customer (booking or plan buyer) was told "our team is checking your payment"; say what happened next, so the old text is not the last word.
  *  'asked' = we asked Paystack to send the money back (all we know); 'sent' = staff recorded that it was paid back. */
 export async function notifyMismatchRefund(db: Db | import('./db').Conn, pay: { booking_id: number | null; plan_purchase_id: number | null }, stage: 'asked' | 'sent') {
@@ -294,6 +297,7 @@ export async function notifyMismatchRefund(db: Db | import('./db').Conn, pay: { 
   if (stage === 'asked') await notify(db, customerId, 'PAYMENT_PROBLEM', 'We asked for your money to be sent back', `The payment for ${what} did not fit, so we did not confirm it. We asked for your money to be sent back. Your bank may take a few working days to show it.${ref}`, bookingId);
   else await notify(db, customerId, 'PAYMENT_PROBLEM', 'Your money has been sent back', `The payment for ${what} did not fit, so we did not confirm it. Your money has been sent back. Your bank may take a few working days to show it.${ref}`, bookingId);
 }
+/** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
 export async function requestRefund(db: Db, reference: string): Promise<'requested' | 'failed' | 'not_needed'> {
   // Claim first: two callers (the sweeper and an admin click, or two sweepers) can never both send the refund. Only the one whose UPDATE changes the row goes on.
   const claim = await db.maybeOne<{ id: number; booking_id: number | null; plan_purchase_id: number | null; refund_reason: string | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, plan_purchase_id, refund_reason`, [reference, isoNow()]);
@@ -344,6 +348,7 @@ export async function handleWebhook(db: Db, rawBody: Buffer, signature: string |
     // Never trust the payload's word: re-verify the reference with the gateway.
     const r = await processReference(db, reference);
     await log(r.result);
+    if (r.result === 'unverified') return { status: 500, body: { error: 'Payment not settled yet' } };   // Paystack said "charged" but verify is not final: ask us again later (Paystack retries)
     return { status: 200, body: { received: true, result: r.result } };
   } catch (e: any) {
     try { await log('error: ' + (e.message || 'unknown')); } catch { /* db down */ }
@@ -390,7 +395,7 @@ export async function verifyBeforeClosing(db: Db, rows: { id: number; hold_expir
       const c = await claimCheck(db, p.reference, 2);
       if (!c.claimed) { if (!(await c.wasAnswered())) failed = true; continue; }   // asked a moment ago: fine if it answered, otherwise it is still unknown
       if (Date.now() > deadline) { failed = true; continue; }                       // out of time: leave the claim, try again later
-      try { const r = await processReference(db, p.reference); await c.answered(); if (r.result === 'amount_mismatch') odd = true; }
+      try { const r = await processReference(db, p.reference); if (r.result === 'unverified') failed = true; else { await c.answered(); if (r.result === 'amount_mismatch') odd = true; } }   // 'unverified' = Paystack gave no final answer: same as not checked
       catch (e: any) { failed = true; logger.warn('hold_verify_failed', { ref: p.reference, err: String(e?.message).slice(0, 120) }); }
     }
     if (failed || odd) {
@@ -418,7 +423,7 @@ export async function reconcileRecentPayments(db: Db, limit = 25): Promise<{ che
     checked++;
     try {
       const o = await processReference(db, r.reference);
-      await c.answered();
+      if (o.result !== 'unverified') await c.answered();
       if (o.result === 'processed') confirmed++; else if (['slot_taken', 'late_refund', 'duplicate_refund', 'refund_due'].includes(o.result)) refunds++;
     } catch (e: any) { logger.warn('reconcile_failed', { ref: r.reference, err: String(e?.message).slice(0, 120) }); }
   }

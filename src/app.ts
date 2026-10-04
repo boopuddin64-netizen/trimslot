@@ -117,8 +117,8 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   // Customer-facing only: an unpaid Pay-now booking that expired/was abandoned is "Incomplete" (no credit/refund implications).
   if (!opts.forBarber) out.incomplete = incomplete && b.status !== 'PENDING_PAYMENT';
   if (!opts.forBarber && ['REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
-    const rf = await db.maybeOne<any>(`SELECT refund_status, refund_due_at FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1`, [b.id]);
-    out.refund = { status: b.payment_status, gateway: rf?.refund_status ?? null, due_at: b.payment_status === 'REFUND_PENDING' ? rf?.refund_due_at ?? null : null };
+    const rf = await db.maybeOne<any>(`SELECT refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1`, [b.id]);
+    out.refund = { status: b.payment_status, gateway: rf?.refund_status ?? null };   // the approval deadline is staff-only: never sent to the customer
   }
   // What went wrong with a payment on this booking (so the page can always say the right thing, also after a reload or a poll).
   // The detail page and the list use the same lookup (list rows get it from one batched query), so a row never says "no payment" while the detail page shows a refund.
@@ -475,7 +475,7 @@ export function createApp(db: Db) {
     const p = await db.many('SELECT reference FROM payments WHERE booking_id=$1 ORDER BY id DESC', [b.id]);
     let best: any = { result: 'no_payment' }, bestRef: string | null = null, bestRank = -1;
     // Which answer matters most to the customer: a confirmation, then a problem with money (refund / amount), then "not paid".
-    const rank = (r: string) => (r === 'processed' || r === 'already_processed' ? 5 : ['slot_taken', 'late_refund', 'duplicate_refund', 'refund_due', 'amount_mismatch'].includes(r) ? 4 : r === 'not_paid' ? 2 : 1);
+    const rank = (r: string) => (r === 'processed' || r === 'already_processed' ? 5 : ['slot_taken', 'late_refund', 'duplicate_refund', 'refund_due', 'amount_mismatch'].includes(r) ? 4 : r === 'unverified' ? 3 : r === 'not_paid' ? 2 : 1);
     for (const row of p) { const r = await processReference(db, row.reference); if (rank(r.result) > bestRank) { best = r; bestRef = row.reference; bestRank = rank(r.result); } if (bestRank === 5) break; }
     res.json({ result: best.result, reference: bestRef, booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));
@@ -518,7 +518,7 @@ export function createApp(db: Db) {
     if (reference) {
       try {
         const r = await processReference(db, reference);
-        result = r.result; bookingId = r.booking_id; planId = r.plan_purchase_id;
+        result = r.result === 'unverified' ? 'checked' : r.result; bookingId = r.booking_id; planId = r.plan_purchase_id;   // Paystack gave no final answer: the page says "not told us yet", never "did not go through"
         await recordPaymentEvent(db, { source: 'CALLBACK', eventType: 'callback', reference, signatureValid: null, payload: JSON.stringify(req.query), result: r.result }).catch(() => {});
       } catch (e: any) {
         // Paystack (or our database) hiccuped. The customer must still land on their booking, which asks again by itself; never a bare error page.

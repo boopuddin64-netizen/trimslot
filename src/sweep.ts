@@ -30,11 +30,13 @@ export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked
   // (2) keep any purchase that has a signed charge event on record, so the money trail is not lost.
   const ckDays = Math.max(1, Math.floor((await getSettings(db)).retention_checkout_days));
   const staleBase = `FROM plan_purchases pp WHERE pp.status='PENDING' AND pp.created_at < now() - make_interval(days => ${ckDays}) AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.plan_purchase_id=pp.id AND (p.status='SUCCESS' OR p.refund_status IS NOT NULL))`;   // a payment flagged for a refund (e.g. an amount mismatch) is money staff still must settle: never delete it
+  const unsure = new Set<string>();   // checkouts Paystack could not settle (pending, unreachable): never dropped in this round
   if (!config.mockMode) {
     const refs = await db.many<{ reference: string }>(`SELECT p.reference FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id WHERE p.status='INITIATED' AND pp.status='PENDING' AND pp.created_at < now() - make_interval(days => $1) AND pp.created_at > now() - interval '30 days' LIMIT 10`, [ckDays]).catch(() => []);
-    for (const r of refs) await processReference(db, r.reference).catch(() => undefined);
+    for (const r of refs) { const o = await processReference(db, r.reference).catch(() => ({ result: 'unverified' as const, plan_purchase_id: undefined as number | undefined })); if (o.result === 'unverified' || (o as any).plan_purchase_id === undefined) unsure.add(r.reference); }
   }
-  const stale = `SELECT pp.id ${staleBase} AND NOT EXISTS (SELECT 1 FROM payments p JOIN payment_events e ON e.reference=p.reference WHERE p.plan_purchase_id=pp.id AND e.signature_valid IS TRUE)`;
+  const unsureIds = unsure.size ? (await db.many<{ id: number }>(`SELECT DISTINCT plan_purchase_id AS id FROM payments WHERE reference = ANY($1::text[]) AND plan_purchase_id IS NOT NULL`, [[...unsure]]).catch(() => [])).map((x) => Number(x.id)) : [];
+  const stale = `SELECT pp.id ${staleBase} AND NOT EXISTS (SELECT 1 FROM payments p JOIN payment_events e ON e.reference=p.reference WHERE p.plan_purchase_id=pp.id AND e.signature_valid IS TRUE)${unsureIds.length ? ` AND pp.id NOT IN (${unsureIds.join(',')})` : ''}`;
   await db.query(`DELETE FROM payments WHERE plan_purchase_id IN (${stale})`).catch(() => {});
   await db.query(`DELETE FROM plan_purchases WHERE id IN (${stale})`).catch(() => {});
   const ledger_reminders = await db.tx((t) => sendLedgerReminders(t)).catch(() => 0);
