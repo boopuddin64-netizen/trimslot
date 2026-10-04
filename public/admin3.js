@@ -5,7 +5,7 @@
 const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } };
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
-const stars = (n) => '<span class="stars" aria-label="' + n + ' out of 5">' + '★'.repeat(n) + '<i>' + '★'.repeat(5 - n) + '</i></span>';
+const stars = (n) => '<span class="stars" aria-label="' + n + ' out of 5">' + '★'.repeat(n) + '<i>' + '☆'.repeat(5 - n) + '</i></span>';
 const STATE = {};
 const PAGE = 25;
 
