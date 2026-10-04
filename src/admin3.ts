@@ -7,8 +7,10 @@ import { requirePin } from './adminPin';
 import { AppError, badRequest, notFound } from './errors';
 import { audit, notify } from './helpers';
 import { getSettings } from './plans';
-import { isoNow, lagosDate } from './time';
+import { clock, isoNow, lagosDate } from './time';
 import { ledgerBlocked } from './ledger';
+import QRCode from 'qrcode';
+import { absolute, ensureShareCode } from './shareLinks';
 
 type H = (req: Request, res: Response) => Promise<any>;
 const ADMIN = { id: null as number | null, role: 'admin' as const };
@@ -193,6 +195,28 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
     ];
     const v = { today, numbers: { customers: r.customers, barbers_live: r.barbers_live, bookings_today: r.bookings_today, revenue_30d_kobo: Number(r.revenue_30d_kobo) }, attention, maintenance_mode: r.maintenance_mode, generated_at: isoNow() };
     homeCache = { at: Date.now(), v }; res.json(v);
+  });
+
+  /* ---- cron heartbeat: when the 1-minute timer last reached /api/cron/sweep (stamped by the endpoint on every authorised hit) ---- */
+  get('/cron-status', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const r = await db.maybeOne<any>('SELECT cron_last_run_at, cron_last_ok_at, cron_last_error FROM platform_settings WHERE id=1');
+    const last = r?.cron_last_run_at ? new Date(r.cron_last_run_at).toISOString() : null;
+    const age = last ? Math.max(0, Math.round((clock.now().getTime() - new Date(last).getTime()) / 1000)) : null;
+    res.json({ last_run_at: last, last_ok_at: r?.cron_last_ok_at ? new Date(r.cron_last_ok_at).toISOString() : null, last_error: r?.cron_last_error || null, age_seconds: age,
+      status: age == null ? 'never' : (age > 180 ? 'late' : (r?.cron_last_error ? 'error' : 'ok')), warn_after_seconds: 180, now: isoNow() });
+  });
+
+  /* ---- a barber's private share link (+ QR) so the admin can send it. Admin only; the customers' private-links rule does not apply here. ---- */
+  get('/barbers/:id/share', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const id = Number(req.params.id);
+    const b = Number.isInteger(id) ? await db.maybeOne<any>('SELECT b.id, b.verified, b.shop_name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 AND u.deleted_at IS NULL', [id]) : undefined;
+    if (!b) throw notFound('We could not find that barber.');
+    const code = await ensureShareCode(db, id);
+    const url = absolute(req, `/b/${code}`);
+    const qr_svg = await QRCode.toString(url, { type: 'svg', margin: 2, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } });
+    res.json({ barber_id: id, shop_name: b.shop_name, code, path: `/b/${code}`, url, active: !!b.verified, qr_svg });
   });
 
   /* ---- command palette: people, shops, bookings by #id, payments by reference (index-backed, 5 each) ---- */

@@ -110,7 +110,7 @@ export function barberAccessGuard(db: Db) {
   };
 }
 
-const absolute = (req: Request, path: string) => {
+export const absolute = (req: Request, path: string) => {
   const base = config.appBaseUrl && /^https?:\/\//.test(config.appBaseUrl) ? config.appBaseUrl.replace(/\/+$/, '') : `${req.protocol}://${req.get('host')}`;
   return base + path;
 };

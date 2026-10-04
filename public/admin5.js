@@ -214,10 +214,48 @@ ROUTES.controls = async () => {
   const lab = [...app.querySelectorAll('#cf label')].find((l) => /Commission factor/.test(l.textContent)); if (lab) lab.textContent = 'Commission factor (0–1; also editable below as a %)';
   try { await addNumbersCard(); } catch (e) { toast(e.message, true); }
   collapsify(app.querySelector('#cf')); collapsify(app.querySelector('#nf'));
+  try { await addCronCard(); } catch { /* the controls themselves are already usable */ }
 };
+
+/* Cron heartbeat card at the top of Controls: "Cron last ran X ago", amber/red when the 1-minute timer looks stopped (> 3 minutes). */
+const agoTxt = (sec) => sec < 60 ? sec + ' s' : sec < 3600 ? Math.round(sec / 60) + ' min' : sec < 86400 ? Math.round(sec / 3600) + ' h' : Math.round(sec / 86400) + ' days';
+async function addCronCard() {
+  const c = await api('/cron-status'); const first = app.querySelector('.card'); if (!first) return;
+  const bad = c.status !== 'ok';
+  const line = c.status === 'never' ? 'Cron has never run (no heartbeat recorded yet).' : 'Cron last ran ' + agoTxt(c.age_seconds) + ' ago.';
+  const warn = c.status === 'never' ? 'The 1-minute timer has not reached the app since this check was added. Check the timer at cron-job.org (URL, Bearer secret, schedule).'
+    : c.status === 'late' ? 'More than 3 minutes since the last run. The 1-minute timer looks stopped; check it at cron-job.org. Until it runs, expired holds, missed-webhook payments and refunds wait.'
+    : c.status === 'error' ? 'The last run reached the app but failed: ' + c.last_error : '';
+  app.querySelector('#cronCard')?.remove();
+  first.insertAdjacentHTML('beforebegin', `<div class="card ${bad ? 'warnbox' : ''}" id="cronCard" data-cron="${esc(c.status)}"><h2 style="margin-top:0">Background timer</h2>
+    <p style="margin:0"><b ${bad ? 'style="color:var(--red)"' : ''}>${bad ? '⚠ ' : ''}${esc(line)}</b>${c.last_run_at ? ` <small class="muted">(${esc(new Date(c.last_run_at).toLocaleString('en-GB', { timeZone: 'Africa/Lagos' }))} Lagos)</small>` : ''}</p>
+    ${warn ? `<p class="small" style="margin:6px 0 0">${esc(warn)}</p>` : '<p class="small muted" style="margin:6px 0 0">The timer should hit the app every minute.</p>'}
+    <div class="btns"><button class="btn ghost" type="button" id="cronRefresh">Refresh</button></div></div>`);
+  app.querySelector('#cronRefresh').onclick = () => addCronCard().catch((e) => toast(e.message, true));
+}
 
 /* ---------- user + booking sheets: photo, acceptance history ---------- */
 const lastSheet = () => [...document.querySelectorAll('.modal .sheet')].pop();
+/* ---------- barber sheet (opened from the list, the search palette and the Home shortcuts): the barber's private share link ---------- */
+const _barberDetail = barberDetail;
+barberDetail = async function (id, reload) {
+  await _barberDetail(id, reload);
+  try {
+    const sh = lastSheet(); if (!sh || sh.dataset.shareDone) return; sh.dataset.shareDone = '1';
+    const r = await api('/barbers/' + id + '/share');
+    const anchor = [...sh.querySelectorAll('h3')].find((h) => /^Owner/.test(h.textContent.trim())); if (!anchor) return;
+    const qr = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(r.qr_svg);
+    anchor.insertAdjacentHTML('beforebegin', `<h3>Private share link</h3><div class="card share" id="adminShare" style="margin:0 0 8px;padding:12px"><div class="row" style="gap:12px;align-items:flex-start">
+      <img class="qr" src="${qr}" alt="QR code of the shop link" width="112" height="112"><div class="grow" style="min-width:0"><div class="linkbox small" id="adminShareUrl" style="overflow-wrap:anywhere">${esc(r.url)}</div>
+      <p class="small muted" style="margin:6px 0 0">${r.active ? 'Live. Send this to the customers who should book this shop.' : 'Not live yet: it starts working when you approve the shop.'} Customers only find the shop through this link.</p>
+      <div class="btns" style="margin-top:8px"><button type="button" class="btn sm" id="adminShareCopy">Copy link</button></div></div></div></div>`);
+    sh.querySelector('#adminShareCopy').onclick = async (ev) => {
+      const b = ev.currentTarget;
+      try { await navigator.clipboard.writeText(r.url); } catch { const ta = document.createElement('textarea'); ta.value = r.url; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch { /* shown on screen to copy by hand */ } ta.remove(); }
+      toast('Link copied'); b.textContent = 'Copied'; setTimeout(() => { b.textContent = 'Copy link'; }, 1800);
+    };
+  } catch { /* the sheet is already usable */ }
+};
 const _userSheet = userSheet;
 userSheet = async function (id, reload) {
   await _userSheet(id, reload);

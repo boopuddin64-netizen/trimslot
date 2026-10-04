@@ -223,3 +223,34 @@ test('legacy paths still work: CLI-style UPDATE verified keeps review_status in 
     assert.equal((await s.db.one('SELECT review_status FROM barbers WHERE id=$1', [s.barberId])).review_status, 'VERIFIED');
   } finally { s.server.close(); resetNow(); }
 });
+
+test('cron heartbeat: never -> ok after an authorised hit; an unauthorised hit does not stamp; late after 3+ minutes', async () => {
+  const s = await boot();
+  try {
+    await s.db.query('UPDATE platform_settings SET cron_last_run_at=NULL, cron_last_ok_at=NULL, cron_last_error=NULL WHERE id=1');
+    assert.equal((await s.j('/api/admin/cron-status')).status, 401, 'admin only');
+    assert.equal((await s.j('/api/admin/cron-status', { headers: s.A })).body.status, 'never');
+    assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer wrong-secret-wrong-secret' } })).status, 401);
+    assert.equal((await s.j('/api/admin/cron-status', { headers: s.A })).body.status, 'never', 'a rejected hit leaves no heartbeat');
+    assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer ' + KEY } })).status, 200);
+    const ok = (await s.j('/api/admin/cron-status', { headers: s.A })).body;
+    assert.equal(ok.status, 'ok'); assert.ok(ok.last_ok_at && ok.last_run_at && ok.age_seconds < 60 && !ok.last_error);
+    await s.db.query('UPDATE platform_settings SET cron_last_run_at=$1 WHERE id=1', [new Date(Date.parse(NOW) - 4 * 60000).toISOString()]);
+    assert.equal((await s.j('/api/admin/cron-status', { headers: s.A })).body.status, 'late');
+  } finally { s.server.close(); resetNow(); }
+});
+
+test('admin sees a barber\'s private share link + QR (admin only, works for any barber, even with the private-links rule on for customers)', async () => {
+  const s = await boot();
+  try {
+    assert.equal((await s.j(`/api/admin/barbers/${s.barberId}/share`)).status, 401, 'no key, no link');
+    const r = await s.j(`/api/admin/barbers/${s.barberId}/share`, { headers: s.A });
+    assert.equal(r.status, 200);
+    const code = (await s.db.one('SELECT share_code FROM barbers WHERE id=$1', [s.barberId])).share_code;
+    assert.ok(code && r.body.code === code && r.body.url.endsWith('/b/' + code) && r.body.path === '/b/' + code);
+    assert.ok(/^<svg|^<\?xml/.test(r.body.qr_svg), 'QR is an SVG');
+    assert.equal((await s.j('/api/admin/barbers/999999/share', { headers: s.A })).status, 404);
+    // a customer cannot use the admin route
+    assert.equal((await s.j(`/api/admin/barbers/${s.barberId}/share`, { headers: { Authorization: 'Bearer not-the-admin-key-123456' } })).status, 401);
+  } finally { s.server.close(); resetNow(); }
+});
