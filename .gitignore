@@ -16,3 +16,4 @@ screenshots/
 .cron_secret
 /tmp/
 smoke/*.out
+__pycache__/

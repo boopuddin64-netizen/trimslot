@@ -30,9 +30,10 @@ DEFAULTS = {
 }
 # The public pages may quote only these numbers (they are what /api/public-settings serves). Fee, charge, split, commission and refund-timing numbers are business settings:
 # they may appear in the internal lawyer files only (00, 07, 08 and the pack), never on a public page.
-PUBLIC_TOKENS = {"cancel_cutoff_min", "payment_hold_min", "credit_expiry_days", "min_plan_price_naira", "max_plan_price_naira", "max_plan_validity_days", "max_plan_sessions",
+PUBLIC_TOKENS = {"cancel_cutoff_min", "payment_hold_min", "credit_expiry_days",
     "liability_cap_naira", "retention_events_days", "retention_bad_events_days", "retention_notifications_days", "retention_push_stale_days", "retention_deleted_days",
-    "retention_checkout_days", "retention_rate_limit_hours", "retention_admin_alerts_days", "loyalty_every_n", "loyalty_credit_naira", "terms_version", "privacy_version", "barber_agreement_version"}
+    "retention_checkout_days", "retention_rate_limit_hours", "retention_admin_alerts_days", "terms_version", "privacy_version", "barber_agreement_version"}
+# (plan limits and the loyalty reward are NOT public numbers: the pages say "the limits the app shows" and "a number of completed visits")
 TOKEN = re.compile(r"\{\{([a-z_]+)\}\}")
 
 def fill_tokens(text, live):
@@ -87,13 +88,35 @@ def strip_first_quote(text):
     while j < len(lines) and lines[j].startswith(">"): j += 1
     return "\n".join(lines[:i] + lines[j:])
 
-NOTE = re.compile(r"\s*\[(?:LAWYER|OWNER)[^\]]*\]")   # drafting notes for the owner/lawyer stay in the pack and never reach a public page
+NOTE = re.compile(r"\s*\[(?:LAWYER|OWNER|PROPOSED|CHECK|TAX)[^\]]*\]")   # drafting notes (owner / lawyer / proposals / checks) stay in the pack and never reach a public page
+
+# ---- The build refuses a public page that still carries a drafting note, an unfinished list, or a business detail that belongs in the internal files ----
+BAD_PUBLIC = [
+    (r"subaccount|\bsplit(?:s|ting)?\b|commission factor|three ways|netting|\bnett(?:ed)?\b", "an internal payment mechanic"),
+    (r"payout\s*=|\byour payout\s*=|price\s*[−-]\s*the|keeps or covers|covers the difference|barber(?:'s)? (?:share|part) of the (?:payment[- ])?processing|\bprocessing fees?\b", "the payout formula or who bears the processing cost"),
+    (r"\b\d+ days old|every three days|every 3 days|at most one every", "an internal reminder rule"),
+    (r"1,000|500,000|\b90 days|\b30 sessions|up to \d+ sessions|up to \d+ days|every \d+(?:th|st|nd|rd)? (?:completed )?visits?", "a plan limit or loyalty number"),
+    (r"approv\w*[^.]{0,60}\b\d+ hours?|auto-?approv\w* (?:after|in|within) \d", "the refund auto-approve time"),
+    (r"\[(?:PROPOSED|LAWYER|OWNER|CHECK|TAX)|gap found|(?-i:\bNONE TODAY\b)|(?-i:\bTODO\b)|drafting note", "a drafting note"),
+    (r"\{\{|\}\}", "an unfilled setting token"),
+    (r"\[VERSION\]", "a [VERSION] placeholder (use a version token)"),
+]
+def check_public(page, body):
+    text = re.sub(r"<[^>]+>", " ", body)
+    for pat, what in BAD_PUBLIC:
+        m = re.search(pat, text, re.I)
+        if m: raise SystemExit("public page %s shows %s (%r): reword it or move it to an internal file" % (page, what, text[max(0, m.start() - 40):m.end() + 40].replace("\n", " ")))
+    for m in re.finditer(r"\[([^\]]{1,400})\]", text):   # a square-bracket item is allowed only as an undecided company / legal detail, never as a note
+        inner = m.group(1)
+        if len(inner) > 100 or re.search(r"\b(?:confirm|check|decide|proposed|owner|lawyer|note|review|add here|none today)\b", inner, re.I):
+            raise SystemExit("public page %s has a bracketed drafting note (%r)" % (page, m.group(0)[:100]))
+    if re.search(r"(?:^|\s)\*(?:\s|$)", text):
+        raise SystemExit("public page %s shows a stray '*' (a list that did not render: add a blank line before it)" % page)
 
 def web_page(md_name, page, title):
     body = md2html(NOTE.sub("", strip_first_quote((ROOT / md_name).read_text(encoding="utf-8")).split("\n## Open questions for the lawyer")[0]))
     body = unlink_unpublished(mark_placeholders(fill_tokens(body, True)))
-    leak = re.search(r"subaccount|\bsplit(?:s|ting)?\b|commission factor|three ways|netting", re.sub(r"<[^>]+>", " ", body), re.I)
-    if leak: raise SystemExit("public page %s mentions an internal payment mechanic (%r): reword it" % (page, leak.group(0)))
+    check_public(page, body)
     body = re.sub(r"<table>", '<div class="tblwrap"><table>', body).replace("</table>", "</table></div>")
     body = re.sub(r"<h1>.*?</h1>", lambda m: m.group(0) + BANNER, body, count=1, flags=re.S)
     foot = ('<footer class="foot"><a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/refunds.html">Refunds</a> · '
