@@ -34,6 +34,12 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
   check('signup validation error (400)', bad1.status === 400, bad1.json);
   const su = await cust.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Ngozi Test', email: `ngozi${stamp}@example.com`, phone: '', password: 'Password123' });
   check('customer signup', su.status === 201, su.json);
+  // Email check by one-time code (dev/test fixed code 123456; the mail goes to the server log, nothing real is sent)
+  const nov = await cust.call('POST', '/api/bookings', { barber_id: 1, service_id: 1, date: cfg.today, time: '10:00', payment_option: 'ON_ARRIVAL' });
+  check('first booking needs a checked email (403 EMAIL_NOT_VERIFIED, or 404 before the barber link)', nov.status === 403 || nov.status === 404, nov.json);
+  check('email code is sent', (await cust.call('POST', '/api/auth/email/send')).status === 200);
+  check('a wrong email code is refused (400)', (await cust.call('POST', '/api/auth/email/verify', { code: '000000' })).status === 400);
+  check('the right email code verifies the email', (await cust.call('POST', '/api/auth/email/verify', { code: '123456' })).json.user?.email_verified === true);
   check('duplicate signup -> 409', (await anon.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Dup', email: `ngozi${stamp}@example.com`, password: 'Password123' })).status === 409);
   await cust2.call('POST', '/api/auth/login', { identifier: 'tunde@trimslot.demo', password: 'Customer123!' });
 
@@ -249,6 +255,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     const AA = (path: string, m = 'GET', body?: unknown) => fetch(BASE + '/api/admin' + path, { method: m, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CR}` }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => ({})) as any }));
     const pc = new Client(); const pcEmail = `power${stamp}@example.com`;
     await pc.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Power Test', email: pcEmail, password: 'Password123' });
+    await pc.call('POST', '/api/auth/email/send'); await pc.call('POST', '/api/auth/email/verify', { code: '123456' });
     const pcId = (await AA('/customers?q=' + encodeURIComponent(pcEmail))).json.customers[0]?.id;
     check('admin finds the new customer', !!pcId);
     const tomorrow = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);

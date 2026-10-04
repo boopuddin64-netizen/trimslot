@@ -97,7 +97,7 @@ function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
-const fail = (e) => toast(e.message || 'Something went wrong. Try again.', true);
+const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED') { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
@@ -198,6 +198,7 @@ async function route() {
     if (parts[0] === 'b' && /^[a-f0-9]{12,32}$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
+    if (parts[0] === 'verify-email') return verifyEmail(q.get('next'));
     if (parts[0] === 'notifications') return notifications();
     if (parts[0] === 'profile') return role === 'barber' ? barberProfile() : profile();
     if (parts[0] === 'barber') return barberPage(Number(parts[1]));
@@ -275,7 +276,9 @@ function authPage(mode, roleQ) {
         if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } });
         else await api('/auth/login', { method: 'POST', body: fd });
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
-        go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/');
+        const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
+        if (signup && fd.email) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
+        go(dest);
       } catch (e) { saved = fd; draw(e.message); }
     };
   };
@@ -285,6 +288,34 @@ function authPage(mode, roleQ) {
 /* ---------- customer: home ---------- */
 const stars = (n, cls = '') => `<span class="stars ${cls}" aria-label="${n} out of 5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= Math.round(n) ? 'on' : ''}">${ic('star', 'sm')}</i>`).join('')}</span>`;
 const ratingChip = (r) => r && r.count ? `<span class="rate">${ic('star', 'sm')}<b>${r.average.toFixed(1)}</b><span class="muted"> (${r.count})</span></span>` : '';
+/* ---------- email check by one-time code (both roles) ---------- */
+async function verifyEmail(next) {
+  const u = state.user;
+  const target = next && /^#\/[a-z]/.test(next) && !/^#\/(login|signup|verify-email)/.test(next) ? next : '#/';
+  if (u.email_verified) { toast('Your email is already checked'); return go(target); }
+  let sent = false, masked = '', msg = '';
+  const draw = () => {
+    const devHint = state.cfg.email_dev_code ? `<div class="info small">Test mode: the code is <b>123456</b>.</div>` : '';
+    const intro = u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'We check your email once, before your first booking. It keeps your account safe.';
+    if (!u.email) {
+      app.innerHTML = `<h1>Add your email</h1><p class="muted">${intro}</p><form id="ef"><label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send me a code</button></div></form><p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
+      $('#ef').onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/me', { method: 'PATCH', body: { email: new FormData(ev.target).get('email') } }); state.user = { ...state.user, ...r.user }; Object.assign(u, r.user); msg = ''; await send(); } catch (e) { msg = e.message; draw(); } };
+      return;
+    }
+    app.innerHTML = `<h1>Check your email</h1><p class="muted">${intro}</p>${devHint}
+      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required style="font-size:22px;letter-spacing:6px;text-align:center">${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Check my code</button></div></form>
+        <p class="center small"><a href="#" id="resend">Send a new code</a> · <a href="#" id="chg">Use a different email</a></p>`
+      : `<div class="card"><p style="margin-top:0">We will send a 6-digit code to <b>${esc(u.email)}</b>.</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns"><button class="btn" id="sendcode">Send me a code</button></div></div><p class="center small"><a href="#" id="chg">Use a different email</a></p>`}
+      <p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
+    const sc = $('#sendcode'); if (sc) sc.onclick = () => { sc.disabled = true; send(); };
+    const rs = $('#resend'); if (rs) rs.onclick = (ev) => { ev.preventDefault(); send(); };
+    const ch = $('#chg'); if (ch) ch.onclick = (ev) => { ev.preventDefault(); u.email = null; sent = false; msg = ''; draw(); };
+    const vf = $('#vf'); if (vf) { vf.querySelector('input').focus(); vf.onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/auth/email/verify', { method: 'POST', body: { code: new FormData(ev.target).get('code') } }); state.user = { ...state.user, ...r.user }; toast('Your email is checked'); go(target); } catch (e) { msg = e.message; draw(); } }; }
+  };
+  const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = e.message; } draw(); };
+  draw();
+}
+
 async function customerHome() {
   const F = state.cfg.features || {};
   const [bs, bk, rb, fv, wl] = await Promise.all([api('/me/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
@@ -295,7 +326,7 @@ async function customerHome() {
       <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
   const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time is free now</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
-  app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
+  app.innerHTML = `${emailBanner()}<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
     ${Notify.promptCard()}${rebookCard}
     ${active.length ? `<h2>Your next booking</h2>${clist(active.slice(0, 2).map(bookingCard))}` : ''}
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
@@ -429,6 +460,7 @@ async function bookWizard(barberId) {
           }
           toast('Booking confirmed'); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
+          if (e.code === 'EMAIL_NOT_VERIFIED') { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
           if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(e.message); } else draw(e.message);
         }
       };
@@ -460,7 +492,7 @@ async function profile(editing) {
   const u = state.user;
   const livePlans = w.plans.filter((p) => p.live), liveCredits = w.credits.filter((c) => c.live);
   const recent = bk.bookings.slice(0, 3);
-  app.innerHTML = `<div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small ellip">${esc(u.email || '')}</div><div class="muted small ellip">${esc(u.phone || '')}</div></div></div>
+  app.innerHTML = `${emailBanner()}<div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small ellip">${esc(u.email || '')}</div><div class="muted small ellip">${esc(u.phone || '')}</div></div></div>
     <h2>Account</h2>
     <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
     <div id="editbox" class="${editing ? '' : 'hidden'}"><div class="card">${accountForm(u)}</div></div>
@@ -843,7 +875,14 @@ function custLine(b) { return `${cav(b.customer, 'in')}<b>${esc(b.customer.name)
 async function act(id, action, body) {
   try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
 }
-const pendingBanner = () => {
+const emailBanner = () => {
+  const u = state.user; if (!u || u.email_verified !== false) return '';
+  const here = (location.hash || '').startsWith('#/verify-email');
+  if (here) return '';
+  return `<a class="notice warn" id="emailban" href="#/verify-email" style="text-decoration:none;color:inherit">${ic('shield')}<div><b>${u.email ? 'Check your email address.' : 'Add your email address.'}</b><div class="small">${u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'You need this before your first booking.'} ${u.email ? 'Tap to get a 6-digit code.' : 'Tap to add it.'}</div></div></a>`;
+};
+const pendingBanner = () => emailBanner() + pendingBanner0();
+const pendingBanner0 = () => {
   const u = state.user; if (!u || u.role !== 'barber' || u.verified !== false) return '';
   const st = u.review_status || 'PENDING', why = u.review_reason ? `<div class="why">${esc(u.review_reason)}</div>` : '';
   const btn = (label) => `<div class="btns" style="margin-top:10px"><button class="btn sm" data-resubmit>${label}</button></div>`;

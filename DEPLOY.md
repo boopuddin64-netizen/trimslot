@@ -57,6 +57,7 @@ Vercel → Project → Settings → **Environment Variables** (apply to *Product
 | `CRON_SECRET` | `openssl rand -hex 24` | ≥16 chars; secures `/api/cron/sweep`. Vercel Cron sends it automatically as `Authorization: Bearer …` |
 | `NODEJS_HELPERS` | `0` | keeps the raw request body for Paystack HMAC (§8). Also set in `vercel.json` |
 | `CORS_ORIGINS` | *(empty)* | Default = same-origin only, which is what you want when the frontend and API share the `*.vercel.app` domain. Only set exact origins (`https://app.example.com`) if a *different* site calls the API. No wildcards |
+| `RESEND_API_KEY`, `MAIL_FROM` | Resend dashboard (API key = Sensitive); `MAIL_FROM` like `TrimSlot <no-reply@your-domain>` on a verified domain | sends the 6-digit email codes (sign-up, first booking, emergency help). **Must be set before launch.** Without a key, production refuses to send (users see "We cannot send emails right now") and the app logs a start-up warning. Outside production the code is the fixed `123456` and mail is only logged |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | `npx web-push generate-vapid-keys`; subject = your https URL or `mailto:` | enables Web Push. Private key = Sensitive. Optional: without them the app still works with in-app notifications |
 | `PG_POOL_MAX` | `3` (default) | keep 1–3 per instance |
 | `DATABASE_SSL_CA` | *(optional)* PEM | to verify Supabase's certificate |

@@ -42,6 +42,7 @@ import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 import { feeSettingsOf, onlineBreakdown } from './fees';
+import { fixedDevCode, barberEmailReadySql, assertEmailVerified, resetEmailVerification, sendEmailOtp, verifyEmailOtp } from './emailOtp';
 import { canReschedule, rescheduleBooking } from './reschedule';
 import { helpEligible, helpView, requestHelp } from './help';
 
@@ -54,7 +55,7 @@ const barberReview = async (db: Db, userId: number) => {
   return { verified: !!r?.verified, review_status: r?.review_status ?? 'PENDING', review_reason: r && r.review_status !== 'VERIFIED' && r.review_status !== 'PENDING' ? r.review_reason : null };
 };
 const publicUser = async (db: Db, u: any) => {
-  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null, consent_required: await consentRequired(db, u) };
+  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null, email_verified: !!u.email_verified_at, consent_required: await consentRequired(db, u) };
   if (u.role === 'barber') Object.assign(out, await barberReview(db, u.id));
   return out;
 };
@@ -290,7 +291,7 @@ export function createApp(db: Db) {
   /** Published policy numbers for the legal pages (cancel lock, credit expiry, fee, ...). Public and cacheable for a minute. */
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => res.json({
-    payment_mode: config.paystackMode, mock: config.mockMode, demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
+    payment_mode: config.paystackMode, mock: config.mockMode, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: true, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));
@@ -344,8 +345,16 @@ export function createApp(db: Db) {
     if (!req.user) return void res.json({ user: null });
     const u = req.user;
     const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [u.id])).c;
+    const ev = await db.one<{ email_verified_at: string | null }>('SELECT email_verified_at FROM users WHERE id=$1', [u.id]);
     const payoutOk = u.role === 'barber' ? (!config.requirePayout || !!(await db.maybeOne<any>('SELECT 1 AS x FROM barbers WHERE user_id=$1 AND paystack_subaccount IS NOT NULL', [u.id]))) : undefined;
-    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: (await db.maybeOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [u.id]))?.avatar_url ?? null, consent_required: await consentRequired(db, u), deletion_requested: !!(await db.maybeOne('SELECT 1 AS x FROM users WHERE id=$1 AND deletion_requested_at IS NOT NULL', [u.id])), ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
+    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, email_verified: !!ev.email_verified_at, avatar_url: (await db.maybeOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [u.id]))?.avatar_url ?? null, consent_required: await consentRequired(db, u), deletion_requested: !!(await db.maybeOne('SELECT 1 AS x FROM users WHERE id=$1 AND deletion_requested_at IS NOT NULL', [u.id])), ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
+  }));
+
+  /** Email check by one-time code. Send: 3 per email and 10 per network per hour. Verify: 5 tries per code. */
+  api.post('/auth/email/send', requireAuth, wrap(async (req, res) => res.json(await sendEmailOtp(db, req.user!.id, req.ip || 'unknown'))));
+  api.post('/auth/email/verify', requireAuth, limits.login, wrap(async (req, res) => {
+    await verifyEmailOtp(db, req.user!.id, req.body?.code);
+    res.json({ user: await publicUser(db, await db.one('SELECT * FROM users WHERE id=$1', [req.user!.id])) });
   }));
 
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
@@ -356,7 +365,10 @@ export function createApp(db: Db) {
     const phone = d.phone !== undefined ? (d.phone || null) : cur.phone;
     if (!email && !phone) throw badRequest('Keep at least one email or phone number on your account.');
     try {
-      await db.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
+      await db.tx(async (t) => {
+        await t.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
+        if ((email ?? null) !== (cur.email ?? null)) await resetEmailVerification(t, cur.id);   // a new email must be checked again
+      });
     } catch (e: any) {
       if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'Another account already uses that email or phone.');
       throw e;
@@ -385,7 +397,7 @@ export function createApp(db: Db) {
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused, online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
+      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
   };
   api.get('/barbers/:id', wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -447,6 +459,7 @@ export function createApp(db: Db) {
   /** "Emergency, please help": only on a locked, paid, upcoming booking. One open request per booking. */
   api.post('/bookings/:id/help', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
+    await assertEmailVerified(db, req.user!.id, 'before you ask for urgent help');
     await requestHelp(db, req.user!.id, b.id, req.body?.note);
     res.status(201).json({ booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));

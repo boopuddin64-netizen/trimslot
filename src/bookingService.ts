@@ -12,6 +12,7 @@ import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 import { logger } from './logger';
 import { answerHelpOnAction } from './help';
+import { assertCustomerMayBook, barberEmailReadySql } from './emailOtp';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
 export interface BookingRow {
@@ -140,6 +141,8 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     const barber = await t.maybeOne('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('We could not find that barber.');
     if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
+    if (!(await t.maybeOne(`SELECT 1 FROM barbers b WHERE b.id=$1 AND ${barberEmailReadySql('b')}`, [input.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
+    await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
     await assertBookable(t, input.barber_id, input.payment_option);
     { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot book right now${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)
