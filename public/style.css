@@ -448,3 +448,9 @@ a.crow{text-decoration:none}
 .money{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;color:var(--mut)}
 .money .mrow{margin-top:3px}
 .money .mrow.tot{color:var(--ink);font-weight:700;font-size:14px}
+
+/* private share link card (barber profile) */
+.share .qr{background:#fff;border:1px solid var(--line2);border-radius:10px;padding:4px;flex:none;width:132px;height:132px}
+.linkbox{background:var(--bg2);color:var(--ink);border:1px solid var(--line2);border-radius:8px;padding:6px 8px;overflow-wrap:anywhere;user-select:all}
+.mybarber{gap:10px;align-items:center}
+.mybarber .btn.sm{min-height:36px}

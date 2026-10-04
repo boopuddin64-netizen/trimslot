@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { DEMO_SHARE_CODE } from '../src/seed';
+import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow } from './helpers';
 import { assertProductionConfig, config } from '../src/config';
 import { migrate } from '../src/db';
@@ -103,9 +105,10 @@ test('barber onboarding: new barber is hidden + unbookable until verified; exist
     const body = await su.json() as any;
     assert.equal(body.user.verified, false);
     const cookie = su.headers.get('set-cookie')!.split(';')[0];
-    let list = (await (await j(base, '/api/barbers')).json() as any).barbers;
-    assert.deepEqual(list.map((b: any) => b.shop_name), ["Mike's Barbershop"]);
+    assert.equal((await j(base, '/api/barbers')).status, 401, 'there is no public list of barbers');
     const newId = (await db.one(`SELECT id FROM barbers WHERE shop_name='Fresh Cuts'`)).id;
+    const newCode = await ensureShareCode(db, newId);
+    assert.equal((await j(base, `/api/b/${newCode}`)).status, 404, 'unverified shop: the link does not resolve');
     assert.equal((await j(base, `/api/barbers/${newId}`)).status, 404);
     // service exists (barber configured it) but customers cannot book it
     const svc = await j(base, '/api/barber/services', { name: 'Cut', price_naira: 2000, duration_min: 30 }, cookie);
@@ -117,8 +120,7 @@ test('barber onboarding: new barber is hidden + unbookable until verified; exist
     assert.equal((await j(base, '/api/barber/today', undefined, cookie)).status, 200);
     // admin verify (same statements as the CLI)
     await db.query('UPDATE barbers SET verified=TRUE, verified_at=now() WHERE id=$1', [newId]);
-    list = (await (await j(base, '/api/barbers')).json() as any).barbers;
-    assert.equal(list.length, 2);
+    assert.equal((await j(base, `/api/b/${newCode}`)).status, 200, 'verified: the link resolves');
     assert.ok(barberId && serviceIds.length);
   });
 });

@@ -52,7 +52,10 @@ export async function reliabilityFor(c: Conn, customerId: number): Promise<Relia
 export async function setFavourite(db: Db, customerId: number, barberId: number, on: boolean) {
   await need(db, 'feature_favourites', 'Favourites');
   if (!(await db.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified', [barberId]))) throw notFound('We could not find that barber.');
-  if (on) await db.query('INSERT INTO favourites (customer_id, barber_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [customerId, barberId]);
+  if (on) {
+    await db.query('INSERT INTO favourites (customer_id, barber_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [customerId, barberId]);
+    await db.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source) VALUES ($1,$2,TRUE,'favourite') ON CONFLICT (customer_id, barber_id) DO UPDATE SET added=TRUE`, [customerId, barberId]);
+  }
   else await db.query('DELETE FROM favourites WHERE customer_id=$1 AND barber_id=$2', [customerId, barberId]);
   return { favourite: on };
 }

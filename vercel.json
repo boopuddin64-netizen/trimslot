@@ -21,6 +21,10 @@
     {
       "source": "/healthz",
       "destination": "/api/index.ts"
+    },
+    {
+      "source": "/b/:code",
+      "destination": "/api/index.ts"
     }
   ],
   "crons": [

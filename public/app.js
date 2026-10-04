@@ -194,6 +194,7 @@ async function route() {
     if (!parts.length) return role === 'barber' ? go('#/today') : role === 'customer' ? customerHome() : landing();
     if (parts[0] === 'login') return authPage('login');
     if (parts[0] === 'signup') return authPage('signup', q.get('role'));
+    if (parts[0] === 'b' && /^[a-f0-9]{12,32}$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
     if (parts[0] === 'notifications') return notifications();
@@ -285,7 +286,7 @@ const stars = (n, cls = '') => `<span class="stars ${cls}" aria-label="${n} out 
 const ratingChip = (r) => r && r.count ? `<span class="rate">${ic('star', 'sm')}<b>${r.average.toFixed(1)}</b><span class="muted"> (${r.count})</span></span>` : '';
 async function customerHome() {
   const F = state.cfg.features || {};
-  const [bs, bk, rb, fv, wl] = await Promise.all([api('/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
+  const [bs, bk, rb, fv, wl] = await Promise.all([api('/me/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
   const favIds = new Set((fv.barbers || []).map((b) => b.id));
   const sg = rb.suggestion; const opt = sg && sg.options && sg.options[0];
   const rebookCard = sg && opt ? `<div class="card rebook"><div class="row between"><div><div class="small muted">${ic('repeat', 'sm')} Book again</div><h3 style="margin:2px 0 0">${esc(sg.service.name)} · ${esc(sg.barber.shop_name)}</h3></div><b>${naira(sg.service.price_kobo)}</b></div>
@@ -293,15 +294,22 @@ async function customerHome() {
       <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
   const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time opened up</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
-  app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Pick a barber to see their services, plans and hours.</p>
+  app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
     ${Notify.promptCard()}${rebookCard}
     ${active.length ? `<h2>Your next booking</h2>${clist(active.slice(0, 2).map(bookingCard))}` : ''}
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
     ${waitCard}
-    <h2>Choose a barber</h2>
-    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b) => `<a class="card row" href="#/barber/${b.id}">
+    <h2>My barbers</h2>
+    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b) => `<div class="card row mybarber" data-bid="${b.id}"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
         ${avatar(b)}
-        <div class="grow"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div><div class="small muted ellip">${esc((b.about || '').slice(0, 90))}</div></div><span class="muted">${ic('right')}</span></a>`).join('') || '<div class="card center muted">No barbers yet.<br><span class="small">Check back soon.</span></div>'}`;
+        <div class="grow" style="min-width:0"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div></div></a>
+        <div class="row" style="gap:6px"><a class="btn sm" href="#/book/${b.id}">Book</a><button class="mini red" data-rmb="${b.id}" aria-label="Remove ${esc(b.shop_name)} from My barbers">${ic('trash', 'sm')}</button></div></div>`).join('')
+      || '<div class="card center muted" id="nobarbers"><b>No barbers yet.</b><br><span class="small">Ask your barber for their TrimSlot link or QR code. Open it, then tap Add barber.</span></div>'}
+    <form class="card" id="addlink" novalidate><label for="linkin">Add a barber with their link</label>
+      <div class="row" style="gap:8px"><input id="linkin" class="grow" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the link you were sent"><button class="btn sm" type="submit">Open</button></div>
+      <div id="linkerr" class="err small hidden" role="alert"></div></form>`;
+  const lf = $('#addlink'); lf.onsubmit = (ev) => { ev.preventDefault(); const m = /([a-f0-9]{12,32})\s*$/i.exec($('#linkin').value.trim().replace(/[\/#?]+$/, '')); if (!m) { const er = $('#linkerr'); er.textContent = 'That does not look like a TrimSlot barber link. Ask the barber to send it again.'; er.classList.remove('hidden'); return; } location.hash = '#/b/' + m[1].toLowerCase(); };
+  document.querySelectorAll('[data-rmb]').forEach((el) => el.onclick = async () => { const nm = el.closest('.mybarber').querySelector('h3').textContent.trim(); if (!confirm(`Remove ${nm} from My barbers? You can add them again with their link.`)) return; el.disabled = true; try { await api('/me/barbers/' + el.dataset.rmb, { method: 'DELETE' }); toast('Removed'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   document.querySelectorAll('[data-rb]').forEach((el) => el.onclick = () => {
     const [d, t] = el.dataset.rb.split('|');
     state.wiz = { barberId: sg.barber.id, step: 3, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
@@ -470,11 +478,15 @@ async function profile(editing) {
 
 /* ---------- barber: profile hub ---------- */
 async function barberProfile() {
-  const [r, po] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null)]);
+  const [r, po, shr] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null), api('/barber/share').catch(() => null)]);
   const p = r.profile, u = state.user;
+  const shareCard = shr ? `<div class="card share" id="sharecard"><div class="row" style="gap:14px;align-items:flex-start"><img class="qr" src="${shr.qr_url}" alt="QR code of your shop link" width="132" height="132"><div class="grow" style="min-width:0"><b>Your private shop link</b><p class="small muted" style="margin:4px 0 8px">Customers only find your shop through this link or QR code. Send it to the people you want to book you.</p><div class="linkbox small" id="sharelink">${esc(shr.url)}</div></div></div>
+      ${shr.active ? '' : `<div class="warn small notice" style="margin-top:10px">${ic('warn', 'sm')}<div>The link starts working when TrimSlot approves your shop.</div></div>`}
+      <div class="btns" style="margin-top:12px"><button class="btn sm" id="copylink">Copy link</button><button class="btn sm sec hidden" id="sharebtn">Share</button><button class="btn sm sec" id="regen">Make a new link</button></div></div>` : '';
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
   app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg')}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
     <h2>My shop</h2>
+    ${shareCard}
     <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts active · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to take online payments'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
@@ -488,6 +500,11 @@ async function barberProfile() {
     <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
+  if (shr) {
+    $('#copylink').onclick = async () => { try { await navigator.clipboard.writeText(shr.url); toast('Link copied'); } catch { const el = $('#sharelink'); const rg = document.createRange(); rg.selectNodeContents(el); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(rg); toast('Press and hold the link to copy it'); } };
+    if (navigator.share) { const sb = $('#sharebtn'); sb.classList.remove('hidden'); sb.onclick = () => navigator.share({ title: p.shop_name + ' on TrimSlot', text: 'Book ' + p.shop_name + ' on TrimSlot', url: shr.url }).catch(() => {}); }
+    $('#regen').onclick = async () => { if (!confirm('Make a new link? The old link and QR code stop working at once. Customers who already added you keep you in My barbers.')) return; const b = $('#regen'); b.disabled = true; try { await api('/barber/share/regenerate', { method: 'POST', body: {} }); toast('New link ready. Share the new QR code.'); barberProfile(); } catch (e) { fail(e); b.disabled = false; } };
+  }
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
@@ -556,9 +573,12 @@ async function barberPlans() {
 }
 
 /* ---------- barber public page (customers land here first) ---------- */
-async function barberPage(id) {
-  const data = await api('/barbers/' + id);
+async function barberPage(id, shareCode) {
+  const data = await api(shareCode ? '/b/' + shareCode : '/barbers/' + id);
   const { barber, services } = data;
+  if (shareCode) id = barber.id;
+  const sh = data.share || null;                      // set when the page was opened from a share link
+  if (sh && !state.user) { try { sessionStorage.setItem('trimslot_next', '#/b/' + shareCode); } catch { /* private mode */ } }   // log in or sign up, then come straight back
   const plans = data.plans || [], my = data.my || { plans: [], credits: [] }, q = data.queue || { waiting: 0, serving: 0 };
   const isCustomer = state.user?.role === 'customer';
   const notices = data.notices || [];
@@ -568,11 +588,14 @@ async function barberPage(id) {
   const hoursRows = order.map((d) => { const x = sched.find((y) => y.weekday === d); return `<tr class="${d === wd ? 'today' : ''}"><td>${DAYFULL[d]}</td><td>${x && x.is_working ? `${t12(x.start)} – ${t12(x.end)}` : '<span class="muted">Closed</span>'}</td></tr>`; }).join('');
   const brk = sched.find((y) => y.is_working && y.break_start);
   const queueTxt = q.serving ? `Chair busy now · ${q.waiting} waiting today` : q.waiting ? `${q.waiting} booked today` : 'No one booked yet today';
-  const rv = data.rating && data.rating.count ? await api('/barbers/' + id + '/reviews?limit=5').catch(() => null) : null;
+  const rv = sh ? { reviews: data.reviews || [] } : data.rating && data.rating.count ? await api('/barbers/' + id + '/reviews?limit=5').catch(() => null) : null;
   const lo = data.loyalty;
-  app.innerHTML = `<a href="#/" class="back">${ic('back', 'sm')} Barbers</a>
+  app.innerHTML = `${state.user ? `<a href="${state.user.role === 'barber' ? '#/profile' : '#/'}" class="back">${ic('back', 'sm')} ${state.user.role === 'barber' ? 'Profile' : 'My barbers'}</a>` : ''}
+    ${sh && state.user?.role === 'barber' ? `<div class="info small notice">${ic('ticket', 'sm')}<div>This is how customers see your shop when they open your link.</div></div>` : ''}
     <div class="row" style="align-items:flex-start">${avatar(barber, 'lg')}<div class="grow"><h1>${esc(barber.shop_name)}</h1>${data.rating ? `<div style="margin:2px 0">${ratingChip(data.rating) || '<span class="small muted">No reviews yet</span>'}</div>` : ''}<div class="muted small">${esc(barber.name)}</div>${barber.location ? `<div class="muted small">${ic('pin', 'sm')} ${esc(barber.location)}</div>` : ''}</div></div>
     <div class="row small muted" style="margin:12px 0 0">${ic('clock', 'sm')}<span>${esc(queueTxt)}</span></div>
+    ${sh && !state.user ? `<div class="card" id="guestbox"><b>Want to book ${esc(barber.shop_name)}?</b><p class="small muted" style="margin:4px 0 10px">Log in or create a free account. You will come straight back to this page.</p><div class="btns"><a class="btn" id="loginbtn" href="#/login">Log in</a><a class="btn sec" id="signupbtn" href="#/signup?role=customer">Sign up</a></div></div>` : ''}
+    ${sh && isCustomer ? `<div class="btns" style="margin-top:12px"><button class="btn ${sh.added ? 'sec' : ''}" id="addbtn" ${sh.added ? 'disabled' : ''}>${sh.added ? ic('check', 'sm') + ' In My barbers' : ic('plus', 'sm') + ' Add barber'}</button></div>` : ''}
     ${isCustomer ? `<div class="btns" style="margin-top:16px"><a class="btn" id="bookbtn" href="#/book/${barber.id}">Book a session</a>${data.favourite !== undefined ? `<button class="btn sec iconbtn ${data.favourite ? 'faved' : ''}" id="favbtn" aria-pressed="${!!data.favourite}" aria-label="${data.favourite ? 'Remove from favourites' : 'Add to favourites'}">${ic('heart')}</button>` : ''}</div>` : ''}
     ${lo ? `<div class="loyal small"><div class="row between"><span>${ic('ticket', 'sm')} Loyalty: every ${lo.every_n}th visit earns ${naira(lo.reward_kobo)}</span><b>${lo.into_cycle}/${lo.every_n}</b></div><div class="bar"><i style="width:${Math.round(lo.into_cycle / lo.every_n * 100)}%"></i></div></div>` : ''}
     ${barber.about ? `<h2>About</h2><p>${esc(barber.about)}</p>` : ''}
@@ -584,10 +607,11 @@ async function barberPage(id) {
     ${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
     <h2>Opening hours</h2>
     <div class="card"><table class="hours">${hoursRows}</table>${brk ? `<div class="small muted" style="margin-top:8px">Break ${t12(brk.break_start)} – ${t12(brk.break_end)}</div>` : ''}</div>
-    ${!state.user ? `<div class="btns" style="margin-top:16px"><a class="btn" href="#/signup?role=customer">Sign up to book</a></div>` : ''}`;
+    ${!state.user && !sh ? `<div class="btns" style="margin-top:16px"><a class="btn" href="#/signup?role=customer">Sign up to book</a></div>` : ''}`;
+  const ab = $('#addbtn'); if (ab) ab.onclick = async () => { ab.disabled = true; try { await api(`/b/${shareCode}/add`, { method: 'POST' }); toast('Added to My barbers'); ab.className = 'btn sec'; ab.innerHTML = ic('check', 'sm') + ' In My barbers'; } catch (e) { fail(e); ab.disabled = false; } };
   document.querySelectorAll('[data-buy]').forEach((el) => el.onclick = () => buyPlan(Number(el.dataset.buy), el));
   const fb = $('#favbtn'); if (fb) fb.onclick = async () => { const on = fb.getAttribute('aria-pressed') !== 'true'; fb.disabled = true; try { await api(`/barbers/${id}/favourite`, { method: 'POST', body: { on } }); fb.classList.toggle('faved', on); fb.setAttribute('aria-pressed', String(on)); toast(on ? 'Added to favourites' : 'Removed from favourites'); } catch (e) { fail(e); } fb.disabled = false; };
-  startPoll(() => location.hash.startsWith('#/barber/') ? barberPage(id) : Promise.resolve());
+  startPoll(() => shareCode ? (location.hash.startsWith('#/b/') ? barberPage(0, shareCode) : Promise.resolve()) : location.hash.startsWith('#/barber/') ? barberPage(id) : Promise.resolve());
 }
 
 /* ---------- plans (shared card + buy) ---------- */

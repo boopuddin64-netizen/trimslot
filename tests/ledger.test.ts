@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
 import { setupPin } from '../src/adminPin';
+import { DEMO_SHARE_CODE } from '../src/seed';
+import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking } from '../src/bookingService';
@@ -190,7 +192,7 @@ test('debt limits disable pay-on-arrival until settled; maintenance, barber paus
     assert.equal((await ledgerBlocked(s.db, s.barberId)).blocked, true);
     await assert.rejects(book(s.customerIds[1 % s.customerIds.length], '10:00'), (e: any) => e.code === 'PAY_ON_ARRIVAL_OFF');
     const okOnline = await book(s.customerIds[1 % s.customerIds.length], '10:00', 'ONLINE'); assert.equal(okOnline.status, 'PENDING_PAYMENT');
-    const cfg = await s.j(`/api/barbers/${s.barberId}`); assert.equal(cfg.body.booking.pay_on_arrival, false);
+    const cfg = await s.j('/api/b/' + DEMO_SHARE_CODE); assert.equal(cfg.body.booking.pay_on_arrival, false);
     await s.j(`/api/admin/ledger/${s.barberId}/settle`, { method: 'POST', headers: s.A, body: { all: true, reason: 'paid by transfer' } });
     await book(s.customerIds[2 % s.customerIds.length], '11:00');                                                     // settled: pay on arrival is back
     // age limit

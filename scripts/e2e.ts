@@ -37,7 +37,20 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
   check('duplicate signup -> 409', (await anon.call('POST', '/api/auth/signup', { accept_terms: true, role: 'customer', name: 'Dup', email: `ngozi${stamp}@example.com`, password: 'Password123' })).status === 409);
   await cust2.call('POST', '/api/auth/login', { identifier: 'tunde@trimslot.demo', password: 'Customer123!' });
 
-  const barbers = (await cust.call('GET', '/api/barbers')).json.barbers; const barber = barbers[0];
+  // Barbers are not listed. A customer reaches a shop only through its private link (or a past booking).
+  const shareCode: string = (await mike.call('GET', '/api/barber/share')).json.code;
+  check('barber has a private share code', /^[a-f0-9]{12,32}$/.test(shareCode), shareCode);
+  check('there is no public barber list (401 for guests, empty for a new customer)', (await anon.call('GET', '/api/barbers')).status === 401 && (await cust.call('GET', '/api/barbers')).json.barbers.length === 0);
+  const linkPeek = await anon.call('GET', '/api/b/' + shareCode);
+  check('a guest can open the link and sees the shop (no booking yet)', linkPeek.status === 200 && linkPeek.json.share.can_add === false && linkPeek.json.services.length > 0, linkPeek.json?.error);
+  const barber = { id: linkPeek.json.barber.id };
+  check('without the link a new customer cannot open the shop, its slots, or book it', (await cust.call('GET', `/api/barbers/${barber.id}`)).status === 404
+    && (await cust.call('GET', `/api/barbers/${barber.id}/slots?service_id=${linkPeek.json.services[0].id}&date=${today}`)).status === 404
+    && (await cust.call('POST', '/api/bookings', { barber_id: barber.id, service_id: linkPeek.json.services[0].id, date: today, time: '10:00', payment_option: 'ON_ARRIVAL' })).status === 404);
+  const opened = await cust.call('GET', '/api/b/' + shareCode);
+  check('customer opens the link: shop is shown, not yet added', opened.status === 200 && opened.json.share.can_add === true && opened.json.share.added === false);
+  check('customer adds the barber -> My barbers', (await cust.call('POST', `/api/b/${shareCode}/add`)).json.added === true && (await cust.call('GET', '/api/me/barbers')).json.barbers.length === 1);
+  check('a wrong link is just "not found"', (await anon.call('GET', '/api/b/0123456789abcdef')).status === 404);
   const detail = (await cust.call('GET', `/api/barbers/${barber.id}`)).json;
   const svc = detail.services.find((s: any) => s.name === 'Haircut + Beard');
   check('service list seeded (4, ₦4,500 / 45min beard)', detail.services.length === 4 && svc.price_kobo === 450000 && svc.duration_min === 45, detail.services);
@@ -221,9 +234,12 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     const meR: any = (await nb.call('GET', '/api/auth/me')).json.user;
     check('barber sees REJECTED + reason', meR.review_status === 'REJECTED' && meR.review_reason === 'Please add a shop photo.', meR);
     check('barber resubmits', (await nb.call('POST', '/api/barber/resubmit', { note: 'added' })).json.review_status === 'PENDING');
-    check('admin approves -> shop is listed', (await A(`/barbers/${nbId}/approve`, 'POST')).json.verified === true && (await anon.call('GET', '/api/barbers')).json.barbers.some((b: any) => b.id === nbId));
+    const nbCode: string = (await nb.call('GET', '/api/barber/share')).json.code;
+    check('an unapproved shop link does not open', (await anon.call('GET', '/api/b/' + nbCode)).status === 404);
+    check('admin approves -> the shop link opens', (await A(`/barbers/${nbId}/approve`, 'POST')).json.verified === true && (await anon.call('GET', '/api/b/' + nbCode)).status === 200);
     check('suspend needs a reason -> 400', (await A(`/barbers/${nbId}/suspend`, 'POST', {})).status === 400);
-    check('suspend hides the shop', (await A(`/barbers/${nbId}/suspend`, 'POST', { reason: 'e2e check' })).json.review_status === 'SUSPENDED' && !(await anon.call('GET', '/api/barbers')).json.barbers.some((b: any) => b.id === nbId));
+    check('suspend hides the shop', (await A(`/barbers/${nbId}/suspend`, 'POST', { reason: 'e2e check' })).json.review_status === 'SUSPENDED' && (await anon.call('GET', '/api/b/' + nbCode)).status === 404);
+    check('barber makes a new link; the old one stops', (await nb.call('POST', '/api/barber/share/regenerate', {})).json.code !== nbCode);
     check('reinstate', (await A(`/barbers/${nbId}/reinstate`, 'POST')).json.review_status === 'VERIFIED');
     await A(`/barbers/${nbId}/suspend`, 'POST', { reason: 'e2e cleanup' });
   }
@@ -236,7 +252,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
     const pcId = (await AA('/customers?q=' + encodeURIComponent(pcEmail))).json.customers[0]?.id;
     check('admin finds the new customer', !!pcId);
     const tomorrow = new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10);
-    const bdetail = (await pc.call('GET', '/api/barbers')).json.barbers[0];
+    const bdetail = (await pc.call('GET', '/api/b/' + shareCode)).json.barber;
     const sv = (await pc.call('GET', `/api/barbers/${bdetail.id}`)).json.services[0];
     const sl = (await pc.call('GET', `/api/barbers/${bdetail.id}/slots?service_id=${sv.id}&date=${tomorrow}`)).json.slots;
     const off = sl.length ? await pc.call('POST', '/api/bookings', { barber_id: bdetail.id, service_id: sv.id, date: tomorrow, time: sl[0].time, payment_option: 'ON_ARRIVAL' }) : null;

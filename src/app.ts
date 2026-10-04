@@ -27,6 +27,7 @@ import { registerAdminDelete } from './adminDelete';
 import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
 import { registerSmart, backgroundAfterResponse } from './smartRoutes';
+import { barberAccessGuard, newShareCode, photoAllowed, registerShareLinks, myBarbers } from './shareLinks';
 import { vapidPublicKey, pushAvailable, flushPush } from './push';
 import { etaFrom, barberDelay, getCustomerInsights, ratingSummary, reliabilityFor, loyaltyProgress } from './smart';
 import { getSettingsCached } from './plans';
@@ -226,6 +227,7 @@ export function createApp(db: Db) {
   app.use('/api', authenticate);
   app.use('/api', backgroundAfterResponse(db));
   const api = express.Router();
+  api.use(barberAccessGuard(db));   // customer-facing barber routes need an added barber, an opened share link, or a past booking
 
   /* ---------- admin: platform rules (Bearer ADMIN_KEY, or CRON_SECRET as fallback; never exposed to barbers/customers) ---------- */
   const adminGuard = async (req: Request, res: Response, next: NextFunction) => {
@@ -269,7 +271,7 @@ export function createApp(db: Db) {
         const uid = (await t.one<{ id: number }>('INSERT INTO users (role, name, email, phone, password_hash, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
           [d.role, d.name, d.email ?? null, d.phone ?? null, hash, isoNow()])).id;
         if (d.role === 'barber') {
-          const bid = (await t.one<{ id: number }>('INSERT INTO barbers (user_id, shop_name, location, created_at) VALUES ($1,$2,$3,$4) RETURNING id', [uid, d.shop_name, d.location ?? null, isoNow()])).id;
+          const bid = (await t.one<{ id: number }>('INSERT INTO barbers (user_id, shop_name, location, created_at, share_code) VALUES ($1,$2,$3,$4,$5) RETURNING id', [uid, d.shop_name, d.location ?? null, isoNow(), newShareCode()])).id;
           for (let wd = 0; wd < 7; wd++) {
             await t.query('INSERT INTO barber_schedule (barber_id, weekday, is_working, start_min, end_min, break_start_min, break_end_min) VALUES ($1,$2,$3,540,1080,780,840)', [bid, wd, wd >= 1 && wd <= 6]);
           }
@@ -330,14 +332,10 @@ export function createApp(db: Db) {
 
   /* ---------- public barber directory (verified barbers only) ---------- */
   const barberCard = (b: any) => ({ id: b.id, name: b.name, shop_name: b.shop_name, photo_url: b.photo_url, location: b.location, about: b.about });
-  api.get('/barbers', wrap(async (_req, res) => {
-    const rows = await db.many('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.verified ORDER BY b.id');
-    res.json({ barbers: rows.map(barberCard) });
-  }));
-  api.get('/barbers/:id', wrap(async (req, res) => {
-    const id = Number(req.params.id);
-    const b = Number.isInteger(id) ? await db.maybeOne('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 AND b.verified', [id]) : undefined;
-    if (!b) throw notFound('We could not find that barber.');
+  // There is no public list of barbers. A customer gets only the barbers they added ("My barbers"); everything else comes from a share link (/api/b/:code).
+  api.get('/barbers', requireRole('customer'), wrap(async (req, res) => res.json({ barbers: await myBarbers(db, req.user!.id) })));
+  /** The full barber profile (services, hours, plans, rating, what this customer holds). Callers decide whether the viewer may see it. */
+  const profileFor = async (req: Request, b: any) => {
     const services = await db.many('SELECT id, name, price_kobo, duration_min FROM services WHERE barber_id=$1 AND active ORDER BY price_kobo, id', [b.id]);
     const schedule = await db.many('SELECT weekday, is_working, start_min, end_min, break_start_min, break_end_min FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [b.id]);
     const plans = await publicPlans(db, b.id);
@@ -352,16 +350,23 @@ export function createApp(db: Db) {
       extras.loyalty = await loyaltyProgress(db, st, req.user.id, b.id);
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
-    res.json({ ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused, online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } });
+    return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
+      booking: { paused: !!b.booking_paused, online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
+  };
+  api.get('/barbers/:id', wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const b = Number.isInteger(id) ? await db.maybeOne('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1 AND b.verified', [id]) : undefined;
+    if (!b) throw notFound('We could not find that barber.');
+    res.json(await profileFor(req, b));
   }));
   api.get('/barbers/:id/photo', wrap(async (req, res) => {
     const id = Number(req.params.id);
+    if (!Number.isInteger(id) || !(await photoAllowed(db, req, id))) throw notFound('No photo');
     const p = Number.isInteger(id) ? await db.maybeOne<{ mime: string; data: Buffer; updated_at: string }>('SELECT mime, data, updated_at FROM barber_photos WHERE barber_id=$1', [id]) : undefined;
     if (!p) throw notFound('There is no photo.');
     res.setHeader('Content-Type', p.mime);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'public, max-age=300');
+    res.setHeader('Cache-Control', req.query.v ? 'private, max-age=31536000, immutable' : 'private, max-age=300');
     res.send(p.data);
   }));
   api.get('/barbers/:id/slots', wrap(async (req, res) => {
@@ -692,10 +697,17 @@ export function createApp(db: Db) {
     });
   }));
   registerSmart(api, barberR, db, wrap, (b, o) => decorate(db, b, o), limits);
+  registerShareLinks(api, barberR, db, wrap, limits, profileFor);
   api.use('/barber', barberR);
 
   app.use('/api', api);
   app.use('/api', (_req, _res, next) => next(notFound('We could not find that page.')));
+
+  // A barber's private share link. The page itself is the SPA; the code travels in the URL fragment so it is not sent on to other sites.
+  app.get('/b/:code', (req, res) => {
+    res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Robots-Tag', 'noindex, nofollow'); res.setHeader('Cache-Control', 'no-store');
+    res.redirect(302, /^[a-f0-9]{12,32}$/.test(req.params.code) ? `/#/b/${req.params.code}` : '/');
+  });
 
   // Static frontend: on Vercel the CDN serves /public directly (express.static is ignored there); locally / in Docker Express serves it.
   if (!config.isVercel) app.use(express.static(config.publicDir, { extensions: ['html'], maxAge: config.isProd ? '5m' : 0, index: 'index.html' }));

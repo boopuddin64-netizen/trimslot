@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
 import { setupPin } from '../src/adminPin';
+import { DEMO_SHARE_CODE } from '../src/seed';
+import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { createBooking } from '../src/bookingService';
@@ -100,7 +102,7 @@ test('plan oversight: hide/restore plan, adjust sessions + expiry within bounds,
     assert.equal((await s.post(`/plans/${planId}/visibility`, { active: false })).status, 400, 'reason required');
     assert.equal((await s.post(`/plans/${planId}/visibility`, { active: false, reason: 'misleading price' })).body.changed, true);
     assert.equal((await s.post(`/plans/${planId}/visibility`, { active: false, reason: 'misleading price' })).body.changed, false);
-    assert.equal((await s.j(`/api/barbers/${s.barberId}`)).body.plans.length, 0, 'hidden plan is not sold');
+    assert.equal((await s.j('/api/b/' + DEMO_SHARE_CODE)).body.plans.length, 0, 'hidden plan is not sold');
     await s.post(`/plans/${planId}/visibility`, { active: true, reason: 'fixed' });
     assert.equal((await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'bonus session', delta: 1 })).body.sessions_total, 5);
     assert.equal((await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'too low now', delta: -50 })).status, 400);
@@ -175,7 +177,7 @@ test('barber controls: review state blocks booking, per-barber pause keeps exist
     assert.equal((await s.post(`/barbers/${s.barberId}/pause`, { paused: true })).status, 400, 'reason required when pausing');
     assert.equal((await s.post(`/barbers/${s.barberId}/pause`, { paused: true, reason: 'holiday' })).body.changed, true);
     assert.equal((await s.post(`/barbers/${s.barberId}/pause`, { paused: true, reason: 'holiday' })).body.changed, false);
-    assert.equal((await s.j(`/api/barbers/${s.barberId}`)).body.booking.paused, true);
+    assert.equal((await s.j('/api/b/' + DEMO_SHARE_CODE)).body.booking.paused, true);
     await s.post(`/barbers/${s.barberId}/pause`, { paused: false });
     await s.db.query(`UPDATE barbers SET paystack_subaccount='ACCT_x' WHERE id=$1`, [s.barberId]);
     assert.equal((await s.post(`/barbers/${s.barberId}/fee`, { percent: 25, flat_naira: 0, reason: 'negotiated' })).body.override, true);

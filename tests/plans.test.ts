@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { DEMO_SHARE_CODE } from '../src/seed';
+import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking, customerCancel, getBooking } from '../src/bookingService';
@@ -289,7 +291,7 @@ test('HTTP: admin settings API needs the admin key; customers cannot create plan
     const today = await (await j('/api/barber/bookings', { headers: { Cookie: barber } })).json() as any;
     assert.equal(today.bookings[0].payment_option, 'PLAN');
     assert.equal((await j(`/api/barber/plans/${pid}`, { method: 'DELETE', headers: { Cookie: barber } })).status, 200);
-    assert.equal(((await (await j(`/api/barbers/${c.barberId}`)).json()) as any).plans.length, 0, 'archived plan no longer for sale');
+    assert.equal(((await (await j('/api/b/' + DEMO_SHARE_CODE)).json()) as any).plans.length, 0, 'archived plan no longer for sale');
     assert.equal(((await (await j('/api/me/wallet', { headers: { Cookie: cust } })).json()) as any).plans.length, 1, 'but existing purchases keep working');
   } finally { server.close(); delete process.env.CRON_SECRET; resetNow(); }
 });

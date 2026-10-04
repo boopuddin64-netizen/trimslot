@@ -15,6 +15,7 @@ const su = await call('/auth/signup', { method: 'POST', body: { role: 'customer'
 const cust = (await login(email, 'Password123'));
 
 const barberId = 1;
+await call('/b/' + (await call('/barber/share', {}, mike)).j.code, {}, cust);   // opening the barber's link is how a customer gets to a shop
 const svcs = (await call('/barbers/' + barberId, {}, cust)).j.services;
 const byName = (n) => svcs.find((s) => s.name === n);
 const kids = byName('Kids Haircut'), reg = byName('Regular Haircut'), beard = byName('Haircut + Beard');

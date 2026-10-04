@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AddressInfo } from 'net';
+import { DEMO_SHARE_CODE } from '../src/seed';
+import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { createBooking } from '../src/bookingService';
@@ -49,7 +51,7 @@ test('weekly-hours change that strands a booking needs confirmation, then notifi
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [a.id])).status, 'CONFIRMED', 'no auto-cancel');
     assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [b.id])).status, 'CONFIRMED');
     // public barber page shows an "Availability updated" note
-    const pub = await (await call(base, 'GET', `/api/barbers/${barberId}`)).json() as any;
+    const pub = await (await call(base, 'GET', '/api/b/' + DEMO_SHARE_CODE)).json() as any;
     assert.ok(pub.notices.some((x: any) => x.type === 'HOURS_UPDATED' && x.title === 'Open times changed'));
     // a harmless edit (nothing stranded) saves without confirmation and notifies nobody
     const r3 = await call(base, 'PUT', '/api/barber/schedule', week({ 3: { end: '16:00' }, 4: { start: '08:00' } }), ck);
@@ -83,7 +85,7 @@ test('closing a day / removing a working day: CONFIRMED bookings are notified; u
     }
     assert.equal((await notifs(db, third)).length, 0);
     assert.deepEqual((await db.many('SELECT status FROM bookings WHERE id IN ($1,$2) ORDER BY id', [conf.id, pend.id])).map((r: any) => r.status), ['CONFIRMED', 'PENDING_PAYMENT']);
-    const pub = await (await call(base, 'GET', `/api/barbers/${barberId}`)).json() as any;
+    const pub = await (await call(base, 'GET', '/api/b/' + DEMO_SHARE_CODE)).json() as any;
     const closed = pub.notices.find((x: any) => x.type === 'CLOSED');
     assert.equal(closed.title, 'Closed on Thu 1 Oct');
     assert.equal(closed.date, THU);
@@ -142,13 +144,15 @@ test('photo upload: type sniffed, size capped, auth required; served with cachin
     assert.equal(ok.status, 200);
     const url = ((await ok.json()) as any).photo_url as string;
     assert.match(url, /^\/api\/barbers\/\d+\/photo\?v=/);
-    const img = await fetch(base + url);
+    const img = await fetch(base + url, { headers: { Cookie: ck } });
     assert.equal(img.status, 200);
     assert.equal(img.headers.get('content-type'), 'image/jpeg');
     assert.match(img.headers.get('cache-control') || '', /max-age=31536000/);
     assert.equal(Buffer.from(await img.arrayBuffer()).equals(JPEG), true);
-    const list = (await (await call(base, 'GET', '/api/barbers')).json() as any).barbers;
-    assert.equal(list[0].photo_url, url);
+    const mine = (await (await call(base, 'GET', '/api/b/' + DEMO_SHARE_CODE)).json() as any).barber;
+    assert.ok(mine.photo_url.startsWith(url), 'the barber card keeps the photo (link visitors get the code on the photo URL)');
+    assert.equal((await fetch(base + url)).status, 404, 'anonymous visitors cannot fetch a photo by guessing its id');
+    assert.equal((await fetch(base + mine.photo_url)).status, 200, 'the share link lets them see it');
     // profile save that echoes the internal photo path back is accepted; external https URLs (legacy data) still work
     assert.equal((await call(base, 'PUT', '/api/barber/profile', { photo_url: url, about: 'hi' }, ck)).status, 200);
     assert.equal((await call(base, 'PUT', '/api/barber/profile', { photo_url: 'https://example.com/a.jpg' }, ck)).status, 200);

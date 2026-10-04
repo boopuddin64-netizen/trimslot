@@ -10,6 +10,7 @@ export const DEMO = {
   ],
 };
 
+export const DEMO_SHARE_CODE = 'de30c0de5a1e0001';
 export async function seed(db: Db, rounds = 10) {
   const now = isoNow();
   return db.tx(async (t) => {
@@ -26,6 +27,9 @@ export async function seed(db: Db, rounds = 10) {
       await t.query('INSERT INTO services (barber_id, name, price_kobo, duration_min, active, created_at) VALUES ($1,$2,$3,$4,TRUE,$5)', [barberId, name, price, dur, now]);
     }
     for (const c of DEMO.customers) await t.query(ins, ['customer', c.name, c.email, c.phone, bcrypt.hashSync(c.password, rounds), now]);
+    await t.query(`UPDATE barbers SET share_code=$1 WHERE id=$2`, [DEMO_SHARE_CODE, barberId]);
+    // demo customers already have the demo shop in "My barbers" (real customers get a barber through the barber's private link)
+    await t.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source, created_at) SELECT id, $1, TRUE, 'link', $2 FROM users WHERE role='customer'`, [barberId, now]);
     // demo accounts count as having accepted the current documents (otherwise every demo login would hit the re-accept prompt)
     await t.query(`INSERT INTO consent_log (user_id, document, version, accepted_at, source)
         SELECT u.id, d.doc, '1', $1, 'signup' FROM users u JOIN (VALUES ('terms','customer'),('privacy','customer'),('terms','barber'),('privacy','barber'),('barber_agreement','barber')) AS d(doc, r) ON d.r = u.role`, [now]);

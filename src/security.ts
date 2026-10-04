@@ -71,6 +71,7 @@ export function makeLimits(db: Db) {
     payment: dbLimiter(db, { name: 'payment', windowMs: 60_000, limit: 20, message: 'Too many payment tries. Please slow down.' }),
     paymentCallback: memLimiter({ windowMs: 60_000, limit: 60, message: 'Too many tries. Please slow down.' }),
     webhook: memLimiter({ windowMs: 60_000, limit: 600, message: 'Too many webhook calls.' }),
+    shareLink: dbLimiter(db, { name: 'sharelink', windowMs: 60_000, limit: 40, message: 'Too many tries. Please wait a minute.' }),
     api: memLimiter({ windowMs: 60_000, limit: 300, message: 'Too many tries. Please slow down.' }),
   };
 }

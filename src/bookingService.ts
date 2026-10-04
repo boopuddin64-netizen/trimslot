@@ -145,6 +145,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     }
     if (ent?.credit_id) await t.query('UPDATE session_credits SET used_booking_id=$1 WHERE id=$2', [b.id, ent.credit_id]);
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'BOOKED', { payment_option: input.payment_option, price_kobo: svc.price_kobo, status: b.status });
+    await t.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source, created_at) VALUES ($1,$2,TRUE,'booking',$3) ON CONFLICT (customer_id, barber_id) DO UPDATE SET added=TRUE`, [customerId, input.barber_id, now]);   // a barber you booked stays in "My barbers"
     await closeWaitlistFor(t, customerId, input.barber_id, input.date);
     if (!online) await announceConfirmed(t, b);
     return b;
