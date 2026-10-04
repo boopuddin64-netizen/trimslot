@@ -38,7 +38,7 @@ function scan() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const seen = new Set();
   for (let n; (n = walker.nextNode());) {
-    if (!n.nodeValue.trim()) continue; const el = n.parentElement; if (!el || seen.has(el) || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'OPTION'].includes(el.tagName) || !visible(el)) continue; seen.add(el);
+    if (!n.nodeValue.trim()) continue; const el = n.parentElement; if (!el || seen.has(el) || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'OPTION'].includes(el.tagName) || !visible(el) || el.matches('.av.has')) continue; seen.add(el); /* .av.has = photo shown, initials intentionally transparent */
     if (el.closest('.mockbar,#mockbanner')) { /* dev-only banner still checked */ }
     const s = getComputedStyle(el); const bg = bgOf(el); let fg = parse(s.color); fg[3] *= opacityOf(el); fg = over(fg, bg);
     const size = parseFloat(s.fontSize), bold = parseInt(s.fontWeight, 10) >= 700, large = size >= 24 || (size >= 18.66 && bold);
