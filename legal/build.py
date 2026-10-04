@@ -43,7 +43,10 @@ LIVE = {page for page, _ in PAGES.values()}
 INLINE_CSS = ('<style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}'
   '.legal .tblwrap{overflow-x:auto;margin:12px 0}.legal table{border-collapse:collapse;font-size:13px;min-width:520px}'
   '.legal th,.legal td{border:1px solid var(--ctl);padding:6px 8px;text-align:left;vertical-align:top}.legal th{background:var(--bg2);color:var(--ink)}'
-  '.legal blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--ctl)}.legal code{overflow-wrap:anywhere}.legal li{margin:4px 0}</style>')
+  '.legal blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--ctl)}.legal code{overflow-wrap:anywhere}.legal li{margin:4px 0}'
+  '.legal .plain-summary{background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--ctl);border-left:4px solid var(--accent);border-radius:10px;padding:12px 16px;margin:16px 0}'
+  '.legal .plain-summary p{margin:0 0 6px}.legal .plain-summary .ps-title{font-size:16px}.legal .plain-summary ul{margin:6px 0;padding-left:20px}'
+  '.legal .plain-summary li{margin:6px 0;font-size:15px}.legal .plain-summary .ps-note{font-size:13px;margin:8px 0 0}</style>')
 
 def unlink_unpublished(h):
     # links to documents that are not (yet) published as app pages become plain text

@@ -2,6 +2,19 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>A plan is a pack of sessions with one barber. You pay once. It does not renew by itself.</li>
+<li>You can use a plan only for the services it lists, and only with the barber who sold it.</li>
+<li>Each booking uses one session. The visit must start before the plan ends.</li>
+<li>If you cancel in time, you get the session back. If the barber cannot serve you, you also get it back.</li>
+<li>If you miss a visit, the session counts as used. You get one credit with the same barber.</li>
+<li>Unused sessions end when the plan ends. We do not refund them.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
 
 These terms apply when you buy a **plan** from a barber on TrimSlot. They are part of the [Terms of Service](terms.html) and should be read with the [Refund, Cancellation and Credit Policy](refunds.html).

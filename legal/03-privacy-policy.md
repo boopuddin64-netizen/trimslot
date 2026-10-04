@@ -2,6 +2,19 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>We keep your name, your email or phone number, and your bookings and payments.</li>
+<li>Card and bank details go to Paystack. They never reach us.</li>
+<li>The barber you book with can see your name, your contact details and your booking. They also see a label like “Reliable” or “Often misses”.</li>
+<li>We do not sell your data. We do not send marketing today.</li>
+<li>In Profile, you can download your data or delete your account. We keep payment records, but without your name.</li>
+<li>We use one cookie to keep you logged in. We use no advert cookies.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** {{privacy_version}}
 
 ## 1. Who we are

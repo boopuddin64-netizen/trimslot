@@ -2,6 +2,19 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>You run your own business. You are not a TrimSlot worker.</li>
+<li>We check every new shop first. Customers can see and book your shop only after we approve it. We can suspend or remove a shop that breaks the rules.</li>
+<li>Keep your shop clean and safe. Follow the law. You pay your own taxes.</li>
+<li>To get paid online, add your bank account in the app. Paystack sends online payments to your bank account. Until you do this, customers can only pay at your shop.</li>
+<li>When a customer pays you at the shop, you record it in the app. TrimSlot adds a commission to a balance you owe. You can see the balance in the app.</li>
+<li>If you mark a customer who paid as a no-show, they get one credit with you. You must give them a service for that credit.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** {{barber_agreement_version}}
 
 This agreement is between **[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**") and you, the person or business that signs up as a barber or shop on TrimSlot ("**you**", "the **Barber**"). It adds to the [Terms of Service](terms.html) and the [Privacy Policy](privacy.html). If they conflict on a barber matter, this agreement wins. By ticking "I agree" when you sign up (or by continuing to use the barber side of the app after we notify you of this agreement) you accept it. If you sign up for a company or partnership, you confirm you have authority to bind it.

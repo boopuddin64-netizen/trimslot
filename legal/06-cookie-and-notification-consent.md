@@ -2,6 +2,19 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>We use no advert, tracking or analytics cookies.</li>
+<li>One cookie keeps you logged in. It lasts 7 days, or until you log out.</li>
+<li>Your browser also saves small settings, like dark mode and your alert choices.</li>
+<li>Alerts in the app (the bell) are part of the service. They are never adverts.</li>
+<li>Phone or computer alerts (push) need your permission. You can turn them off in Profile.</li>
+<li>On an iPhone, push alerts work only after you add TrimSlot to your Home Screen.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
 
 ## Part A — Cookies and similar storage (long form, for the website)

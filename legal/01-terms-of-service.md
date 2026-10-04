@@ -2,6 +2,19 @@
 
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>TrimSlot is an app to book barbers. The barbers run their own shops. TrimSlot does not cut hair.</li>
+<li>You must be 18 or older to make an account.</li>
+<li>You can pay online. Or you can pay at the shop, if the barber allows it. If you pay online, we add a small booking fee. You see it before you pay.</li>
+<li>You can cancel in the app up to {{cancel_cutoff_min}} minutes before your visit.</li>
+<li>If you miss a visit that you paid for, you get no refund. You get one credit with the same barber. You cannot cash out a credit.</li>
+<li>In Profile, you can download your data or delete your account.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** {{terms_version}}
 
 These Terms of Service ("**Terms**") are an agreement between you and **[COMPANY NAME]** (RC [CAC RC NUMBER]), whose registered office is at [REGISTERED ADDRESS] ("**TrimSlot**", "**we**", "**us**"). They apply when you use the TrimSlot website and web app at [WEBSITE URL] (the "**Service**"). If you create an account, make a booking or buy a plan, you agree to these Terms. If you do not agree, please do not use the Service.

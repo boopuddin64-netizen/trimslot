@@ -3,6 +3,19 @@
 > **DRAFT – not legal advice – lawyer review required.** Replace every `[BRACKETED]` item. See `00-open-questions-for-lawyer.md`.
 > This policy describes what the app does today. The numbers on this page are admin settings and the published page reads them live, so changing a setting in the admin Controls page updates the page without a code change.
 
+<div class="plain-summary">
+<p class="ps-title"><b>In plain words</b></p>
+<ul>
+<li>You can cancel in the app up to {{cancel_cutoff_min}} minutes before your visit.</li>
+<li>If you cancel in time and you paid online, you get a refund. TrimSlot staff approve it. If no one decides in {{refund_auto_approve_hours}} hour(s), it is approved by itself.</li>
+<li>If you paid with a plan session or a credit, you get it back.</li>
+<li>If you miss a visit that you paid for, you get no refund. You get one credit with the same barber instead. It lasts {{credit_expiry_days}} days. You cannot cash it out.</li>
+<li>If the barber cannot serve you, you get a refund. If you pay twice, or your payment comes too late, you also get a refund.</li>
+<li>One booking gets a refund or a credit. It never gets both.</li>
+</ul>
+<p class="ps-note">This is a short summary. The full text below is what counts.</p>
+</div>
+
 **Effective date:** [EFFECTIVE DATE]  **Version:** [VERSION]
 
 This policy is part of the [Terms of Service](terms.html). "**Barber**" means the independent shop you booked with. Times are Lagos time.
