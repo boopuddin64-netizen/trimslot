@@ -10,3 +10,6 @@
 .ct .av,.cm .av{margin-right:8px}
 .av-row{display:flex;align-items:center;gap:10px;min-width:0}
 .av-row>div{min-width:0}
+.av.in{margin-right:8px}
+.chk.accept{align-items:flex-start;font-weight:400;font-size:13px}.chk.accept input{margin-top:2px;flex:none}
+.now .av{border-color:rgba(255,255,255,.4)}
