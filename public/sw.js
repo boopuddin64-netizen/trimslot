@@ -18,8 +18,8 @@ self.addEventListener('push', (event) => {
     await self.registration.showNotification(title, {
       body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || '/#/notifications', id: d.id },
       icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', timestamp: Date.now(),
-      vibrate: d.type === 'YOUR_TURN' || d.type === 'YOURE_NEXT' ? [120, 60, 120, 60, 200] : [90, 40, 90],
-      requireInteraction: d.type === 'YOUR_TURN',
+      vibrate: d.type === 'YOUR_TURN' || d.type === 'YOURE_NEXT' || d.type === 'HELP_REQUEST' ? [120, 60, 120, 60, 200] : [90, 40, 90],
+      requireInteraction: d.type === 'YOUR_TURN' || d.type === 'HELP_REQUEST',
     });
   })());
 });

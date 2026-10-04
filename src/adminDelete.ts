@@ -69,6 +69,7 @@ export async function purgeCore(t: Conn, o: { users?: number[]; barbers?: number
   await q(`DELETE FROM reviews WHERE customer_id = ANY($1::int[]) OR barber_id = ANY($2::int[]) OR booking_id = ANY($3::int[])`, U, B, bookingIds);
   await q(`DELETE FROM ledger_applications WHERE ledger_id = ANY($1::int[]) OR payment_id = ANY($2::int[])`, ledgerIds, payIds);
   await q(`DELETE FROM commission_ledger WHERE id = ANY($1::int[])`, ledgerIds);
+  await q(`DELETE FROM help_requests WHERE customer_id = ANY($1::int[]) OR booking_id = ANY($2::int[])`, U, bookingIds);
   await q(`DELETE FROM reports WHERE reporter_id = ANY($1::int[]) OR target_user_id = ANY($1::int[]) OR booking_id = ANY($2::int[])`, U, bookingIds);
   await q(`DELETE FROM broadcasts WHERE user_id = ANY($1::int[])`, U);
   await q(`DELETE FROM payment_events WHERE reference = ANY($1::text[])`, refs);

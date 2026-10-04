@@ -11,6 +11,7 @@ const state = { user: null, cfg: null, unread: 0, wiz: null, poll: null, open: n
 
 /* outline icon set (24px grid, stroke = currentColor) */
 const ICONS = {
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.4-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>', chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.7-.8L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5Z"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>', sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
@@ -96,7 +97,8 @@ function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : '');
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
-const fail = (e) => toast(e.message || 'Something went wrong. Try again.', true);
+const emailCheckOn = () => !!(state.cfg && state.cfg.email_verification);   // email checking is paused unless the server says it is on
+const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
@@ -197,6 +199,7 @@ async function route() {
     if (parts[0] === 'b' && /^[a-f0-9]{12,32}$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
+    if (parts[0] === 'verify-email') { if (!emailCheckOn()) { const nx = q.get('next'); return go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup|verify-email)/.test(nx) ? nx : '#/'); } return verifyEmail(q.get('next')); }
     if (parts[0] === 'notifications') return notifications();
     if (parts[0] === 'profile') return role === 'barber' ? barberProfile() : profile();
     if (parts[0] === 'barber') return barberPage(Number(parts[1]));
@@ -204,7 +207,7 @@ async function route() {
       if (parts[0] === 'book') return bookWizard(Number(parts[1]));
       if (parts[0] === 'wallet') return wallet(q.get('plan'), Number(q.get('pp')) || 0);
       if (parts[0] === 'bookings') return myBookings();
-      if (parts[0] === 'booking') return bookingDetail(Number(parts[1]), q.get('pay'));
+      if (parts[0] === 'booking') return parts[2] === 'move' ? moveBooking(Number(parts[1])) : bookingDetail(Number(parts[1]), q.get('pay'));
     } else {
       if (parts[0] === 'today') return barberToday();
       if (parts[0] === 'plans') return barberPlans();
@@ -274,7 +277,9 @@ function authPage(mode, roleQ) {
         if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } });
         else await api('/auth/login', { method: 'POST', body: fd });
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
-        go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/');
+        const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
+        if (signup && fd.email && emailCheckOn()) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
+        go(dest);
       } catch (e) { saved = fd; draw(e.message); }
     };
   };
@@ -284,6 +289,34 @@ function authPage(mode, roleQ) {
 /* ---------- customer: home ---------- */
 const stars = (n, cls = '') => `<span class="stars ${cls}" aria-label="${n} out of 5">${[1, 2, 3, 4, 5].map((i) => `<i class="${i <= Math.round(n) ? 'on' : ''}">${ic('star', 'sm')}</i>`).join('')}</span>`;
 const ratingChip = (r) => r && r.count ? `<span class="rate">${ic('star', 'sm')}<b>${r.average.toFixed(1)}</b><span class="muted"> (${r.count})</span></span>` : '';
+/* ---------- email check by one-time code (both roles) ---------- */
+async function verifyEmail(next) {
+  const u = state.user;
+  const target = next && /^#\/[a-z]/.test(next) && !/^#\/(login|signup|verify-email)/.test(next) ? next : '#/';
+  if (u.email_verified) { toast('Your email is already checked'); return go(target); }
+  let sent = false, masked = '', msg = '';
+  const draw = () => {
+    const devHint = state.cfg.email_dev_code ? `<div class="info small">Test mode: the code is <b>123456</b>.</div>` : '';
+    const intro = u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'We check your email once, before your first booking. It keeps your account safe.';
+    if (!u.email) {
+      app.innerHTML = `<h1>Add your email</h1><p class="muted">${intro}</p><form id="ef"><label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send me a code</button></div></form><p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
+      $('#ef').onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/me', { method: 'PATCH', body: { email: new FormData(ev.target).get('email') } }); state.user = { ...state.user, ...r.user }; Object.assign(u, r.user); msg = ''; await send(); } catch (e) { msg = e.message; draw(); } };
+      return;
+    }
+    app.innerHTML = `<h1>Check your email</h1><p class="muted">${intro}</p>${devHint}
+      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required style="font-size:22px;letter-spacing:6px;text-align:center">${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Check my code</button></div></form>
+        <p class="center small"><a href="#" id="resend">Send a new code</a> · <a href="#" id="chg">Use a different email</a></p>`
+      : `<div class="card"><p style="margin-top:0">We will send a 6-digit code to <b>${esc(u.email)}</b>.</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns"><button class="btn" id="sendcode">Send me a code</button></div></div><p class="center small"><a href="#" id="chg">Use a different email</a></p>`}
+      <p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
+    const sc = $('#sendcode'); if (sc) sc.onclick = () => { sc.disabled = true; send(); };
+    const rs = $('#resend'); if (rs) rs.onclick = (ev) => { ev.preventDefault(); send(); };
+    const ch = $('#chg'); if (ch) ch.onclick = (ev) => { ev.preventDefault(); u.email = null; sent = false; msg = ''; draw(); };
+    const vf = $('#vf'); if (vf) { vf.querySelector('input').focus(); vf.onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/auth/email/verify', { method: 'POST', body: { code: new FormData(ev.target).get('code') } }); state.user = { ...state.user, ...r.user }; toast('Your email is checked'); go(target); } catch (e) { msg = e.message; draw(); } }; }
+  };
+  const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = e.message; } draw(); };
+  draw();
+}
+
 async function customerHome() {
   const F = state.cfg.features || {};
   const [bs, bk, rb, fv, wl] = await Promise.all([api('/me/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
@@ -294,7 +327,7 @@ async function customerHome() {
       <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
   const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time is free now</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
-  app.innerHTML = `<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
+  app.innerHTML = `${emailBanner()}<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
     ${Notify.promptCard()}${rebookCard}
     ${active.length ? `<h2>Your next booking</h2>${clist(active.slice(0, 2).map(bookingCard))}` : ''}
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
@@ -428,6 +461,7 @@ async function bookWizard(barberId) {
           }
           toast('Booking confirmed'); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
+          if (e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
           if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(e.message); } else draw(e.message);
         }
       };
@@ -459,7 +493,7 @@ async function profile(editing) {
   const u = state.user;
   const livePlans = w.plans.filter((p) => p.live), liveCredits = w.credits.filter((c) => c.live);
   const recent = bk.bookings.slice(0, 3);
-  app.innerHTML = `<div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small ellip">${esc(u.email || '')}</div><div class="muted small ellip">${esc(u.phone || '')}</div></div></div>
+  app.innerHTML = `${emailBanner()}<div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small ellip">${esc(u.email || '')}</div><div class="muted small ellip">${esc(u.phone || '')}</div></div></div>
     <h2>Account</h2>
     <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
     <div id="editbox" class="${editing ? '' : 'hidden'}"><div class="card">${accountForm(u)}</div></div>
@@ -691,6 +725,16 @@ async function confirmReturn(kind, id, title) {
   }
   return last ? last.result : 'not_paid';
 }
+/** Call + WhatsApp buttons. `c` has tel_url / whatsapp_url from the server (links are built there). */
+const helpHtml = (b) => {
+  const h = b.help;
+  if (h && h.status === 'OPEN') return `<div class="${h.escalated ? 'warn' : 'info'} small notice" id="helpstatus">${ic('clock', 'sm')}<div><b>${h.escalated ? 'Your barber has not answered yet.' : 'We told your barber. Waiting for an answer.'}</b><div>${h.escalated ? 'We told the TrimSlot team. They will help you. You can also call your barber.' : 'You can also call your barber.'}</div><div class="muted">You wrote: “${esc(h.note)}”</div></div></div>`;
+  if (h && h.status === 'COME_LATER') return `<div class="ok small" id="helpstatus">${ic('check', 'sm')} <b>Your barber will wait for you.</b> Come as soon as you can.</div>`;
+  if (h && h.status === 'RELEASED') return `<div class="info small notice" id="helpstatus">${ic('check', 'sm')}<div><b>Your barber released this booking.</b> See below what happens with your money.</div></div>`;
+  if (b.can_ask_help) return `<div class="card" id="helpbox"><b>Emergency, please help</b><p class="small muted" style="margin:4px 0 8px">Use this only if something urgent came up. Your barber gets an urgent message. Your barber decides.</p><textarea id="helpnote" rows="2" maxlength="200" placeholder="What happened? (a few words)"></textarea><div class="btns" style="margin-top:8px"><button class="btn sm red" id="helpsend">Send to my barber</button></div></div>`;
+  return '';
+};
+const contactBtns = (c) => c && c.tel_url ? `<div class="btns contact-btns" style="margin-top:8px"><a class="btn sm" href="${esc(c.tel_url)}">${ic('phone', 'sm')} Call</a><a class="btn sm sec" href="${esc(c.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${ic('chat', 'sm')} WhatsApp</a></div>` : '';
 async function bookingDetail(id, payResult, quiet) {
   const { booking: b } = await api('/bookings/' + id);
   if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch'].includes(payResult)) {   // back from Paystack (or Paystack was slow to answer): ask again before showing anything
@@ -717,6 +761,7 @@ async function bookingDetail(id, payResult, quiet) {
       <div class="row between" style="margin-top:6px"><span>${ic('clock', 'sm')} ${b.duration_min} min</span><b>${naira(b.price_kobo)}</b></div>${custMoney(b)}
       <div class="row between" style="margin-top:8px"><span class="small muted">Payment</span>${payBadge(b)}</div>
       ${b.arrival_time ? `<div class="small muted" style="margin-top:6px">Checked in ${lagosWhen(b.arrival_time, b.scheduled_time)}${lateBy(b.arrival_time, b.scheduled_time)}</div>` : ''}</div>
+    ${b.barber_contact && !locked ? `<div class="card" id="contactbox"><b>Contact your barber</b><div class="small muted">${esc(b.barber_contact.name || '')} · ${esc(b.barber_contact.phone || '')}</div>${contactBtns(b.barber_contact)}</div>` : ''}
     ${b.note_to_barber ? `<div class="card small"><span class="muted">Your note to the barber:</span> ${esc(b.note_to_barber)}</div>` : ''}
     ${qHtml}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).reviews ? (b.review ? `<div class="card review"><div class="row between"><b>Your review</b>${stars(b.review.rating)}</div>${b.review.comment ? `<p style="margin:8px 0 0">${esc(b.review.comment)}</p>` : ''}${b.review.reply ? `<div class="reply small"><b>Reply from your barber</b><div>${esc(b.review.reply)}</div></div>` : ''}</div>` : `<div class="card" id="rvcard"><h3 style="margin:0 0 4px">How was your visit?</h3><div class="starpick" id="starpick" role="radiogroup" aria-label="Rating">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" role="radio" aria-checked="false" aria-label="${i} star${i > 1 ? 's' : ''}">${ic('star')}</button>`).join('')}</div><textarea id="rvtext" rows="2" maxlength="500" placeholder="Add a short comment (optional)"></textarea><div class="btns"><button class="btn sm" id="rvsend" disabled>Send review</button></div></div>`) : ''}
@@ -724,8 +769,9 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your time is saved only after you pay. Until then, others can book it. Pay to save it. If someone takes it first, we refund you.</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira((b.money && b.money.total_kobo) || b.price_kobo)} now</button><button class="btn sec" id="verify">I paid. Check my payment</button></div>` : ''}
     ${b.can_check_in ? `<button class="btn big green block" id="here">${ic('pin')} I'm Here</button>` : ''}
     ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button shows on the day of your visit.</div>` : ''}
-    ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
-    ${locked ? `<div class="info small notice">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you miss a <b>paid</b> session, we do not refund it. You get 1 credit with this barber.</div></div>` : ''}
+    ${canCancel ? `<div class="btns" style="margin-top:16px">${b.can_reschedule ? `<a class="btn" id="move" href="#/booking/${b.id}/move">${ic('cal', 'sm')} Change time</a>` : ''}<button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
+    ${locked ? `<div class="info small notice" id="lockedbox">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you do not come and your barber marks a no-show, you get no refund. If you paid, you get 1 credit with this barber instead.${b.barber_contact ? `<div style="margin-top:8px"><b>Something urgent? Call or WhatsApp your barber.</b> Your barber decides what happens to the booking.</div>${contactBtns(b.barber_contact)}` : ''}</div></div>` : ''}
+    ${helpHtml(b)}
     ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time, and we found no payment for it. If you still see a charge, tap “Report a problem” and we will sort it out.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
     <div class="btns" style="margin-top:14px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} We did not refund this session, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
@@ -738,9 +784,35 @@ async function bookingDetail(id, payResult, quiet) {
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
   on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); const done = r.booking.status === 'CONFIRMED'; toast(done ? 'Payment confirmed' : ['slot_taken', 'late_refund', 'refund_due'].includes(r.result) ? 'That time was taken. We are refunding you' : r.result === 'duplicate_refund' ? 'Already paid. We are returning the extra payment' : r.result === 'amount_mismatch' ? 'Payment received. Our team will check it' : 'We have not got your payment yet', !done && r.result !== 'duplicate_refund'); route(); });
+  on('#helpsend', async () => { const note = ($('#helpnote').value || '').trim(); if (note.length < 3) throw new Error('Write a few words about what happened.'); await api(`/bookings/${id}/help`, { method: 'POST', body: { note } }); toast('We told your barber'); route(); });
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) throw new Error('Not cancelled'); await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
+}
+
+/* ---------- customer: change the time of an upcoming booking (same barber and service) ---------- */
+async function moveBooking(id) {
+  const { booking: b } = await api('/bookings/' + id);
+  if (!b.can_reschedule) { app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><div class="info notice">${ic('lock', 'sm')}<div>You cannot change the time of this booking any more.</div></div>`; return; }
+  const today = state.cfg.today;
+  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
+  let date = b.date < today ? today : b.date, time = null;
+  const draw = async () => {
+    app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><h1>Change time</h1>
+      <div class="card small"><b>${esc(b.service_name)}</b> with ${esc(b.shop_name)}<div class="muted">Now: ${dateLabel(b.date)}, ${esc(b.start_label)}</div><div class="muted">Your payment stays the same.</div></div>
+      <div class="days">${days.map((d) => { const x = new Date(d + 'T00:00:00Z'); return `<button class="chip ${date === d ? 'on' : ''}" data-d="${d}">${DAYN[x.getUTCDay()]}<b>${x.getUTCDate()}</b>${MON[x.getUTCMonth()]}</button>`; }).join('')}</div>
+      <div id="slots" class="card muted">Loading times…</div>
+      <div class="btns cta"><a class="btn sec" href="#/booking/${id}">Keep my time</a><button class="btn" id="save" disabled>Move my booking</button></div>`;
+    document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { date = el.dataset.d; time = null; draw(); });
+    try {
+      const r = await api(`/barbers/${b.barber_id}/slots?service_id=${b.service_id}&date=${date}`);
+      $('#slots').className = 'card';
+      $('#slots').innerHTML = r.slots.length ? `<div class="small muted" style="margin-bottom:8px">${dateLabel(date)} · ${b.duration_min} min</div><div class="chips">${r.slots.map((s) => `<button class="chip ${time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>` : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>`;
+      document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#save').disabled = false; });
+    } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    $('#save').onclick = async () => { const btn = $('#save'); btn.disabled = true; try { await api(`/bookings/${id}/reschedule`, { method: 'POST', body: { date, time } }); toast('Your booking is moved'); go('#/booking/' + id); } catch (e) { fail(e); btn.disabled = false; } };
+  };
+  draw();
 }
 
 /* ---------- report a problem (customers + barbers) ---------- */
@@ -775,7 +847,7 @@ async function barberBalance() {
 }
 
 /* ---------- notifications ---------- */
-const NOTIF_TONE = (t) => /^(YOUR_TURN|YOURE_NEXT|LEAVE_NOW|WAITLIST_OPEN)$/.test(t) ? 'hot' : /^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|BOOKING_CANCELLED)/.test(t) ? 'warn' : /^(PLAN_|CREDIT|LOYALTY|PAYMENT|REVIEW)/.test(t) ? 'money' : '';
+const NOTIF_TONE = (t) => /^(YOUR_TURN|YOURE_NEXT|LEAVE_NOW|WAITLIST_OPEN|HELP_REQUEST)$/.test(t) ? 'hot' : /^(AVAILABILITY|SHOP_PAUSED|BARBER_REJECTED|BARBER_NEEDS|BARBER_SUSPENDED|ACCOUNT|LEDGER|BOOKING_INCOMPLETE|NO_SHOW|BOOKING_CANCELLED)/.test(t) ? 'warn' : /^(PLAN_|CREDIT|LOYALTY|PAYMENT|REVIEW)/.test(t) ? 'money' : '';
 const agoTxt = (iso) => { const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); return m < 1 ? 'Just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : lagosStamp(iso).replace(/, \d+:\d+:\d+/, ',').replace(/:\d\d (?=[AP]M)/, ' '); };
 const notifItem = (n) => `<a class="nitem ${n.is_read ? '' : 'unread'} ${NOTIF_TONE(n.type)}" href="${Notify.urlOf(n)}" data-nid="${n.id}"><span class="nico">${ic(Notify.iconFor(n.type))}</span><span class="nbody"><span class="ntop"><b>${esc(n.title)}</b><span class="small muted">${agoTxt(n.created_at)}</span></span><span class="small ntext">${esc(n.body)}</span></span>${n.is_read ? '' : '<i class="udot" aria-label="unread"></i>'}</a>`;
 async function notifications() {
@@ -804,7 +876,14 @@ function custLine(b) { return `${cav(b.customer, 'in')}<b>${esc(b.customer.name)
 async function act(id, action, body) {
   try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
 }
-const pendingBanner = () => {
+const emailBanner = () => {
+  const u = state.user; if (!emailCheckOn() || !u || u.email_verified !== false) return '';
+  const here = (location.hash || '').startsWith('#/verify-email');
+  if (here) return '';
+  return `<a class="notice warn" id="emailban" href="#/verify-email" style="text-decoration:none;color:inherit">${ic('shield')}<div><b>${u.email ? 'Check your email address.' : 'Add your email address.'}</b><div class="small">${u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'You need this before your first booking.'} ${u.email ? 'Tap to get a 6-digit code.' : 'Tap to add it.'}</div></div></a>`;
+};
+const pendingBanner = () => emailBanner() + pendingBanner0();
+const pendingBanner0 = () => {
   const u = state.user; if (!u || u.role !== 'barber' || u.verified !== false) return '';
   const st = u.review_status || 'PENDING', why = u.review_reason ? `<div class="why">${esc(u.review_reason)}</div>` : '';
   const btn = (label) => `<div class="btns" style="margin-top:10px"><button class="btn sm" data-resubmit>${label}</button></div>`;
@@ -840,7 +919,9 @@ async function barberToday(keepScroll) {
     <div class="small muted" style="margin:-2px 0 8px">${sm.yesterday.completed ? `Yesterday: ${sm.yesterday.completed} cuts · ${naira(sm.yesterday.earned)}` : 'No cuts yesterday'}${sm.rating && sm.rating.count ? ` · ${ratingChip(sm.rating)}` : ''}${sm.waitlisted ? ` · ${sm.waitlisted} on waitlist` : ''}</div>` : '';
   const qaHtml = tp && tp.enabled ? `<details class="acc qa"><summary><span class="ico">${ic('send', 'sm')}</span><span class="grow">Quick actions<span class="sub">Tell today's customers you are late</span></span>${ic('chev', 'sm')}</summary><div class="acc-b"><div class="small muted" style="margin-bottom:6px">Move everyone's start time later</div><div class="chips">${[5, 10, 15, 20, 30].map((m) => `<button class="chip" data-delay="${m}">+${m} min</button>`).join('')}</div>
       <div class="small muted" style="margin:12px 0 6px">Or send a message to everyone still waiting</div><div class="btns">${tp.templates.map((t) => `<button class="btn sm sec" data-tpl="${t.key}">${esc(t.label)}</button>`).join('')}</div></div></details>` : '';
-  app.innerHTML = `${pendingBanner()}${payoutBanner()}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
+  const urgent = [d.now_serving, d.next, ...d.waiting].filter((x) => x && x.help);
+  const urgentHtml = urgent.map((x) => `<a class="notice warn" role="alert" href="#/b/${x.id}" style="text-decoration:none;color:inherit">${ic('warn')}<div><b>Urgent: ${esc(x.customer.name)} needs help</b><div class="small">“${esc(x.help.note)}” Tap to answer.</div></div></a>`).join('');
+  app.innerHTML = `${pendingBanner()}${payoutBanner()}${urgentHtml}${Notify.promptCard()}<div class="row between"><div><h1>Today</h1><div class="muted small">${dateLabel(d.date)} · ${d.stats.completed} done · ${naira(d.stats.earned_kobo)} earned</div></div><button class="btn sm sec" id="refresh" aria-label="Refresh">${ic('refresh', 'sm')}</button></div>
     ${smHtml}${qaHtml}
     ${nowCard}${nextCard}
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else is in line.</p>'}
@@ -879,9 +960,13 @@ async function barberUpcoming() {
 const ACTION_LABEL = { BOOKED: 'Booked', PAYMENT_CONFIRMED: 'Payment confirmed', CHECKED_IN: 'Customer checked in ("I\'m Here")', MARKED_PRESENT: 'Barber marked present', STARTED: 'Service started', COMPLETED: 'Service completed', CANCELLED: 'Cancelled', NO_SHOW: 'Marked no-show', NOT_SERVED: 'Marked not served', PAYMENT_RECORDED: 'Payment recorded', SKIPPED: 'Skipped (moved back in line)', WAITING_FOR_CUSTOMER: 'Barber is waiting for the customer', HOLD_EXPIRED: 'Payment time ran out', CREDIT_ISSUED: 'Session credit given (no refund)', PAYMENT_SLOT_TAKEN: 'Payment came after someone took the time', LATE_PAYMENT: 'Late payment marked', DUPLICATE_PAYMENT: 'Double payment marked' };
 async function barberBooking(id) {
   const { booking: b, timeline } = await api('/barber/bookings/' + id);
-  app.innerHTML = `<a href="#/today" class="back" id="goback">${ic('back', 'sm')} Back</a>
+  const hp = b.help;
+  const helpCard = hp ? `<div class="warn notice" id="helpcard" role="alert">${ic('warn')}<div><b>Urgent: this customer needs help.</b><div style="margin:4px 0">“${esc(hp.note)}”</div>${hp.escalated ? '<div class="small">You have not answered for a while, so the TrimSlot team was told.</div>' : ''}${contactBtns(b.customer)}
+      <div class="btns" style="margin-top:8px"><button class="btn sm" id="helprel">OK, release it</button><button class="btn sm sec" id="helplater">Come later</button></div>
+      <div class="small muted" style="margin-top:6px">“Release it” marks the booking as not served: a paid online booking is refunded, and a plan session or credit goes back. “Come later” tells the customer you will wait.</div></div></div>` : '';
+  app.innerHTML = `<a href="#/today" class="back" id="goback">${ic('back', 'sm')} Back</a>${helpCard}
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:20px;display:flex;align-items:center;gap:10px">${cav(b.customer, 'lg')}${esc(b.customer.name)}</h1>${statusBadge(b.status)}</div>
-      <div class="muted small">${esc(b.customer.phone || '')} ${esc(b.customer.email || '')}</div><hr>
+      <div class="muted small">${esc(b.customer.phone || '')} ${esc(b.customer.email || '')}</div>${contactBtns(b.customer)}<hr>
       <div class="row between"><b>${esc(b.service_name)}</b><b>${naira(b.price_kobo)}</b></div>
       <div class="small muted">${dateLabel(b.date)} · ${esc(b.start_label)} · ${b.duration_min} min</div>${barberMoney(b)}<div style="margin-top:6px">${payBadge(b)} <span class="small muted">${b.paid_via ? 'via ' + esc(b.paid_via) : ''}</span></div>
       ${b.payment_option === 'PLAN' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} The customer used a <b>plan session</b>. Nothing to collect.</div>` : b.payment_option === 'CREDIT' ? `<div class="small" style="margin-top:6px">${ic('ticket', 'sm')} The customer used a <b>session credit</b>. Nothing to collect.</div>` : ''}
@@ -892,6 +977,9 @@ async function barberBooking(id) {
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded yet. The shop or admin will give a refund or a session credit.'))}</div>` : ''}</div>`).join('')}</div></div>`;
+  const helpAct = (sel, action, ask, done) => { const el = $(sel); if (el) el.onclick = async () => { if (ask && !confirm(ask)) return; el.disabled = true; try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: action === 'not-served' ? { reason: 'Customer asked for help; barber released it' } : {} }); toast(done); route(); } catch (e) { fail(e); el.disabled = false; } }; };
+  helpAct('#helprel', 'not-served', 'Release this booking? It will be marked as not served.', 'Booking released');
+  helpAct('#helplater', 'wait', null, 'We told the customer you will wait');
 }
 
 /* ---------- barber: customers ---------- */

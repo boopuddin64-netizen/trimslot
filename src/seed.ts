@@ -33,6 +33,7 @@ export async function seed(db: Db, rounds = 10) {
     // demo accounts count as having accepted the current documents (otherwise every demo login would hit the re-accept prompt)
     await t.query(`INSERT INTO consent_log (user_id, document, version, accepted_at, source)
         SELECT u.id, d.doc, '1', $1, 'signup' FROM users u JOIN (VALUES ('terms','customer'),('privacy','customer'),('terms','barber'),('privacy','barber'),('barber_agreement','barber')) AS d(doc, r) ON d.r = u.role`, [now]);
+    await t.query('UPDATE users SET email_verified_at=$1 WHERE email IS NOT NULL', [now]);   // demo accounts have a checked email
     return { barberId };
   });
 }

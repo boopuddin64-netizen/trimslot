@@ -11,6 +11,8 @@ import { feeSettingsOf, offAppBreakdown, onlineBreakdown } from './fees';
 import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 import { logger } from './logger';
+import { answerHelpOnAction } from './help';
+import { assertCustomerMayBook, barberEmailReadySql } from './emailOtp';
 
 /** Timestamps are ISO-8601 UTC strings, `date` is the Lagos calendar date 'YYYY-MM-DD' (derived by Postgres from scheduled_at). */
 export interface BookingRow {
@@ -27,6 +29,7 @@ export interface BookingRow {
   cancelled_at: string | null; cancelled_by: string | null;
   barber_hold: boolean; skipped_at: string | null; last_queue_pos: number | null; created_at: string;
   note_to_barber: string | null; rem2h_at: string | null; rem30_at: string | null; leave_at: string | null;
+  reschedule_count: number;
   booking_fee_kobo: number; ps_fee_est_kobo: number; barber_fee_kobo: number; platform_charge_kobo: number; payout_kobo: number | null;
 }
 
@@ -138,6 +141,8 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     const barber = await t.maybeOne('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('We could not find that barber.');
     if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
+    if (!(await t.maybeOne(`SELECT 1 FROM barbers b WHERE b.id=$1 AND ${barberEmailReadySql('b')}`, [input.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
+    await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
     await assertBookable(t, input.barber_id, input.payment_option);
     { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot book right now${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)
@@ -327,7 +332,7 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
     }
     const set = await getSettings(t);
     if (!canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min)) {
-      throw new AppError(403, 'CANCEL_LOCKED', `You can no longer cancel. The cut-off is ${set.cancel_cutoff_min} minutes before your visit, so this time stays yours. If you miss it, you get no refund. But if you paid, you get one credit with this barber. Contact your barber if something came up.`);
+      throw new AppError(403, 'CANCEL_LOCKED', `You can no longer cancel. The cut-off is ${set.cancel_cutoff_min} minutes before your visit, so this time stays yours. If you do not come and your barber marks a no-show, you get no refund. If you paid, you get one credit with this barber instead. If something urgent came up, call or message your barber. Your barber decides.`);
     }
     const now = isoNow();
     const abandoned = isIncomplete({ ...b, status: 'PENDING_PAYMENT' });   // walked away from an unpaid Pay-now attempt: barber never hears about it
@@ -465,6 +470,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         break;
       }
     }
+    await answerHelpOnAction(t, b, action);   // an open "Emergency, please help" request counts as answered when the barber acts on the booking
     await refreshQueueNotifications(t, b.barber_id, b.date);
     return (await getBooking(t, b.id))!;
   });

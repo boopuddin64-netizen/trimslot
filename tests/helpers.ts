@@ -23,8 +23,19 @@ export async function newDatabase(opts: { poolMax?: number } = {}): Promise<{ db
   await admin.end();
   const db = createDb(`postgres://postgres:postgres@127.0.0.1:${PORT}/${name}`, { max: opts.poolMax ?? 8 });
   opened.push({ db, name });
+  await verifiedUsersByDefault(db);
   return { db, name };
 }
+
+/** Test databases give every NEW user a checked email and treat barbers as ready, so the many tests that insert users directly keep testing what they are about.
+ *  Tests of the email rules call unverifiedUsers(db) to switch that off and get the real behaviour. */
+async function verifiedUsersByDefault(db: Db) {
+  await db.query(`CREATE OR REPLACE FUNCTION test_verify_user() RETURNS trigger AS $$ BEGIN
+      IF NEW.email IS NOT NULL AND NEW.email_verified_at IS NULL THEN NEW.email_verified_at := now(); END IF;
+      IF NEW.role = 'barber' THEN NEW.email_verify_exempt := TRUE; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+  await db.query(`CREATE TRIGGER test_verify_user BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION test_verify_user()`);
+}
+export const unverifiedUsers = (db: Db) => db.query('DROP TRIGGER IF EXISTS test_verify_user ON users');
 
 /** An EMPTY database (no migrations applied) - for tests that migrate step by step. */
 export async function emptyDatabase(): Promise<{ db: Db; name: string }> {

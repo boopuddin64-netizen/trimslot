@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { badRequest } from './errors';
+import { config } from './config';
 
 export function parse<T extends z.ZodTypeAny>(schema: T, data: unknown): z.infer<T> {
   const r = schema.safeParse(data);
@@ -35,6 +36,7 @@ export const signupSchema = z.object({
 }).refine((d) => d.email || d.phone, { message: 'Enter an email or a phone number.', path: ['email'] })
   .refine((d) => d.accept_terms === true, { message: 'Tick the box to accept the Terms of Service and Privacy Policy.', path: ['accept_terms'] })
   .refine((d) => d.role !== 'barber' || d.accept_barber_agreement === true, { message: 'Tick the box to accept the Barber Agreement.', path: ['accept_barber_agreement'] })
+  .refine((d) => d.role !== 'barber' || !config.emailVerificationRequired || !!d.email, { message: 'Barbers must add an email. We send a code to check it.', path: ['email'] })
   .refine((d) => d.role !== 'barber' || !!d.shop_name, { message: 'Barbers must add a shop name.', path: ['shop_name'] });
 
 export const loginSchema = z.object({ identifier: z.string().trim().min(3, 'Enter your email or phone.'), password: z.string().min(1, 'Enter your password') });

@@ -10,7 +10,7 @@ import { authenticate, requireAuth, requireRole, setAuthCookie, signToken } from
 import * as V from './validation';
 import { parse } from './validation';
 import { getAvailableSlots } from './slots';
-import { audit, fmtTime12 } from './helpers';
+import { audit, fmtTime12, phoneLinks } from './helpers';
 import {
   BarberAction, barberAction, canCustomerCancel, cancelCutoff, createBooking, customerCancel, customerCheckIn,
   expireHolds, getBooking, orderedQueue, queueInfo, BookingRow, isIncomplete, barberVisible,
@@ -42,6 +42,9 @@ import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 import { feeSettingsOf, onlineBreakdown } from './fees';
+import { fixedDevCode, barberEmailReadySql, assertEmailVerified, resetEmailVerification, sendEmailOtp, verifyEmailOtp } from './emailOtp';
+import { canReschedule, rescheduleBooking } from './reschedule';
+import { helpEligible, helpView, requestHelp } from './help';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
   Promise.resolve(fn(req, res)).catch(next);
@@ -52,7 +55,7 @@ const barberReview = async (db: Db, userId: number) => {
   return { verified: !!r?.verified, review_status: r?.review_status ?? 'PENDING', review_reason: r && r.review_status !== 'VERIFIED' && r.review_status !== 'PENDING' ? r.review_reason : null };
 };
 const publicUser = async (db: Db, u: any) => {
-  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null, consent_required: await consentRequired(db, u) };
+  const out: any = { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: u.avatar_url ?? null, email_verified: !!u.email_verified_at, consent_required: await consentRequired(db, u) };
   if (u.role === 'barber') Object.assign(out, await barberReview(db, u.id));
   return out;
 };
@@ -62,7 +65,7 @@ type Memo = { barbers: Map<number, Promise<any>>; queues: Map<string, Promise<Bo
 const newMemo = (): Memo => ({ barbers: new Map(), queues: new Map(), delays: new Map() });
 async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queue?: BookingRow[]; memo?: Memo } = {}) {
   const memo = opts.memo;
-  const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
+  const barberQ = () => db.maybeOne('SELECT b.id, b.shop_name, b.location, u.name AS barber_name, u.phone AS barber_phone FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.id=$1', [b.barber_id]);
   let barberP: Promise<any>;
   if (memo) { barberP = memo.barbers.get(b.barber_id) ?? barberQ(); memo.barbers.set(b.barber_id, barberP); } else barberP = barberQ();
   const barber = await barberP;
@@ -81,10 +84,16 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     barber_name: barber?.barber_name, shop_name: barber?.shop_name, location: barber?.location,
     cancel_deadline: cancelCutoff(b.scheduled_at, cutoffMin).toISOString(),
     can_cancel: ['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED'].includes(b.status) && canCustomerCancel(b.scheduled_at, clock.now(), cutoffMin),
+    can_reschedule: canReschedule(b, cutoffMin),
     can_check_in: b.status === 'CONFIRMED' && b.date === lagosDate(),
     allowed_next: TRANSITIONS[b.status],
     created_at: b.created_at,
   };
+  // The barber's number is shared with the customer ONLY while a paid booking is upcoming (confirmed or arrived) - never in the directory, share-link page or other states.
+  if (!opts.forBarber && b.payment_status === 'PAID' && ['CONFIRMED', 'ARRIVED'].includes(b.status)) {
+    const links = phoneLinks(barber?.barber_phone);
+    if (links) out.barber_contact = { name: barber.barber_name, phone: barber.barber_phone, tel_url: links.tel, whatsapp_url: links.whatsapp };
+  }
   // Money lines. Customer: price + booking fee = what they pay. Barber: their Paystack share and the platform charge come out of the payout.
   if (b.payment_option === 'ONLINE') {
     if (opts.forBarber) out.money = b.payout_kobo == null ? { mode: 'ONLINE', price_kobo: b.price_kobo }
@@ -123,6 +132,10 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
       out.queue.eta = b.status === 'IN_SERVICE' ? null : etaFrom(qq, b, await dm);
     }
   }
+  // "Emergency, please help": the customer's status line, and (for the barber) the open request they must answer.
+  { const h = await helpView(db, b.id);
+    if (h) out.help = opts.forBarber ? (h.status === 'OPEN' ? { id: h.id, note: h.note, created_at: h.created_at, escalated: h.escalated } : null) : h;
+    if (!opts.forBarber) out.can_ask_help = !(h && h.status === 'OPEN') && helpEligible(b, cutoffMin); }
   if (b.note_to_barber) out.note_to_barber = b.note_to_barber;
   if (!opts.forBarber && b.status === 'COMPLETED') {
     const st = await getSettingsCached(db);
@@ -131,6 +144,7 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   if (opts.forBarber) {
     const c = await db.one('SELECT id, name, phone, email, avatar_url FROM users WHERE id=$1', [b.customer_id]);
     out.customer = { id: c.id, name: c.name, phone: c.phone, email: c.email, avatar_url: c.avatar_url ?? null };
+    const pl = phoneLinks(c.phone); if (pl) { out.customer.tel_url = pl.tel; out.customer.whatsapp_url = pl.whatsapp; }
     const st = await getSettingsCached(db);
     if (st.feature_reliability && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) out.customer.reliability = await reliabilityFor(db, b.customer_id);
     if (st.feature_barber_notes && ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) { const ins = await getCustomerInsights(db, b.barber_id, b.customer_id); out.customer.note = ins.note || null; out.customer.usual = ins.usual || null; }
@@ -277,7 +291,7 @@ export function createApp(db: Db) {
   /** Published policy numbers for the legal pages (cancel lock, credit expiry, fee, ...). Public and cacheable for a minute. */
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => res.json({
-    payment_mode: config.paystackMode, mock: config.mockMode, demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
+    payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: true, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));
@@ -331,8 +345,16 @@ export function createApp(db: Db) {
     if (!req.user) return void res.json({ user: null });
     const u = req.user;
     const unread = (await db.one<{ c: number }>('SELECT COUNT(*) c FROM notifications WHERE user_id=$1 AND NOT is_read', [u.id])).c;
+    const ev = await db.one<{ email_verified_at: string | null }>('SELECT email_verified_at FROM users WHERE id=$1', [u.id]);
     const payoutOk = u.role === 'barber' ? (!config.requirePayout || !!(await db.maybeOne<any>('SELECT 1 AS x FROM barbers WHERE user_id=$1 AND paystack_subaccount IS NOT NULL', [u.id]))) : undefined;
-    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, avatar_url: (await db.maybeOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [u.id]))?.avatar_url ?? null, consent_required: await consentRequired(db, u), deletion_requested: !!(await db.maybeOne('SELECT 1 AS x FROM users WHERE id=$1 AND deletion_requested_at IS NOT NULL', [u.id])), ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
+    res.json({ user: { id: u.id, role: u.role, name: u.name, email: u.email ?? null, phone: u.phone ?? null, email_verified: !!ev.email_verified_at, avatar_url: (await db.maybeOne<{ avatar_url: string | null }>('SELECT avatar_url FROM users WHERE id=$1', [u.id]))?.avatar_url ?? null, consent_required: await consentRequired(db, u), deletion_requested: !!(await db.maybeOne('SELECT 1 AS x FROM users WHERE id=$1 AND deletion_requested_at IS NOT NULL', [u.id])), ...(u.role === 'barber' ? { ...(await barberReview(db, u.id)), payout_ok: payoutOk } : {}) }, unread });
+  }));
+
+  /** Email check by one-time code. Send: 3 per email and 10 per network per hour. Verify: 5 tries per code. */
+  api.post('/auth/email/send', requireAuth, wrap(async (req, res) => res.json(await sendEmailOtp(db, req.user!.id, req.ip || 'unknown'))));
+  api.post('/auth/email/verify', requireAuth, limits.login, wrap(async (req, res) => {
+    await verifyEmailOtp(db, req.user!.id, req.body?.code);
+    res.json({ user: await publicUser(db, await db.one('SELECT * FROM users WHERE id=$1', [req.user!.id])) });
   }));
 
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
@@ -343,7 +365,10 @@ export function createApp(db: Db) {
     const phone = d.phone !== undefined ? (d.phone || null) : cur.phone;
     if (!email && !phone) throw badRequest('Keep at least one email or phone number on your account.');
     try {
-      await db.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
+      await db.tx(async (t) => {
+        await t.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
+        if ((email ?? null) !== (cur.email ?? null)) await resetEmailVerification(t, cur.id);   // a new email must be checked again
+      });
     } catch (e: any) {
       if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'Another account already uses that email or phone.');
       throw e;
@@ -372,7 +397,7 @@ export function createApp(db: Db) {
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused, online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
+      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
   };
   api.get('/barbers/:id', wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -431,6 +456,19 @@ export function createApp(db: Db) {
     res.json({ result: best.result, reference: bestRef, booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));
   api.post('/bookings/:id/cancel', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCancel(db, req.user!.id, (await ownBooking(req)).id)) })));
+  /** "Emergency, please help": only on a locked, paid, upcoming booking. One open request per booking. */
+  api.post('/bookings/:id/help', limits.payment, cust, wrap(async (req, res) => {
+    const b = await ownBooking(req);
+    await assertEmailVerified(db, req.user!.id, 'before you ask for urgent help');
+    await requestHelp(db, req.user!.id, b.id, req.body?.note);
+    res.status(201).json({ booking: await decorate(db, (await getBooking(db, b.id))!) });
+  }));
+  /** Move an upcoming booking to another free time (same barber and service). Allowed only while cancelling is still allowed. */
+  api.post('/bookings/:id/reschedule', limits.payment, cust, wrap(async (req, res) => {
+    const b = await ownBooking(req);
+    const d = parse(z.object({ date: z.string(), time: z.string() }), req.body);
+    res.json({ booking: await decorate(db, await rescheduleBooking(db, req.user!.id, b.id, d)) });
+  }));
   api.post('/bookings/:id/check-in', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await customerCheckIn(db, req.user!.id, (await ownBooking(req)).id)) })));
 
   /* ---------- customer: plans & credits (customers only browse, buy and use) ---------- */

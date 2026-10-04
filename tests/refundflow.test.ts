@@ -136,7 +136,7 @@ test('admin alerts: in-app list, mark read, per-event preferences, quiet hours, 
     const sub = await s.j('/api/admin/alerts/subscribe', { method: 'POST', headers: s.A, body: { endpoint: 'https://push.example/abc', keys: { p256dh: 'p'.repeat(20), auth: 'a'.repeat(10) } } });
     assert.equal(sub.status, 200);
     const prefs = (await s.j('/api/admin/alerts/prefs', { headers: s.A })).body;
-    assert.deepEqual(prefs.events.map((e: any) => e.event).sort(), ['DELETION_REQUEST', 'PAYMENT_MISMATCH', 'REFUND_AUTO_APPROVED', 'REFUND_FAILED', 'REFUND_WAITING']);
+    assert.deepEqual(prefs.events.map((e: any) => e.event).sort(), ['DELETION_REQUEST', 'HELP_UNANSWERED', 'PAYMENT_MISMATCH', 'REFUND_AUTO_APPROVED', 'REFUND_FAILED', 'REFUND_WAITING']);
     const { b } = await paid(s, s.customerIds[0], '12:00');
     await customerCancel(s.db, s.customerIds[0], b.id);
     const list = (await s.j('/api/admin/alerts', { headers: s.A })).body; assert.equal(list.unread, 1); assert.equal(list.items[0].event, 'REFUND_WAITING');
