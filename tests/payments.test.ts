@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { computeSignature, verifySignature, handleWebhook, initializePayment, mockMarkPaid, processReference, bookingIdFromReference } from '../src/paystack';
-import { createBooking, expireHolds, getBooking } from '../src/bookingService';
+import { createBooking, expireHolds, getBooking, customerCancel } from '../src/bookingService';
 import { MOCK_SECRET } from '../src/config';
 
 async function setup() {
@@ -151,12 +151,11 @@ test('RACE: someone completes a booking for the slot first; the late payment is 
   } finally { resetNow(); }
 });
 
-test('payment arriving after the attempt was already closed (expired + swept) is never confirmed and is flagged for refund', async () => {
-  const { db, b } = await setup();
+test('payment arriving for an attempt the CUSTOMER cancelled is never confirmed and is flagged for refund', async () => {
+  const { db, b, customerIds } = await setup();
   try {
     const { reference } = await initializePayment(db, b.id, null);
-    setNow(`${WED}T08:40:00+01:00`);
-    await expireHolds(db);
+    await customerCancel(db, customerIds[0], b.id);
     assert.equal((await getBooking(db, b.id))!.status, 'CANCELLED');
     await mockMarkPaid(db, reference);
     assert.equal((await processReference(db, reference)).result, 'refund_due');
@@ -164,6 +163,19 @@ test('payment arriving after the attempt was already closed (expired + swept) is
     assert.equal(bk.status, 'CANCELLED');
     assert.notEqual(bk.payment_status, 'PAID');
     assert.ok(['NEEDS_REFUND', 'REFUND_REQUESTED'].includes((await db.one('SELECT refund_status FROM payments WHERE reference=$1', [reference])).refund_status));
+  } finally { resetNow(); }
+});
+
+test('payment arriving after the attempt timed out and was swept confirms the booking when the time is still free (not dependent on sweep timing)', async () => {
+  const { db, b } = await setup();
+  try {
+    const { reference } = await initializePayment(db, b.id, null);
+    setNow(`${WED}T08:40:00+01:00`);
+    await expireHolds(db);
+    assert.equal((await getBooking(db, b.id))!.status, 'CANCELLED');
+    await mockMarkPaid(db, reference);
+    assert.equal((await processReference(db, reference)).result, 'processed');
+    assert.equal((await getBooking(db, b.id))!.status, 'CONFIRMED');
   } finally { resetNow(); }
 });
 
