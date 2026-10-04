@@ -97,3 +97,36 @@ test('customer abandons a Pay-now hold by cancelling: "Incomplete", barber not n
     assert.ok((await barberNotifs(db, barberId)).filter((n: any) => n.booking_id === c.id).some((n: any) => n.type === 'BOOKING_CANCELLED'));
   });
 });
+
+test('payment confirmed AFTER the try timed out: the booking is confirmed when the time is still free, refunded when it is not (same result whether or not a sweep ran first)', async () => {
+  const { initializePayment, mockMarkPaid, processReference } = await import('../src/paystack');
+  await withServer(async (_base, { db, barberId, customerIds, serviceIds }) => {
+    await db.query(`UPDATE barbers SET paystack_subaccount='ACCT_test' WHERE id=$1`, [barberId]);
+    const mk = async (cust: number, time: string) => {
+      const b = await createBooking(db, cust, { barber_id: barberId, service_id: serviceIds[0], date: WED, time, payment_option: 'ONLINE' });
+      const pay = await initializePayment(db, b.id, null); await mockMarkPaid(db, pay.reference); return { b, ref: pay.reference };
+    };
+    // A: time still free after the try closed
+    const a = await mk(customerIds[0], '10:00');
+    setNow(`${WED}T08:30:00+01:00`); await expireHolds(db);
+    assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [a.b.id])).status, 'CANCELLED', 'try closed first');
+    assert.equal((await processReference(db, a.ref)).result, 'processed');
+    const ra = await db.one('SELECT status, payment_status, cancelled_by FROM bookings WHERE id=$1', [a.b.id]);
+    assert.deepEqual([ra.status, ra.payment_status, ra.cancelled_by], ['CONFIRMED', 'PAID', null], 'paid late, time free: confirmed');
+    assert.equal((await db.one(`SELECT refund_status FROM payments WHERE reference=$1`, [a.ref])).refund_status, null, 'no refund needed');
+    // B: someone else took the time first -> refund, not confirmed
+    setNow(`${WED}T08:00:00+01:00`);
+    const bb = await mk(customerIds[1], '12:00');
+    setNow(`${WED}T08:30:00+01:00`); await expireHolds(db);
+    await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '12:00', payment_option: 'ON_ARRIVAL' });
+    await processReference(db, bb.ref);
+    assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [bb.b.id])).status, 'CANCELLED');
+    assert.equal((await db.one(`SELECT refund_status FROM payments WHERE reference=$1`, [bb.ref])).refund_status !== null, true, 'time gone: flagged for refund');
+    // C: the customer cancelled the attempt themselves -> never revived
+    setNow(`${WED}T08:00:00+01:00`);
+    const c3 = await mk(customerIds[1], '15:00');
+    await customerCancel(db, customerIds[1], c3.b.id);
+    await processReference(db, c3.ref);
+    assert.equal((await db.one('SELECT status FROM bookings WHERE id=$1', [c3.b.id])).status, 'CANCELLED');
+  });
+});

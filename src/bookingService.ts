@@ -203,6 +203,19 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
     await audit(t, b.id, { id: null, role: 'system' }, 'DUPLICATE_PAYMENT', { via, note: 'extra successful payment on an already-paid booking - flagged NEEDS_REFUND' });
     return 'already_paid';
   }
+  // The attempt was closed only because time ran out (not cancelled by the customer, and not closed because a shop was removed). If the time is STILL free
+  // when the money is confirmed, the booking is confirmed anyway: the outcome must not depend on whether a sweep or a request happened to run first.
+  if (b.status === 'CANCELLED' && b.payment_status === 'VOID' && b.cancelled_by === 'system' && b.payment_option === 'ONLINE' && !b.paid_at
+    && new Date(b.scheduled_at).getTime() > clock.now().getTime()
+    && await t.maybeOne(`SELECT 1 FROM audit_log WHERE booking_id=$1 AND action='HOLD_EXPIRED' LIMIT 1`, [b.id])
+    && await t.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified AND NOT booking_paused', [b.barber_id])
+    && await slotStillFree(t, b)) {
+    await t.query(`UPDATE bookings SET status='CONFIRMED', payment_status='PAID', paid_via=$1, paid_at=$2, cancelled_at=NULL, cancelled_by=NULL, hold_expires_at=NULL WHERE id=$3`, [via, now, b.id]);
+    await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_CONFIRMED', { via, amount_kobo: b.price_kobo, note: 'paid after the try had timed out; the time was still free, so the booking is confirmed' });
+    await announceConfirmed(t, (await getBooking(t, b.id))!);
+    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We got ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for your ${b.service_name}. Your time is saved.`, b.id);
+    return 'confirmed';
+  }
   // Money arrived for an attempt that was already closed (expired / abandoned). The booking stays Incomplete (barber never sees it); the money is flagged for refund.
   await flagRefund(t, b, reference, 'Payment arrived after the attempt was closed');
   await audit(t, b.id, { id: null, role: 'system' }, 'LATE_PAYMENT', { via, status: b.status, note: 'payment received after the attempt was closed - booking NOT confirmed; payment flagged NEEDS_REFUND' });
