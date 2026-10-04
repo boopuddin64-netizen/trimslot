@@ -18,10 +18,15 @@ export interface Settings {
   retention_events_days: number; retention_bad_events_days: number; retention_notifications_days: number; retention_push_stale_days: number; retention_deleted_days: number;
   retention_checkout_days: number; retention_rate_limit_hours: number; retention_admin_alerts_days: number; retention_last_run_at: string | null;
   terms_version: string; privacy_version: string; barber_agreement_version: string;
+  fee_share_customer_pct: number; fee_share_barber_pct: number; fee_share_platform_pct: number;
+  ps_percent: number; ps_flat_kobo: number; ps_flat_waived_below_kobo: number; ps_cap_kobo: number; ps_vat_percent: number;
+  charge_percent: number; charge_flat_kobo: number; charge_min_kobo: number;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
-  return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor), liability_cap_kobo: Number(r.liability_cap_kobo) };
+  return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor), liability_cap_kobo: Number(r.liability_cap_kobo),
+    fee_share_customer_pct: Number(r.fee_share_customer_pct), fee_share_barber_pct: Number(r.fee_share_barber_pct), fee_share_platform_pct: Number(r.fee_share_platform_pct),
+    ps_percent: Number(r.ps_percent), ps_vat_percent: Number(r.ps_vat_percent), charge_percent: Number(r.charge_percent) };
 }
 /** Feature-flag reads on hot paths (every decorated booking): a 3-second per-database cache; any settings update invalidates all of it. */
 let flagGen = 0;
@@ -48,20 +53,22 @@ export const settingsView = (s: Settings) => ({
   retention_events_days: s.retention_events_days, retention_bad_events_days: s.retention_bad_events_days, retention_notifications_days: s.retention_notifications_days, retention_push_stale_days: s.retention_push_stale_days,
   retention_deleted_days: s.retention_deleted_days, retention_checkout_days: s.retention_checkout_days, retention_rate_limit_hours: s.retention_rate_limit_hours, retention_admin_alerts_days: s.retention_admin_alerts_days,
   terms_version: s.terms_version, privacy_version: s.privacy_version, barber_agreement_version: s.barber_agreement_version,
+  fee_share_customer_pct: s.fee_share_customer_pct, fee_share_barber_pct: s.fee_share_barber_pct, fee_share_platform_pct: s.fee_share_platform_pct,
+  ps_percent: s.ps_percent, ps_flat_naira: s.ps_flat_kobo / 100, ps_flat_waived_below_naira: s.ps_flat_waived_below_kobo / 100, ps_cap_naira: s.ps_cap_kobo / 100, ps_vat_percent: s.ps_vat_percent,
+  charge_percent: s.charge_percent, charge_flat_naira: s.charge_flat_kobo / 100, charge_min_naira: s.charge_min_kobo / 100,
 });
-export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions', 'platform_fee_percent', 'platform_fee_naira',
+export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions',
   'credit_expiry_days', 'credit_on_missed_session', 'plan_refund_policy',
   'maintenance_mode', 'maintenance_message', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days',
   'feature_push', 'feature_favourites', 'feature_rebook', 'feature_reminders', 'feature_waitlist', 'feature_reviews', 'feature_barber_notes', 'feature_quick_actions', 'feature_reliability', 'feature_daily_summary', 'feature_booking_note', 'feature_loyalty', 'loyalty_every_n', 'loyalty_credit_naira',
   'cancel_cutoff_min', 'payment_hold_min', 'refund_auto_approve_hours', 'liability_cap_naira', 'retention_events_days', 'retention_bad_events_days', 'retention_notifications_days', 'retention_push_stale_days',
-  'retention_deleted_days', 'retention_checkout_days', 'retention_rate_limit_hours', 'retention_admin_alerts_days', 'terms_version', 'privacy_version', 'barber_agreement_version'] as const;
+  'retention_deleted_days', 'retention_checkout_days', 'retention_rate_limit_hours', 'retention_admin_alerts_days', 'terms_version', 'privacy_version', 'barber_agreement_version',
+  'fee_share_customer_pct', 'fee_share_barber_pct', 'fee_share_platform_pct', 'ps_percent', 'ps_flat_naira', 'ps_flat_waived_below_naira', 'ps_cap_naira', 'ps_vat_percent', 'charge_percent', 'charge_flat_naira', 'charge_min_naira'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_validity_days: z.coerce.number().int().min(1).max(730),
   max_plan_sessions: z.coerce.number().int().min(1).max(500),
-  platform_fee_percent: z.coerce.number().min(0).max(100),
-  platform_fee_naira: z.coerce.number().min(0).max(1_000_000),
   credit_expiry_days: z.coerce.number().int().min(1).max(365),
   credit_on_missed_session: z.boolean(),
   credit_on_early_cancel_prepaid: z.boolean(),   // deprecated and ignored: an in-time cancellation of a prepaid booking is always a (pending) refund, never a credit
@@ -79,6 +86,9 @@ export const settingsPatchSchema = z.object({
   retention_deleted_days: z.coerce.number().int().min(1).max(3650), retention_checkout_days: z.coerce.number().int().min(1).max(365),
   retention_rate_limit_hours: z.coerce.number().int().min(1).max(720), retention_admin_alerts_days: z.coerce.number().int().min(7).max(3650),
   terms_version: z.string().trim().min(1).max(30), privacy_version: z.string().trim().min(1).max(30), barber_agreement_version: z.string().trim().min(1).max(30),
+  fee_share_customer_pct: z.coerce.number().min(0).max(100), fee_share_barber_pct: z.coerce.number().min(0).max(100), fee_share_platform_pct: z.coerce.number().min(0).max(100),
+  ps_percent: z.coerce.number().min(0).max(20), ps_flat_naira: z.coerce.number().min(0).max(100_000), ps_flat_waived_below_naira: z.coerce.number().min(0).max(10_000_000), ps_cap_naira: z.coerce.number().min(0).max(10_000_000), ps_vat_percent: z.coerce.number().min(0).max(50),
+  charge_percent: z.coerce.number().min(0).max(50), charge_flat_naira: z.coerce.number().min(0).max(1_000_000), charge_min_naira: z.coerce.number().min(0).max(1_000_000),
 }).partial().strict();
 
 const FEATS = ['push', 'favourites', 'rebook', 'reminders', 'waitlist', 'reviews', 'barber_notes', 'quick_actions', 'reliability', 'daily_summary', 'booking_note', 'loyalty'] as const;
@@ -88,6 +98,8 @@ export async function updateSettings(c: Conn, patch: unknown) {
   if (!parsed.success) throw badRequest(parsed.error.issues.map((i) => `${i.path.join('.') || 'settings'}: ${i.message}`).join('; '));
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
   if (next.min_plan_price_naira > next.max_plan_price_naira) throw badRequest('min_plan_price_naira cannot be above max_plan_price_naira');
+  { const sum = Number(next.fee_share_customer_pct) + Number(next.fee_share_barber_pct) + Number(next.fee_share_platform_pct);
+    if (Math.abs(sum - 100) > 0.0005) throw badRequest(`The three fee shares (customer, barber, platform) must add up to 100%. They add up to ${Math.round(sum * 10000) / 10000}%.`); }
   await c.query(`UPDATE platform_settings SET min_plan_price_kobo=$1, max_plan_price_kobo=$2, max_plan_validity_days=$3, max_plan_sessions=$4, platform_fee_percent=$5,
       platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, plan_refund_policy=$9, updated_at=$10,
       maintenance_mode=$11, maintenance_message=$12, feature_plans=$13, feature_credits=$14, feature_pay_on_arrival=$15, commission_enabled=$16, commission_factor=$17,
@@ -104,6 +116,10 @@ export async function updateSettings(c: Conn, patch: unknown) {
     [next.cancel_cutoff_min, next.payment_hold_min, next.refund_auto_approve_hours, Math.round(next.liability_cap_naira * 100), next.retention_events_days, next.retention_bad_events_days,
       next.retention_notifications_days, next.retention_push_stale_days, next.retention_deleted_days, next.retention_checkout_days, next.retention_rate_limit_hours, next.retention_admin_alerts_days,
       next.terms_version, next.privacy_version, next.barber_agreement_version]);
+  await c.query(`UPDATE platform_settings SET fee_share_customer_pct=$1, fee_share_barber_pct=$2, fee_share_platform_pct=$3, ps_percent=$4, ps_flat_kobo=$5, ps_flat_waived_below_kobo=$6, ps_cap_kobo=$7, ps_vat_percent=$8,
+      charge_percent=$9, charge_flat_kobo=$10, charge_min_kobo=$11 WHERE id=1`,
+    [next.fee_share_customer_pct, next.fee_share_barber_pct, next.fee_share_platform_pct, next.ps_percent, Math.round(next.ps_flat_naira * 100), Math.round(next.ps_flat_waived_below_naira * 100), Math.round(next.ps_cap_naira * 100), next.ps_vat_percent,
+      next.charge_percent, Math.round(next.charge_flat_naira * 100), Math.round(next.charge_min_naira * 100)]);
   clearSettingsCache(c);
   // audit: before/after of every changed key (the audit log is the record of who changed a published number and from what)
   const before: Record<string, unknown> = {}; for (const k of Object.keys(p)) before[k] = (cur as any)[k];

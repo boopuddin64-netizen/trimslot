@@ -115,15 +115,17 @@ test('the auto-approve hours are an admin setting (validated + audited) and driv
 });
 
 test('public settings: defaults match the published numbers, no auth needed', async () => {
-  const s = await boot(); process.env.PLATFORM_FEE_KOBO = '1000'; process.env.PLATFORM_FEE_PERCENT = '0.15';   // the live fee comes from these env values until the admin sets one
+  const s = await boot(); 
   try {
     const r = await s.j('/api/public-settings'); assert.equal(r.status, 200);
     const p = r.body.settings;
     assert.equal(p.cancel_cutoff_min, 30); assert.equal(p.credit_expiry_days, 30); assert.equal(p.payment_hold_min, 15);
-    assert.equal(p.platform_fee_percent, 0.15); assert.equal(p.platform_fee_naira, 10); assert.equal(p.commission_percent, 50);
+    assert.equal(p.platform_charge_percent, 2); assert.equal(p.platform_charge_min_naira, 50); assert.equal(p.platform_charge_flat_naira, 0); assert.equal(p.commission_percent, 50);
+    assert.equal(p.ps_percent, 1.5); assert.equal(p.ps_flat_naira, 100); assert.equal(p.ps_flat_waived_below_naira, 2500); assert.equal(p.ps_cap_naira, 2000); assert.equal(p.ps_vat_percent, 7.5);
+    assert.ok(Math.abs(p.fee_share_customer_percent + p.fee_share_barber_percent + p.fee_share_platform_percent - 100) < 0.01);
     assert.equal(p.refund_auto_approve_hours, 3); assert.equal(p.liability_cap_naira, null);
     assert.equal(p.terms_version, '1');
-  } finally { delete process.env.PLATFORM_FEE_KOBO; delete process.env.PLATFORM_FEE_PERCENT; s.server.close(); resetNow(); }
+  } finally { s.server.close(); resetNow(); }
 });
 
 test('admin alerts: in-app list, mark read, per-event preferences, quiet hours, push delivered via the fake gateway, dedupe, failures raise REFUND_FAILED', async () => {

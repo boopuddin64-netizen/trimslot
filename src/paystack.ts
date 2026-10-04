@@ -5,7 +5,8 @@ import { AppError, notFound } from './errors';
 import { applyVerifiedPayment, assertPayoutReady, getBooking, PaymentOutcome } from './bookingService';
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow } from './time';
-import { applyNettingForPayment, inAppFeeKobo, planCheckoutSplit, reverseNettingForPayment } from './ledger';
+import { applyNettingForPayment, planCheckoutSplit, previewBreakdown, reverseNettingForPayment } from './ledger';
+import { FeeBreakdown } from './fees';
 import { adminEvent, flushAdminPush } from './adminNotify';
 
 const PAYSTACK_API = 'https://api.paystack.co';
@@ -34,14 +35,6 @@ export function planIdFromReference(ref: string): number | null {
   const m = /^TS-PLAN-(\d+)-[a-f0-9]+$/.exec(ref || '');
   return m ? Number(m[1]) : null;
 }
-/** Platform fee kept from a charge. Admin settings (platform_settings) win; when they are 0/0 the PLATFORM_FEE_* env vars still apply. */
-export function platformFeeKobo(priceKobo: number, s?: Pick<Settings, 'platform_fee_kobo' | 'platform_fee_percent'>): number {
-  const useSettings = !!s && (s.platform_fee_kobo > 0 || Number(s.platform_fee_percent) > 0);
-  const flat = useSettings ? s!.platform_fee_kobo : config.platformFeeKobo;
-  const pct = useSettings ? Number(s!.platform_fee_percent) : config.platformFeePercent;
-  return Math.min(flat + Math.round((priceKobo * pct) / 100), priceKobo);
-}
-
 export interface VerifyResult { ok: boolean; status: string; amount_kobo?: number; requested_amount_kobo?: number; fees_kobo?: number; reference: string }
 
 /** Paystack accounts can be set to pass the processing fee on to the customer. Then `amount` (what the customer paid) is the price GROSSED UP by the fee,
@@ -85,17 +78,32 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
 export async function initializePayment(db: Db, bookingId: number, customerEmail: string | null) {
   const b = (await getBooking(db, bookingId))!;
   if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not awaiting online payment.');
-    const reference = makeReference(b.id);
-  return startCheckout(db, { reference, amount: b.price_kobo, barberId: b.barber_id, email: customerEmail || `customer${b.customer_id}@trimslot.app`, metadata: { booking_id: b.id, app: 'trimslot' }, target: { booking_id: b.id } });
+  const reference = makeReference(b.id);
+  let bd = snapshotOf(b.price_kobo, b);
+  if (!bd) {   // booking made before the fee model existed: compute the split now and store it, so the booking and the payment agree
+    const barber = await db.one<any>('SELECT fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [b.barber_id]);
+    bd = await previewBreakdown(db, barber, b.price_kobo);
+    await db.query('UPDATE bookings SET booking_fee_kobo=$2, ps_fee_est_kobo=$3, barber_fee_kobo=$4, platform_charge_kobo=$5, payout_kobo=$6 WHERE id=$1', [b.id, bd.booking_fee_kobo, bd.ps_fee_kobo, bd.barber_fee_kobo, bd.platform_charge_kobo, bd.payout_kobo]);
+  }
+  return startCheckout(db, { reference, bd, barberId: b.barber_id, email: customerEmail || `customer${b.customer_id}@trimslot.app`, metadata: { booking_id: b.id, app: 'trimslot' }, target: { booking_id: b.id } });
 }
 
-/** Shared by booking payments and plan purchases: same Paystack initialize call, subaccount + platform-fee split, and payments row. */
-async function startCheckout(db: Db, o: { reference: string; amount: number; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
-  const { reference, amount } = o;
+/** Rebuild the breakdown frozen on a booking / plan purchase row. Null when the row predates the fee model (payout not stored). */
+export function snapshotOf(priceKobo: number, r: { booking_fee_kobo: number; ps_fee_est_kobo: number; barber_fee_kobo: number; platform_charge_kobo: number; payout_kobo: number | null }): FeeBreakdown | null {
+  if (r.payout_kobo === null || r.payout_kobo === undefined) return null;
+  return { price_kobo: priceKobo, booking_fee_kobo: r.booking_fee_kobo, total_kobo: priceKobo + r.booking_fee_kobo, ps_fee_kobo: r.ps_fee_est_kobo, barber_fee_kobo: r.barber_fee_kobo,
+    platform_share_kobo: Math.max(0, r.ps_fee_est_kobo - r.booking_fee_kobo - r.barber_fee_kobo), platform_charge_kobo: r.platform_charge_kobo, payout_kobo: r.payout_kobo,
+    platform_net_kobo: r.booking_fee_kobo + r.barber_fee_kobo + r.platform_charge_kobo - r.ps_fee_est_kobo };
+}
+
+/** Shared by booking payments and plan purchases: same Paystack initialize call, subaccount split and payments row. The customer is charged `bd.total_kobo` (price + booking fee). */
+async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
+  const { reference, bd } = o;
+  const amount = bd.total_kobo;
   const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
   assertPayoutReady(barber);
   const subaccount: string | null = barber.paystack_subaccount || null;
-  const { fee, netted, charge } = await planCheckoutSplit(db, barber, amount);
+  const { fee, netted, charge } = await planCheckoutSplit(db, barber, bd);
   let authUrl: string;
   let provider: 'PAYSTACK' | 'MOCK';
   if (config.mockMode) {
@@ -105,15 +113,20 @@ async function startCheckout(db: Db, o: { reference: string; amount: number; bar
     provider = 'PAYSTACK';
     const payload: any = { email: o.email, amount, currency: 'NGN', reference, callback_url: `${config.appBaseUrl}/api/payments/callback`, metadata: o.metadata };
     if (subaccount) {
+      // Paystack splits NOTHING by itself: we tell it exactly how much stays with the platform account (everything except the barber's payout).
+      // bearer 'account' = the platform account pays Paystack's fee out of what it keeps; that is the fee the three shares were calculated for.
       payload.subaccount = subaccount;
-      if (charge > 0) payload.transaction_charge = charge; // platform keeps the fee (+ any commission debt netted), subaccount gets the rest
+      payload.bearer = 'account';
+      payload.transaction_charge = charge;
     }
     const json = await paystackFetch('/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     authUrl = json.data.authorization_url;
   }
-  await db.query(`INSERT INTO payments (booking_id, plan_purchase_id, reference, provider, amount_kobo, fee_kobo, subaccount, status, authorization_url, created_at, barber_id, debt_netted_kobo) VALUES ($1,$2,$3,$4,$5,$6,$7,'INITIATED',$8,$9,$10,$11)`,
-    [o.target.booking_id ?? null, o.target.plan_purchase_id ?? null, reference, provider, amount, fee, subaccount, authUrl, isoNow(), o.barberId, netted]);
-  return { reference, authorization_url: authUrl, amount_kobo: amount, mock: provider === 'MOCK' };
+  await db.query(`INSERT INTO payments (booking_id, plan_purchase_id, reference, provider, amount_kobo, fee_kobo, subaccount, status, authorization_url, created_at, barber_id, debt_netted_kobo,
+      price_kobo, booking_fee_kobo, barber_fee_kobo, ps_fee_est_kobo, payout_kobo) VALUES ($1,$2,$3,$4,$5,$6,$7,'INITIATED',$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+    [o.target.booking_id ?? null, o.target.plan_purchase_id ?? null, reference, provider, amount, fee, subaccount, authUrl, isoNow(), o.barberId, netted,
+      bd.price_kobo, bd.booking_fee_kobo, bd.barber_fee_kobo, bd.ps_fee_kobo, bd.payout_kobo - netted]);
+  return { reference, authorization_url: authUrl, amount_kobo: amount, price_kobo: bd.price_kobo, booking_fee_kobo: bd.booking_fee_kobo, mock: provider === 'MOCK' };
 }
 
 /** Customer starts buying a plan. A PENDING purchase row is created (invisible to the barber, worthless until paid); amount/terms are snapshotted server-side. */
@@ -121,13 +134,17 @@ export async function initializePlanPurchase(db: Db, customerId: number, planId:
   { const st = await getSettings(db);
     if (st.maintenance_mode) throw new AppError(503, 'MAINTENANCE', st.maintenance_message);
     if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are switched off right now.'); }
-  const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
+  const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, b.fee_percent_override, b.fee_flat_kobo_override, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
     FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND b.verified`, [planId]);
   if (!plan) throw notFound('Plan not found');
   assertPayoutReady(plan);
-  const purchase = await db.one<{ id: number }>(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [plan.id, customerId, plan.barber_id, plan.name, plan.price_kobo, plan.sessions, plan.validity_days, plan.service_ids, isoNow()]);
-  const out = await startCheckout(db, { reference: makePlanReference(purchase.id), amount: plan.price_kobo, barberId: plan.barber_id,
+  if (!plan.service_ids || !plan.service_ids.length) throw new AppError(409, 'PLAN_NO_SERVICES', 'This plan has no services linked yet, so it cannot be bought. Ask the barber to fix it.');
+  const bd = await previewBreakdown(db, plan, plan.price_kobo);
+  const purchase = await db.one<{ id: number }>(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, created_at, session_value_kobo,
+      booking_fee_kobo, ps_fee_est_kobo, barber_fee_kobo, platform_charge_kobo, payout_kobo)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`, [plan.id, customerId, plan.barber_id, plan.name, plan.price_kobo, plan.sessions, plan.validity_days, plan.service_ids, isoNow(), Math.floor(plan.price_kobo / plan.sessions),
+      bd.booking_fee_kobo, bd.ps_fee_kobo, bd.barber_fee_kobo, bd.platform_charge_kobo, bd.payout_kobo]);
+  const out = await startCheckout(db, { reference: makePlanReference(purchase.id), bd, barberId: plan.barber_id,
     email: customerEmail || `customer${customerId}@trimslot.app`, metadata: { plan_purchase_id: purchase.id, app: 'trimslot' }, target: { plan_purchase_id: purchase.id } });
   return { ...out, purchase_id: purchase.id };
 }
@@ -163,7 +180,7 @@ export async function processReference(db: Db, reference: string): Promise<{ res
   const am = amountMatches(v, pay.amount_kobo);
   if (!am) return { result: 'amount_mismatch', ...ids };
   const outcome = await db.tx(async (t): Promise<PaymentOutcome | 'activated' | 'already_active' | null> => {
-    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4 WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo]);
+    const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4, ps_fee_actual_kobo=$5 WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo, v.fees_kobo && v.fees_kobo > 0 ? v.fees_kobo : null]);
     if (claim.rowCount !== 1) return null;                     // someone else already processed it
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);

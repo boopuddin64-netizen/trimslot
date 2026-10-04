@@ -51,7 +51,7 @@ test('full happy path via services + enforcement of guards', async () => {
     await assert.rejects(barberAction(db, uid, barberId, b.id, 'no-show'), /Cannot/);
     await assert.rejects(customerCheckIn(db, customerIds[0], b.id), /cannot be checked in/);
     const actions = (await db.many('SELECT action FROM audit_log WHERE booking_id=$1 ORDER BY id', [b.id])).map((r) => r.action);
-    assert.deepEqual(actions, ['BOOKED', 'CHECKED_IN', 'STARTED', 'PAYMENT_RECORDED', 'COMPLETED']);
+    assert.deepEqual(actions, ['BOOKED', 'CHECKED_IN', 'STARTED', 'PAYMENT_RECORDED', 'COMPLETED', 'COMMISSION_ACCRUED']);
   } finally { resetNow(); }
 });
 

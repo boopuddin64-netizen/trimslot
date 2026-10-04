@@ -55,7 +55,7 @@ test('plan purchase: pending is invisible to the barber, sessions + expiry start
     const planId = await c.db.tx((t) => savePlan(t, c.barberId, null, planInput([c.serviceIds[0]])));
     const init = await initializePlanPurchase(c.db, c.customerIds[0], planId, null);
     assert.match(init.reference, /^TS-PLAN-\d+-[a-f0-9]{10}$/);
-    assert.equal(init.amount_kobo, 1_200_000);
+    assert.equal(init.price_kobo, 1_200_000); assert.ok(init.booking_fee_kobo > 0 && init.amount_kobo === 1_200_000 + init.booking_fee_kobo, 'plan checkout adds the booking fee');
     assert.equal((await barberPlanOverview(c.db, c.barberId)).purchases.length, 0, 'unpaid checkout hidden from the barber');
     assert.equal((await customerWallet(c.db, c.customerIds[0])).plans.length, 0);
     await assert.rejects(book(c, c.customerIds[0], '10:00', 'PLAN'), (e: any) => e.code === 'NO_PLAN_SESSION', 'cannot spend an unpaid plan');

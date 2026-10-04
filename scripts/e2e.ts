@@ -65,7 +65,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
 
   // pay: initialize -> claim paid without paying -> verify says no
   const pay = (await cust.call('POST', `/api/bookings/${id}/pay`)).json;
-  check('payment initialized (TS-BOOKING ref, mock URL)', /^TS-BOOKING-\d+-[a-f0-9]+$/.test(pay.reference) && pay.mock && pay.amount_kobo === 450000, pay);
+  check('payment initialized (TS-BOOKING ref, mock URL)', /^TS-BOOKING-\d+-[a-f0-9]+$/.test(pay.reference) && pay.mock && pay.price_kobo === 450000 && pay.amount_kobo === pay.price_kobo + pay.booking_fee_kobo && pay.booking_fee_kobo > 0, pay);
   const v0 = (await cust.call('POST', `/api/bookings/${id}/verify`)).json;
   check('client verify before paying does NOT confirm', v0.booking.status === 'PENDING_PAYMENT', v0);
   const evBody = JSON.stringify({ event: 'charge.success', data: { reference: pay.reference, status: 'success', amount: 450000 } });
@@ -158,7 +158,7 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
   check('customer sees the plan on the barber page', pub.plans.some((p: any) => p.id === planId && p.sessions === 3 && p.price_kobo === 900000), pub.plans);
   check('barber cannot buy a plan (403)', (await mike.call('POST', `/api/plans/${planId}/buy`)).status === 403);
   const buy = await cust.call('POST', `/api/plans/${planId}/buy`);
-  check('plan purchase initialised (TS-PLAN ref, mock checkout)', buy.status === 201 && /^TS-PLAN-\d+-[a-f0-9]+$/.test(buy.json.reference) && buy.json.amount_kobo === 900000, buy.json);
+  check('plan purchase initialised (TS-PLAN ref, mock checkout)', buy.status === 201 && /^TS-PLAN-\d+-[a-f0-9]+$/.test(buy.json.reference) && buy.json.price_kobo === 900000 && buy.json.amount_kobo === buy.json.price_kobo + buy.json.booking_fee_kobo, buy.json);
   check('unpaid plan purchase invisible to barber', (await mike.call('GET', '/api/barber/plans')).json.purchases.length === 0);
   const noSess = await cust.call('POST', '/api/bookings', { barber_id: barber.id, service_id: detail.services[0].id, date: day3, time: '10:00', payment_option: 'PLAN' });
   check('cannot use an unpaid plan (409 NO_PLAN_SESSION)', noSess.status === 409 && noSess.json.error.code === 'NO_PLAN_SESSION', noSess.json);
@@ -242,13 +242,13 @@ function check(name: string, cond: boolean, extra?: unknown) { n++; if (!cond) b
       check('report appears in the admin inbox', !!rid);
       check('resolve needs a note', (await AA(`/reports/${rid}/resolve`, 'POST', { status: 'RESOLVED' })).status === 400);
       check('resolve report', (await AA(`/reports/${rid}/resolve`, 'POST', { status: 'RESOLVED', note: 'e2e check' })).json.status === 'RESOLVED');
-      check('admin sets a 10% platform fee (commission base)', (await AA('/settings', 'PUT', { platform_fee_percent: 10, platform_fee_naira: 0, commission_factor: 0.5 })).status === 200);
+      check('admin sets a 10% platform charge with no minimum (commission base)', (await AA('/settings', 'PUT', { charge_percent: 10, charge_flat_naira: 0, charge_min_naira: 0, commission_factor: 0.5 })).status === 200);
     const before = (await AA('/ledger')).json.total_owed_kobo;
       check('admin complete needs a reason', (await AA(`/bookings/${bid}/complete`, 'POST', { paid: true })).status === 400);
       const cmp = await AA(`/bookings/${bid}/complete`, 'POST', { paid: true, reason: 'e2e force complete' });
       check('admin force-completes the off-app booking and commission accrues', cmp.status === 200 && !!cmp.json.ledger_id, cmp.json);
       const after = (await AA('/ledger')).json; const commission = after.total_owed_kobo - before;
-      check('commission = half of the 10% in-app fee', commission === Math.round(sv.price_kobo * 0.1 * 0.5), { commission, price: sv.price_kobo });
+      check('commission = half of the platform charge frozen on the booking', commission === Math.round(Math.max(5000, Math.round(sv.price_kobo * 0.02)) * 0.5), { commission, price: sv.price_kobo });
       check('second completion is refused (idempotent ledger)', (await AA(`/bookings/${bid}/complete`, 'POST', { paid: true, reason: 'again again' })).status === 409);
       const mineL: any = (await mike.call('GET', '/api/barber/ledger')).json;
       check('barber sees the platform balance', typeof mineL.owed_kobo === 'number' && Array.isArray(mineL.entries), mineL);

@@ -6,7 +6,7 @@ const call = async (p, o = {}, cookie) => { const r = await fetch(B + '/api' + p
 const login = async (id, pw) => (await call('/auth/login', { method: 'POST', body: { identifier: id, password: pw } })).r.headers.get('set-cookie').split(';')[0];
 const c = new pg.Client({ connectionString: 'postgres://postgres:postgres@127.0.0.1:54320/trimslot' }); await c.connect();
 await c.query(`UPDATE barbers SET paystack_subaccount='ACCT_demo' WHERE id=1`);
-await call('/admin/settings', { method: 'PUT', auth: true, body: { platform_fee_percent: 10, commission_factor: 0.5 } });
+await call('/admin/settings', { method: 'PUT', auth: true, body: { charge_percent: 10, charge_min_naira: 0, commission_factor: 0.5 } });
 const chidi = await login('chidi@trimslot.demo', 'Customer123!'); const tunde = await login('tunde@trimslot.demo', 'Customer123!'); const mike = await login('mike@trimslot.demo', 'Barber123!');
 const svcs = (await call('/barbers/1', {}, chidi)).j.services;
 const off = async (time, ck, svc = 0) => {

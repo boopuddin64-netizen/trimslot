@@ -26,6 +26,16 @@ export async function newDatabase(opts: { poolMax?: number } = {}): Promise<{ db
   return { db, name };
 }
 
+/** An EMPTY database (no migrations applied) - for tests that migrate step by step. */
+export async function emptyDatabase(): Promise<{ db: Db; name: string }> {
+  const name = `e_${process.pid}_${Date.now().toString(36)}_${counter++}`;
+  const admin = new Client({ connectionString: ADMIN_URL });
+  await admin.connect(); await admin.query(`CREATE DATABASE ${name}`); await admin.end();
+  const db = createDb(`postgres://postgres:postgres@127.0.0.1:${PORT}/${name}`, { max: 4 });
+  opened.push({ db, name });
+  return { db, name };
+}
+
 export async function freshDb(opts: { poolMax?: number } = {}): Promise<{ db: Db; barberId: number; customerIds: number[]; serviceIds: number[]; name: string }> {
   const { db, name } = await newDatabase(opts);
   const { barberId } = await seed(db, 4);

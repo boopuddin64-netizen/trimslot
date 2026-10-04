@@ -40,6 +40,7 @@ import { runRetention } from './retention';
 import { requirePin } from './adminPin';
 import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } from './payouts';
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
+import { feeSettingsOf, onlineBreakdown } from './fees';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
   Promise.resolve(fn(req, res)).catch(next);
@@ -83,6 +84,15 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
     allowed_next: TRANSITIONS[b.status],
     created_at: b.created_at,
   };
+  // Money lines. Customer: price + booking fee = what they pay. Barber: their Paystack share and the platform charge come out of the payout.
+  if (b.payment_option === 'ONLINE') {
+    if (opts.forBarber) out.money = b.payout_kobo == null ? { mode: 'ONLINE', price_kobo: b.price_kobo }
+      : { mode: 'ONLINE', price_kobo: b.price_kobo, barber_fee_kobo: b.barber_fee_kobo, platform_charge_kobo: b.platform_charge_kobo, payout_kobo: b.payout_kobo };
+    else out.money = { mode: 'ONLINE', price_kobo: b.price_kobo, booking_fee_kobo: b.booking_fee_kobo, total_kobo: b.price_kobo + b.booking_fee_kobo };
+  } else if (b.payment_option === 'ON_ARRIVAL') {
+    if (opts.forBarber) { const f = Number((await getSettingsCached(db)).commission_factor); out.money = { mode: 'ON_ARRIVAL', price_kobo: b.price_kobo, platform_charge_kobo: b.platform_charge_kobo, commission_owed_kobo: Math.round(b.platform_charge_kobo * f), commission_percent: Math.round(f * 100) }; }
+    else out.money = { mode: 'ON_ARRIVAL', price_kobo: b.price_kobo, booking_fee_kobo: 0, total_kobo: b.price_kobo };
+  }
   // Customer-facing only: an unpaid Pay-now booking that expired/was abandoned is "Incomplete" (no credit/refund implications).
   if (!opts.forBarber) out.incomplete = incomplete && b.status !== 'PENDING_PAYMENT';
   if (!opts.forBarber && ['REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
@@ -334,6 +344,8 @@ export function createApp(db: Db) {
     const ent = req.user?.role === 'customer' ? await entitlementsFor(db, req.user.id, b.id) : { plans: [], credits: [] };
     const qn = await db.one<{ waiting: number; serving: number }>(`SELECT COUNT(*) FILTER (WHERE status IN ('CONFIRMED','ARRIVED'))::int AS waiting, COUNT(*) FILTER (WHERE status='IN_SERVICE')::int AS serving FROM bookings WHERE barber_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE')`, [b.id, lagosDate()]);
     const st = await getSettings(db); const lb = await ledgerBlocked(db, b.id, st);
+    const fsx = feeSettingsOf(st);
+    for (const sv of services as any[]) { const q = onlineBreakdown(sv.price_kobo, fsx, b); sv.pay_now = { booking_fee_kobo: q.booking_fee_kobo, total_kobo: q.total_kobo }; }   // what Pay now costs for this service (price + booking fee)
     const extras: any = { rating: st.feature_reviews ? await ratingSummary(db, b.id) : null };
     if (req.user?.role === 'customer') {
       if (st.feature_favourites) extras.favourite = !!(await db.maybeOne('SELECT 1 FROM favourites WHERE customer_id=$1 AND barber_id=$2', [req.user.id, b.id]));

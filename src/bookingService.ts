@@ -7,6 +7,7 @@ import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from
 import { claimEntitlement, getSettings, issueCredit, restoreEntitlement } from './plans';
 import { openRefundRequest } from './refundFlow';
 import { accrueCommission, assertBookable } from './ledger';
+import { feeSettingsOf, offAppBreakdown, onlineBreakdown } from './fees';
 import { afterComplete, closeWaitlistFor } from './smart';
 import { clock, isoNow, lagosDate, lagosMinutes, scheduledInstant, hhmmToMin } from './time';
 
@@ -25,6 +26,7 @@ export interface BookingRow {
   cancelled_at: string | null; cancelled_by: string | null;
   barber_hold: boolean; skipped_at: string | null; last_queue_pos: number | null; created_at: string;
   note_to_barber: string | null; rem2h_at: string | null; rem30_at: string | null; leave_at: string | null;
+  booking_fee_kobo: number; ps_fee_est_kobo: number; barber_fee_kobo: number; platform_charge_kobo: number; payout_kobo: number | null;
 }
 
 /** An "incomplete" booking = a Pay-now booking whose payment never completed (hold expired, or customer walked away). Customer-only. */
@@ -97,7 +99,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
   const startMin = hhmmToMin(input.time);
   return db.tx(async (t) => {
     // 1) Serialise every booking attempt for this barber: whoever gets this row lock first books first; the other then sees the new row.
-    const barber = await t.maybeOne('SELECT id, paystack_subaccount FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
+    const barber = await t.maybeOne('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('Barber not found');
     if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
     await assertBookable(t, input.barber_id, input.payment_option);
@@ -122,15 +124,20 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
       ? await claimEntitlement(t, { customerId, barberId: input.barber_id, serviceId: svc.id, priceKobo: svc.price_kobo, startAt: start, option: input.payment_option, id: input.payment_option === 'PLAN' ? input.plan_purchase_id : input.credit_id })
       : null;
     const now = isoNow();
+    // Money snapshot (frozen now; later setting changes never rewrite it): pay-now carries the booking fee + payout split, pay-on-arrival only the platform charge, plan/credit sessions nothing.
+    const fs = feeSettingsOf(await getSettings(t));
+    const bd = ent ? null : online ? onlineBreakdown(svc.price_kobo, fs, barber) : offAppBreakdown(svc.price_kobo, fs, barber);
     const noteVal = input.note && (await getSettings(t)).feature_booking_note ? input.note.slice(0, 200) : null;
     let b: BookingRow;
     try {
       b = await t.one<BookingRow>(`INSERT INTO bookings (customer_id, barber_id, service_id, family_member_id, entitlement_type, scheduled_at, ends_at,
-            service_name, price_kobo, duration_min, status, payment_option, payment_status, paid_via, paid_at, hold_expires_at, plan_purchase_id, credit_id, created_at, note_to_barber)
-          VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+            service_name, price_kobo, duration_min, status, payment_option, payment_status, paid_via, paid_at, hold_expires_at, plan_purchase_id, credit_id, created_at, note_to_barber,
+            booking_fee_kobo, ps_fee_est_kobo, barber_fee_kobo, platform_charge_kobo, payout_kobo)
+          VALUES ($1,$2,$3,NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
         [customerId, input.barber_id, svc.id, ent ? (ent.option === 'PLAN' ? 'SUBSCRIPTION' : 'CREDIT') : 'NONE', start.toISOString(), new Date(start.getTime() + svc.duration_min * 60000).toISOString(),
           svc.name, svc.price_kobo, svc.duration_min, online ? 'PENDING_PAYMENT' : 'CONFIRMED', input.payment_option, ent ? 'PAID' : online ? 'PENDING' : 'PAYMENT_DUE',
-          ent ? ent.option : null, ent ? now : null, holdUntil, ent?.plan_purchase_id ?? null, ent?.credit_id ?? null, now, noteVal]);
+          ent ? ent.option : null, ent ? now : null, holdUntil, ent?.plan_purchase_id ?? null, ent?.credit_id ?? null, now, noteVal,
+          bd?.booking_fee_kobo ?? 0, bd?.ps_fee_kobo ?? 0, bd?.barber_fee_kobo ?? 0, bd?.platform_charge_kobo ?? 0, online && bd ? bd.payout_kobo : null]);
     } catch (e: any) {
       // Backstop: the unique index / exclusion constraint fired (should be unreachable behind the barber lock, but the DB is the final judge).
       if (isUniqueViolation(e) || isExclusionViolation(e)) throw conflict('SLOT_UNAVAILABLE', 'That time was just taken. Please pick another slot.');
@@ -187,7 +194,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
     await t.query(`UPDATE bookings SET status='CONFIRMED', payment_status='PAID', paid_via=$1, paid_at=$2, hold_expires_at=NULL WHERE id=$3`, [via, now, b.id]);
     await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_CONFIRMED', { via, amount_kobo: b.price_kobo });
     await announceConfirmed(t, (await getBooking(t, b.id))!);
-    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We received ${naira(b.price_kobo)} for your ${b.service_name}. Your slot is now secured.`, b.id);
+    await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment successful', `We received ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for your ${b.service_name}. Your slot is now secured.`, b.id);
     return 'confirmed';
   }
   if (['PAID', 'CREDIT_PENDING', 'CREDITED', 'REFUND_PENDING', 'REFUNDED', 'REFUND_DECLINED'].includes(b.payment_status)) {
@@ -198,7 +205,7 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
   // Money arrived for an attempt that was already closed (expired / abandoned). The booking stays Incomplete (barber never sees it); the money is flagged for refund.
   await flagRefund(t, b, reference, 'Payment arrived after the attempt was closed');
   await audit(t, b.id, { id: null, role: 'system' }, 'LATE_PAYMENT', { via, status: b.status, note: 'payment received after the attempt was closed - booking NOT confirmed; payment flagged NEEDS_REFUND' });
-  await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment received - refund on its way', `We received ${naira(b.price_kobo)} after your ${b.service_name} attempt had already closed, so no booking was made. It is being refunded to you.`, b.id);
+  await notify(t, b.customer_id, 'PAYMENT_SUCCESS', 'Payment received - refund on its way', `We received ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} after your ${b.service_name} attempt had already closed, so no booking was made. It is being refunded to you.`, b.id);
   return 'late_payment';
 }
 
@@ -284,7 +291,7 @@ export async function customerCancel(db: Db, customerId: number, bookingId: numb
       // Prepaid and cancelled in time => a REFUND (never a credit). It waits for admin approval and auto-approves after the admin's hold time.
       refundDue = await openRefundRequest(t, b, 'customer cancelled in time');
       payStatus = 'REFUND_PENDING';
-      note = `Your ${naira(b.price_kobo)} refund has been requested. It is approved within ${refundDue.hours} hour${refundDue.hours === 1 ? '' : 's'} and then sent back to your original payment method.`;
+      note = `Your ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} refund has been requested. It is approved within ${refundDue.hours} hour${refundDue.hours === 1 ? '' : 's'} and then sent back to your original payment method.`;
     }
     await setStatus(t, b, 'CANCELLED', { payment_status: payStatus, cancelled_at: now, cancelled_by: 'customer', hold_expires_at: null });
     await audit(t, b.id, { id: customerId, role: 'customer' }, 'CANCELLED', {
@@ -391,7 +398,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         const refundDue = credit ? await openRefundRequest(t, b, 'barber could not serve the booking') : null;
         await setStatus(t, b, 'NOT_SERVED', { payment_status: credit ? 'REFUND_PENDING' : entitlement || b.payment_status === 'PAYMENT_DUE' || b.payment_status === 'PENDING' ? 'VOID' : b.payment_status });
         await audit(t, b.id, actor, 'NOT_SERVED', { reason: String(body?.reason || '').slice(0, 200) || null, ...(refundDue ? { note: `Refund requested; pending admin approval, auto-approves in ${refundDue.hours} h`, refund_due_at: refundDue.due_at } : entitlement ? { note: 'plan session / credit returned' } : {}) });
-        await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` Your ${naira(b.price_kobo)} refund has been requested and is approved within ${refundDue!.hours} hour${refundDue!.hours === 1 ? '' : 's'}.` : entitlement ? ' Your session has been returned.' : ''}`, b.id);
+        await notify(t, b.customer_id, 'NOT_SERVED', "We couldn't serve you", `Sorry - your barber could not serve you for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}.${credit ? ` Your ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} refund has been requested and is approved within ${refundDue!.hours} hour${refundDue!.hours === 1 ? '' : 's'}.` : entitlement ? ' Your session has been returned.' : ''}`, b.id);
         break;
       }
       case 'skip': {

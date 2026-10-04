@@ -7,17 +7,18 @@ import { createApp } from '../src/app';
 import { barberAction, createBooking } from '../src/bookingService';
 import { initializePayment, initializePlanPurchase, mockMarkPaid, processReference, requestRefund } from '../src/paystack';
 import { savePlan, planSchema, updateSettings, getSettings } from '../src/plans';
-import { commissionKobo, inAppFeeKobo, nettableKobo, outstandingKobo, applyNettingForPayment, reverseNettingForPayment, accrueCommission, ledgerBlocked, sendLedgerReminders } from '../src/ledger';
+import { platformChargeKobo as inAppFeeKobo } from '../src/fees';
+import { commissionKobo, nettableKobo, outstandingKobo, applyNettingForPayment, reverseNettingForPayment, accrueCommission, ledgerBlocked, sendLedgerReminders } from '../src/ledger';
 
 const KEY = 'test-admin-key-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
-const S = { platform_fee_kobo: 0, platform_fee_percent: 10, commission_factor: 0.5 };
+const S = { charge_flat_kobo: 0, charge_percent: 10, charge_min_kobo: 0, commission_factor: 0.5 };
 
 async function boot() {
   const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
   const uid = (await s.db.one('SELECT user_id FROM barbers WHERE id=$1', [s.barberId])).user_id;
   await s.db.query(`UPDATE barbers SET paystack_subaccount='ACCT_test' WHERE id=$1`, [s.barberId]);
-  await s.db.tx((t) => updateSettings(t, { platform_fee_percent: 10, platform_fee_naira: 0 }));
+  await s.db.tx((t) => updateSettings(t, { charge_percent: 10, charge_flat_naira: 0, charge_min_naira: 0 }));
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: (await r.json().catch(() => ({}))) as any, res: r }; };
@@ -44,11 +45,11 @@ test('ledger math: commission = factor x in-app fee; overrides win; netting neve
   assert.equal(commissionKobo(300000, S), 15000, 'half of the in-app fee');
   assert.equal(commissionKobo(300000, { ...S, commission_factor: 0.25 }), 7500);
   assert.equal(commissionKobo(300000, { ...S, commission_factor: 0 }), 0);
-  assert.equal(commissionKobo(300000, { platform_fee_kobo: 5000, platform_fee_percent: 10, commission_factor: 0.5 }), 17500, 'flat + percent');
+  assert.equal(commissionKobo(300000, { charge_flat_kobo: 5000, charge_percent: 10, charge_min_kobo: 0, commission_factor: 0.5 }), 17500, 'flat + percent');
   assert.equal(inAppFeeKobo(300000, S, { fee_percent_override: 0, fee_flat_kobo_override: null }), 0, 'override of 0 wins');
   assert.equal(commissionKobo(300000, S, { fee_percent_override: 20 }), 30000);
   assert.equal(commissionKobo(1, S), 0, 'sub-kobo amounts round to nothing');
-  assert.equal(inAppFeeKobo(100, { platform_fee_kobo: 99999, platform_fee_percent: 0 }), 100, 'fee never exceeds the price');
+  assert.equal(inAppFeeKobo(100, { charge_flat_kobo: 99999, charge_percent: 0, charge_min_kobo: 0 }), 100, 'fee never exceeds the price');
   const n = (o: Partial<Parameters<typeof nettableKobo>[0]>) => nettableKobo({ amountKobo: 300000, feeKobo: 30000, outstandingKobo: 10000, minPayoutPercent: 50, ...o });
   assert.equal(n({}), 10000, 'debt below the room: net it all');
   assert.equal(n({ outstandingKobo: 999999 }), 120000, 'capped: price 3000 - fee 300 - min payout 1500 = 1200');
@@ -112,12 +113,13 @@ test('netting caps: the barber keeps at least the minimum payout; the rest of th
   const s = await boot();
   try {
     await s.db.query(`INSERT INTO commission_ledger (barber_id, kind, amount_kobo, remaining_kobo, note, created_at) VALUES ($1,'ADJUSTMENT',500000,500000,'big debt',now())`, [s.barberId]);
-    const o = await online(s, s.customerIds[0 % s.customerIds.length], '10:00');          // room = 300000 - 30000 - 150000 = 120000
-    const p = await pay(s, o.reference); assert.equal(Number(p.debt_netted_kobo), 120000);
-    assert.ok(Number(p.fee_kobo) + Number(p.debt_netted_kobo) <= 300000 - 150000, 'platform charge leaves the barber >= 50%');
+    const o = await online(s, s.customerIds[0 % s.customerIds.length], '10:00');          // room = price 3000 - platform charge 300 - barber's fee share - minimum payout 1500
+    const p = await pay(s, o.reference); const room = 300000 - 30000 - Number(p.barber_fee_kobo) - 150000; assert.ok(Number(p.barber_fee_kobo) > 0);
+    assert.equal(Number(p.debt_netted_kobo), room);
+    assert.ok(Number(p.barber_fee_kobo) + Number(p.fee_kobo) + Number(p.debt_netted_kobo) <= 300000 - 150000, 'charges leave the barber >= 50%');
     await confirm(s, o.reference);
-    assert.equal(await outstandingKobo(s.db, s.barberId), 380000);
-    const row = await s.db.one(`SELECT * FROM commission_ledger`); assert.equal(row.status, 'ACCRUED'); assert.equal(Number(row.remaining_kobo), 380000, 'partially applied entry stays ACCRUED');
+    assert.equal(await outstandingKobo(s.db, s.barberId), 500000 - room);
+    const row = await s.db.one(`SELECT * FROM commission_ledger`); assert.equal(row.status, 'ACCRUED'); assert.equal(Number(row.remaining_kobo), 500000 - room, 'partially applied entry stays ACCRUED');
     await s.db.tx((t: any) => updateSettings(t, { min_barber_payout_percent: 100 }));
     const o2 = await online(s, s.customerIds[1 % s.customerIds.length], '11:00'); assert.equal(Number((await pay(s, o2.reference)).debt_netted_kobo), 0, '100% minimum payout disables netting');
     await s.db.tx((t: any) => updateSettings(t, { min_barber_payout_percent: 50, commission_enabled: false }));
@@ -266,7 +268,7 @@ test('settings: fee percent / fixed fee / half-fee factor are admin settings wit
     const put = (b: any) => s.j('/api/admin/settings', { method: 'PUT', headers: s.A, body: b });
     assert.equal((await put({ commission_factor: 1.5 })).status, 400); assert.equal((await put({ commission_factor: -1 })).status, 400);
     assert.equal((await put({ min_barber_payout_percent: 101 })).status, 400);
-    const ok = await put({ commission_factor: 0.25, platform_fee_naira: 50, platform_fee_percent: 5 }); assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    const ok = await put({ commission_factor: 0.25, charge_flat_naira: 50, charge_percent: 5, charge_min_naira: 0 }); assert.equal(ok.status, 200, JSON.stringify(ok.body));
     const g = (await s.j('/api/admin/settings', { headers: s.A })).body; assert.equal(Number((g.settings || g).commission_factor), 0.25);
     assert.equal(commissionKobo(300000, await getSettings(s.db)), Math.round((5000 + 15000) * 0.25));
     const fee = await s.j(`/api/admin/barbers/${s.barberId}/fee`, { method: 'POST', headers: s.A, body: { percent: 20, flat_naira: null, reason: 'premium' } });

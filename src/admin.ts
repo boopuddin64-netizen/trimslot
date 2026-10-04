@@ -262,7 +262,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
         }
         await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
         await audit(t, id, ADMIN, 'ADMIN_RESOLVED_REFUND', { reference: pay?.reference ?? null });
-        await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo)} is being refunded to your original payment method.`, id);
+        await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is being refunded to your original payment method.`, id);
       }
     });
     let refund: string | null = null;

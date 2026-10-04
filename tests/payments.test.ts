@@ -31,7 +31,7 @@ test('initialize: unique reference TS-BOOKING-<id>-<rand>, kobo amount from snap
     const r1 = await initializePayment(db, b.id, 'c@x.com');
     assert.match(r1.reference, /^TS-BOOKING-\d+-[a-f0-9]{10}$/);
     assert.equal(bookingIdFromReference(r1.reference), b.id);
-    assert.equal(r1.amount_kobo, 450000);
+    assert.equal(r1.price_kobo, 450000); assert.ok(r1.booking_fee_kobo > 0); assert.equal(r1.amount_kobo, 450000 + r1.booking_fee_kobo, 'the customer is charged price + booking fee');
     assert.equal(r1.mock, true);
     const row = await db.one('SELECT * FROM payments WHERE reference=$1', [r1.reference]);
     assert.equal(row.subaccount, 'ACCT_test123');

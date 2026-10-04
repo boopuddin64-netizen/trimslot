@@ -12,7 +12,8 @@ import { requestRefund } from './paystack';
 import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant, addDays, isValidDate } from './time';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { refreshQueueNotifications, isIncomplete } from './bookingService';
-import { addAdjustment, commissionKobo, inAppFeeKobo, ledgerBlocked, manualSettle, outstandingKobo, sendLedgerReminders, waive, reverseNettingForPayment, accrueCommission } from './ledger';
+import { feeSettingsOf, offAppBreakdown, onlineBreakdown } from './fees';
+import { addAdjustment, commissionKobo, ledgerBlocked, manualSettle, outstandingKobo, sendLedgerReminders, waive, reverseNettingForPayment, accrueCommission } from './ledger';
 import { isExclusionViolation, isUniqueViolation } from './db';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
@@ -301,12 +302,20 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
 
   /* ================= money ================= */
   const range = (req: Request) => { const to = dateQ(req.query.to) ?? lagosDate(); const from = dateQ(req.query.from) ?? addDays(to, -29); return { from, to }; };
+  /** What each example price looks like under the CURRENT settings (customer pays, barber receives, platform keeps after Paystack). */
+  get('/fee-preview', async (_req, res) => {
+    const fs = feeSettingsOf(await getSettings(db));
+    res.json({ rows: [1500, 2500, 5000, 10000].map((n) => ({ price_naira: n, ...onlineBreakdown(n * 100, fs), cash: offAppBreakdown(n * 100, fs).platform_charge_kobo })) });
+  });
   get('/earnings', async (req, res) => {
     const { from, to } = range(req);
     const s = await getSettings(db);
     const rows = await db.many<any>(`SELECT b.id, b.shop_name, b.review_status, b.paystack_subaccount, b.fee_percent_override, b.fee_flat_kobo_override,
-        COALESCE(SUM(p.amount_kobo) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS gross_kobo,
+        COALESCE(SUM(COALESCE(p.price_kobo, p.amount_kobo)) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS gross_kobo,
         COALESCE(SUM(p.fee_kobo) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS fees_kobo,
+        COALESCE(SUM(p.booking_fee_kobo) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS booking_fee_kobo,
+        COALESCE(SUM(p.barber_fee_kobo) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS barber_fee_kobo,
+        COALESCE(SUM(COALESCE(p.ps_fee_actual_kobo, p.ps_fee_est_kobo)) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS ps_fee_kobo,
         COALESCE(SUM(p.debt_netted_kobo) FILTER (WHERE p.refund_status IS NULL),0)::bigint AS netted_kobo,
         COALESCE(SUM(p.amount_kobo) FILTER (WHERE p.refund_status IS NOT NULL),0)::bigint AS refunded_kobo,
         COUNT(p.id) FILTER (WHERE p.refund_status IS NULL)::int AS payments
@@ -318,10 +327,13 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     const barbers = rows.map((r: any) => { const gross = kobo(r.gross_kobo), fees = kobo(r.fees_kobo), netted = kobo(r.netted_kobo); const hasSub = !!r.paystack_subaccount;
       return { id: r.id, shop_name: r.shop_name, review_status: r.review_status, subaccount_status: hasSub ? 'SET' : 'MISSING', fee_override: r.fee_percent_override != null || r.fee_flat_kobo_override != null ? { percent: r.fee_percent_override != null ? Number(r.fee_percent_override) : null, flat_kobo: r.fee_flat_kobo_override } : null,
         payments: r.payments, gross_kobo: gross, fees_kobo: fees, netted_kobo: netted, refunded_kobo: kobo(r.refunded_kobo),
-        barber_share_kobo: hasSub ? Math.max(0, gross - fees - netted) : 0, held_by_platform_kobo: hasSub ? 0 : gross,
+        booking_fee_kobo: kobo(r.booking_fee_kobo), barber_fee_kobo: kobo(r.barber_fee_kobo), ps_fee_kobo: kobo(r.ps_fee_kobo), platform_net_kobo: fees + kobo(r.booking_fee_kobo) + kobo(r.barber_fee_kobo) - kobo(r.ps_fee_kobo),
+        barber_share_kobo: hasSub ? Math.max(0, gross - kobo(r.barber_fee_kobo) - fees - netted) : 0, held_by_platform_kobo: hasSub ? 0 : gross,
         offapp_bookings: (om.get(r.id) as any)?.n ?? 0, offapp_value_kobo: kobo((om.get(r.id) as any)?.v), owed_kobo: wm.get(r.id) ?? 0 }; });
-    const tot = barbers.reduce((a: any, b: any) => ({ gross_kobo: a.gross_kobo + b.gross_kobo, fees_kobo: a.fees_kobo + b.fees_kobo, netted_kobo: a.netted_kobo + b.netted_kobo, owed_kobo: a.owed_kobo + b.owed_kobo, refunded_kobo: a.refunded_kobo + b.refunded_kobo }), { gross_kobo: 0, fees_kobo: 0, netted_kobo: 0, owed_kobo: 0, refunded_kobo: 0 });
-    res.json({ from, to, barbers, totals: tot, rules: { fee_percent: s.platform_fee_percent, fee_flat_kobo: s.platform_fee_kobo, commission_factor: s.commission_factor, example_fee_kobo: inAppFeeKobo(300000, s), example_commission_kobo: commissionKobo(300000, s) } });
+    const tot = barbers.reduce((a: any, b: any) => ({ gross_kobo: a.gross_kobo + b.gross_kobo, fees_kobo: a.fees_kobo + b.fees_kobo, netted_kobo: a.netted_kobo + b.netted_kobo, owed_kobo: a.owed_kobo + b.owed_kobo, refunded_kobo: a.refunded_kobo + b.refunded_kobo,
+      booking_fee_kobo: a.booking_fee_kobo + b.booking_fee_kobo, barber_fee_kobo: a.barber_fee_kobo + b.barber_fee_kobo, ps_fee_kobo: a.ps_fee_kobo + b.ps_fee_kobo, platform_net_kobo: a.platform_net_kobo + b.platform_net_kobo }),
+      { gross_kobo: 0, fees_kobo: 0, netted_kobo: 0, owed_kobo: 0, refunded_kobo: 0, booking_fee_kobo: 0, barber_fee_kobo: 0, ps_fee_kobo: 0, platform_net_kobo: 0 });
+    res.json({ from, to, barbers, totals: tot, rules: { charge_percent: s.charge_percent, charge_flat_kobo: s.charge_flat_kobo, charge_min_kobo: s.charge_min_kobo, commission_factor: s.commission_factor, example: onlineBreakdown(300000, feeSettingsOf(s)), example_fee_kobo: onlineBreakdown(300000, feeSettingsOf(s)).platform_charge_kobo, example_commission_kobo: commissionKobo(300000, s) } });
   });
   post('/payments/:reference/dispute', async (req, res) => {
     const ref = String(req.params.reference); const d = parseB(z.object({ disputed: z.boolean().default(true), note: z.string().trim().max(500).optional() }), req.body);
@@ -347,9 +359,9 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   });
   get('/export/payments.csv', async (req, res) => {
     const { from, to } = range(req);
-    const rows = await db.many<any>(`SELECT p.reference, p.provider, p.amount_kobo, p.fee_kobo, p.debt_netted_kobo, p.status, p.refund_status, p.disputed, b.shop_name, p.booking_id, p.plan_purchase_id, p.created_at, p.verified_at FROM payments p LEFT JOIN barbers b ON b.id=p.barber_id WHERE (p.created_at AT TIME ZONE 'Africa/Lagos')::date BETWEEN $1 AND $2 ORDER BY p.id LIMIT 20000`, [from, to]);
-    await csvRes(res, 'payments', ['reference', 'provider', 'amount_naira', 'platform_fee_naira', 'commission_netted_naira', 'status', 'refund_status', 'disputed', 'shop', 'booking_id', 'plan_purchase_id', 'created_at', 'verified_at'],
-      rows.map((r) => [r.reference, r.provider, r.amount_kobo / 100, r.fee_kobo / 100, r.debt_netted_kobo / 100, r.status, r.refund_status, r.disputed, r.shop_name, r.booking_id, r.plan_purchase_id, r.created_at, r.verified_at]));
+    const rows = await db.many<any>(`SELECT p.reference, p.provider, p.amount_kobo, p.fee_kobo, p.booking_fee_kobo, p.barber_fee_kobo, p.ps_fee_est_kobo, p.ps_fee_actual_kobo, p.payout_kobo, p.debt_netted_kobo, p.status, p.refund_status, p.disputed, b.shop_name, p.booking_id, p.plan_purchase_id, p.created_at, p.verified_at FROM payments p LEFT JOIN barbers b ON b.id=p.barber_id WHERE (p.created_at AT TIME ZONE 'Africa/Lagos')::date BETWEEN $1 AND $2 ORDER BY p.id LIMIT 20000`, [from, to]);
+    await csvRes(res, 'payments', ['reference', 'provider', 'amount_charged_naira', 'booking_fee_naira', 'barber_fee_share_naira', 'paystack_fee_naira', 'paystack_fee_is_actual', 'barber_payout_naira', 'platform_charge_naira', 'commission_netted_naira', 'status', 'refund_status', 'disputed', 'shop', 'booking_id', 'plan_purchase_id', 'created_at', 'verified_at'],
+      rows.map((r) => [r.reference, r.provider, r.amount_kobo / 100, r.booking_fee_kobo / 100, r.barber_fee_kobo / 100, (r.ps_fee_actual_kobo ?? r.ps_fee_est_kobo) / 100, r.ps_fee_actual_kobo != null, r.payout_kobo == null ? '' : r.payout_kobo / 100, r.fee_kobo / 100, r.debt_netted_kobo / 100, r.status, r.refund_status, r.disputed, r.shop_name, r.booking_id, r.plan_purchase_id, r.created_at, r.verified_at]));
   });
   get('/export/barbers.csv', async (_req, res) => {
     const rows = await db.many<any>(`SELECT b.id, b.shop_name, u.name, u.email, u.phone, b.review_status, (b.paystack_subaccount IS NOT NULL) AS sub, b.booking_paused, b.created_at,

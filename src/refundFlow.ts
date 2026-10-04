@@ -19,12 +19,12 @@ const ADMIN = { id: null as number | null, role: 'admin' as const };
 const SYSTEM = { id: null as number | null, role: 'system' as const };
 
 /** Put the refund of a booking's online payment into the approval queue. Runs inside the caller's transaction (the booking row is already locked). */
-export async function openRefundRequest(t: Conn, b: { id: number; customer_id: number; service_name: string; price_kobo: number; date: string; start_min: number }, reason: string): Promise<{ reference: string | null; due_at: string; hours: number }> {
+export async function openRefundRequest(t: Conn, b: { id: number; customer_id: number; service_name: string; price_kobo: number; booking_fee_kobo?: number; date: string; start_min: number }, reason: string): Promise<{ reference: string | null; due_at: string; hours: number }> {
   const s = await getSettings(t);
   const due = new Date(clock.now().getTime() + s.refund_auto_approve_hours * 3600000).toISOString();
   const p = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [b.id]);
   if (p && !p.refund_status) await t.query(`UPDATE payments SET refund_status='PENDING_APPROVAL', refund_reason=$2, refund_due_at=$3 WHERE reference=$1`, [p.reference, reason.slice(0, 200), due]);
-  await adminEvent(t, 'REFUND_WAITING', 'Refund waiting for approval', `${naira(b.price_kobo)} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} (${reason}). It auto-approves in ${s.refund_auto_approve_hours} h if nobody decides.`,
+  await adminEvent(t, 'REFUND_WAITING', 'Refund waiting for approval', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} (${reason}). It auto-approves in ${s.refund_auto_approve_hours} h if nobody decides.`,
     { link: '/admin.html#/decisions', refKey: 'booking:' + b.id });
   return { reference: p?.reference ?? null, due_at: due, hours: s.refund_auto_approve_hours };
 }
@@ -46,8 +46,8 @@ export async function decideRefund(db: Db, bookingId: number, action: 'approve' 
       if (p && p.refund_status === 'PENDING_APPROVAL') { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_decided_at=$2, refund_decided_by=$3 WHERE reference=$1`, [p.reference, now, by]); ref = p.reference; }
       await t.query(`UPDATE bookings SET payment_status='REFUNDED' WHERE id=$1`, [bookingId]);
       await audit(t, bookingId, actor, by === 'auto' ? 'REFUND_AUTO_APPROVED' : 'REFUND_APPROVED', { reference: p?.reference ?? null, amount_kobo: b.price_kobo });
-      await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo)} is being refunded to your original payment method. Your bank can take a few working days to show it.`, bookingId);
-      if (by === 'auto') await adminEvent(t, 'REFUND_AUTO_APPROVED', 'Refund auto-approved', `${naira(b.price_kobo)} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was approved automatically because nobody decided in time. The refund was sent to Paystack.`,
+      await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is being refunded to your original payment method. Your bank can take a few working days to show it.`, bookingId);
+      if (by === 'auto') await adminEvent(t, 'REFUND_AUTO_APPROVED', 'Refund auto-approved', `${naira(b.price_kobo + (b.booking_fee_kobo || 0))} for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} was approved automatically because nobody decided in time. The refund was sent to Paystack.`,
         { link: '/admin.html#/payments?filter=refunds', refKey: 'booking:' + bookingId });
       return { result: 'approved' as const };
     }

@@ -119,6 +119,7 @@ test('sweep: stale unpaid plan checkouts are dropped, but one with a signed gate
   const { initializePlanPurchase } = await import('../src/paystack');
   const s = await freshDb();
   const plan = (await s.db.one<any>(`INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, active) VALUES ($1,'Gold',1000000,4,60,TRUE) RETURNING id`, [s.barberId])).id;
+  await s.db.query('INSERT INTO plan_services (plan_id, service_id) VALUES ($1,$2)', [plan, s.serviceIds[0]]);
   const a = await initializePlanPurchase(s.db, s.customerIds[0], plan, null);   // abandoned: no gateway event
   const b = await initializePlanPurchase(s.db, s.customerIds[1] ?? s.customerIds[0], plan, null);   // charged at the gateway (signed webhook recorded) but never confirmed
   await s.db.query(`INSERT INTO payment_events (source, event_key, event_type, reference, signature_valid, payload, result, last_result) VALUES ('WEBHOOK','k-${b.reference}','charge.success',$1,TRUE,'{}','amount_mismatch','amount_mismatch')`, [b.reference]);
