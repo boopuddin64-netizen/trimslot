@@ -11,8 +11,8 @@ const flagWas = process.env[FLAG];
 const setFlag = (v: string | undefined) => { if (v === undefined) delete process.env[FLAG]; else process.env[FLAG] = v; };
 
 /** The OTP rules are tested with the flag ON (it is OFF by default); bootOff() keeps the default. */
-async function boot(flag: string | undefined = 'true') {
-  setFlag(flag);
+async function boot(flag: 'on' | 'off' = 'on') {
+  setFlag(flag === 'on' ? 'true' : undefined);
   const c = await bootApp();
   await unverifiedUsers(c.db);                     // the real rules: new users start unverified
   const mails: Mail[] = []; setMailTransport(async (m) => { mails.push(m); });
@@ -165,7 +165,7 @@ test('mailer: nothing real is sent from tests; production without a provider key
 });
 
 test('email code PAUSED (flag off, the default): nothing is blocked, nothing is sent, the OTP endpoints stay but refuse to send', async () => {
-  const { c, mails, signup, customer, book, done } = await boot(undefined);
+  const { c, mails, signup, customer, book, done } = await boot('off');
   try {
     assert.equal((await c.call('GET', '/api/config')).json.email_verification, false);
     // sign-up works without any code; a barber may sign up without an email again
@@ -183,7 +183,7 @@ test('email code PAUSED (flag off, the default): nothing is blocked, nothing is 
     const svc = (await c.db.one(`INSERT INTO services (barber_id,name,price_kobo,duration_min,active,created_at) VALUES ($1,'Cut',200000,30,TRUE,now()) RETURNING id`, [bid])).id;
     await c.db.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source, created_at) VALUES ($1,$2,TRUE,'link',now())`, [u.id, bid]);
     assert.equal((await c.call('GET', `/api/barbers/${bid}`, undefined, u.cookie)).json.booking.paused, false);
-    const nb = await c.call('POST', '/api/bookings', { barber_id: bid, service_id: svc, date: WED, time: '10:00', payment_option: 'ON_ARRIVAL' }, u.cookie);
+    const nb = await c.call('POST', '/api/bookings', { barber_id: bid, service_id: svc, date: WED, time: '14:00', payment_option: 'ON_ARRIVAL' }, u.cookie);
     assert.equal(nb.status, 201, nb.text);
     // emergency help is allowed for an unverified customer
     setNow(`${WED}T09:45:00+01:00`);
