@@ -210,7 +210,17 @@ export const MISMATCH_REASON = 'Amount mismatch';
 async function flagMismatch(db: Db, pay: any, v: VerifyResult) {
   // Flag the money for staff (once): the payment row says NEEDS_REFUND / "Amount mismatch" so it shows in Payments and in the open-refunds count. The sweeper does NOT auto-refund this reason: staff choose to refund it or to confirm it anyway.
   await db.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1 AND refund_status IS NULL AND status<>'SUCCESS'`, [pay.reference, MISMATCH_REASON]);
-  if (!pay.booking_id) { await adminEvent(db, 'PAYMENT_MISMATCH', 'A plan payment did not match', `Payment ${pay.reference} reported ${v.amount_kobo ?? '?'} kobo (${v.currency ?? 'no currency'}) but we asked for ${pay.amount_kobo}. It was not applied. Check it in Payments.`, { link: '/admin.html#/payments', refKey: 'mismatch:' + pay.reference, dedupeHours: 24 }); return; }
+  if (!pay.booking_id) {
+    // Tell the plan buyer once (same promise as for a booking): the plan was not activated, staff will check it.
+    await db.tx(async (t) => {
+      const pp = pay.plan_purchase_id ? await t.maybeOne<any>('SELECT customer_id, plan_name FROM plan_purchases WHERE id=$1', [pay.plan_purchase_id]) : undefined;
+      if (!pp) return;
+      if (await t.maybeOne(`SELECT 1 FROM audit_log WHERE booking_id IS NULL AND action='PLAN_PAYMENT_MISMATCH' AND details::text LIKE $1 LIMIT 1`, [`%${pay.reference}%`])) return;
+      await audit(t, null, { id: null, role: 'system' }, 'PLAN_PAYMENT_MISMATCH', { reference: pay.reference, plan_purchase_id: pay.plan_purchase_id, asked_kobo: pay.amount_kobo, reported_kobo: v.amount_kobo ?? null, currency: v.currency ?? null });
+      await notify(t, pp.customer_id, 'PAYMENT_PROBLEM', 'We need to check your payment', `We received a payment for your plan "${pp.plan_name}", but the amount was not what we asked for, so we did not start the plan. Our team will check it and either start the plan or refund you.`);
+    }).catch(() => undefined);
+    await adminEvent(db, 'PAYMENT_MISMATCH', 'A plan payment did not match', `Payment ${pay.reference} reported ${v.amount_kobo ?? '?'} kobo (${v.currency ?? 'no currency'}) but we asked for ${pay.amount_kobo}. It was not applied. Check it in Payments.`, { link: '/admin.html#/payments', refKey: 'mismatch:' + pay.reference, dedupeHours: 24 }); return;
+  }
   await db.tx(async (t) => {
     const b = await t.maybeOne<any>('SELECT id, customer_id, service_name FROM bookings WHERE id=$1', [pay.booking_id]);
     if (!b) return;
@@ -248,7 +258,11 @@ export async function processReference(db: Db, reference: string, o: { force?: b
     if (claim.rowCount !== 1) return null;                     // someone else already processed it
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);
-      if (r === 'already_active') await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason='Duplicate payment for an already-active plan' WHERE reference=$1`, [reference]);
+      if (r === 'already_active') {
+        await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason='Duplicate payment for an already-active plan' WHERE reference=$1`, [reference]);
+        const pp = await t.maybeOne<any>('SELECT customer_id, plan_name FROM plan_purchases WHERE id=$1', [pay.plan_purchase_id]);
+        if (pp) await notify(t, pp.customer_id, 'PAYMENT_SUCCESS', 'We got a second payment. Your refund is coming.', `We received a second payment for your plan "${pp.plan_name}". Your plan is already active, so we are sending the extra ${naira(pay.amount_kobo)} back to you.`);
+      }
       else await applyNettingForPayment(t, pay.id);
       return r;
     }
