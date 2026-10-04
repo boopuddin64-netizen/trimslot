@@ -113,7 +113,7 @@ const STATUS_BADGE = {
 };
 const statusBadge = (s, b) => (b && b.incomplete) ? '<span class="badge b-gray">INCOMPLETE</span>' : `<span class="badge ${STATUS_BADGE[s][0]}">${STATUS_BADGE[s][1]}</span>`;
 function payBadge(b) {
-  if (b.incomplete) return '<span class="badge b-gray">NOT CHARGED</span>';
+  if (b.incomplete) return '<span class="badge b-gray">NO PAYMENT</span>';
   if (b.payment_status === 'PAID' && b.payment_option === 'PLAN') return '<span class="badge b-blue">PLAN SESSION</span>';
   if (b.payment_status === 'PAID' && b.payment_option === 'CREDIT') return '<span class="badge b-purple">CREDIT USED</span>';
   if (b.payment_status === 'CREDITED') return '<span class="badge b-purple">CREDITED</span>';
@@ -658,33 +658,48 @@ async function myBookings() {
 }
 /* Back from Paystack: the redirect lands here before the webhook may have arrived, so we ask the server to verify by reference (a few tries, a few seconds apart) instead of showing a stale "not confirmed". */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const PAY_TERMINAL = ['processed', 'already_processed', 'slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch'];
+/* What to tell the customer after paying. It comes from the booking itself (status + the server's payment_issue), not only from the ?pay= word in the address, so a cancelled booking never says "confirmed" and the refund wording survives the 10-second refresh. */
+const DONE_STATUS = ['CONFIRMED', 'ARRIVED', 'IN_SERVICE', 'COMPLETED'];
+function payBanner(b, payResult) {
+  const issue = b.payment_issue;
+  const kind = issue ? issue.kind : payResult === 'slot_taken' || payResult === 'refund_due' ? 'slot_taken' : payResult === 'late_refund' ? 'late' : payResult === 'duplicate_refund' ? 'duplicate' : payResult === 'amount_mismatch' ? 'mismatch' : '';
+  const sent = issue && issue.refund === 'sent';
+  const back = sent ? 'We have sent your payment back. Your bank may take a few working days to show it.' : 'We are refunding your payment.';
+  if (kind === 'slot_taken') return `<div class="err">Sorry. Someone else booked that time before your payment finished, so this booking is <b>not confirmed</b>. ${back} Please pick another time.</div>`;
+  if (kind === 'late') return `<div class="err">Your payment reached us after the time to pay had ended, and the time was taken by someone else, so this booking is <b>not confirmed</b>. ${back} Please pick another time.</div>`;
+  if (kind === 'duplicate') return `<div class="ok">${DONE_STATUS.includes(b.status) ? 'Your booking is already paid and <b>confirmed</b>.' : 'This booking was already paid.'} You paid twice, so ${sent ? 'we have sent the extra payment back. Your bank may take a few working days to show it.' : 'we are sending the extra payment back.'}</div>`;
+  if (kind === 'mismatch') return `<div class="err">We got your payment, but the amount was not right for this booking, so we did not confirm it. Please contact support and give them your booking number #${b.id}. We will confirm it or refund you.</div>`;
+  if (payResult === 'processed' || payResult === 'already_processed') {
+    if (DONE_STATUS.includes(b.status)) return '<div class="ok">We got your payment. Your booking is confirmed.</div>';
+    if (b.status === 'PENDING_PAYMENT') return '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
+    return `<div class="info">This booking is ${b.status === 'CANCELLED' ? 'cancelled' : 'closed'}. If you were charged, we will refund you. Use “Report a problem” if you do not hear from us.</div>`;
+  }
+  if (payResult === 'not_paid') return '<div class="err">Your payment did not go through. Your time is not saved yet. Pay below to save it, if it is still free.</div>';
+  if (payResult === 'checked') return b.status === 'CANCELLED' ? '<div class="info">This booking is closed. If you were charged, we will confirm or refund you by ourselves. Use “Report a problem” if you do not hear from us.</div>' : '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
+  return '';
+}
 async function confirmReturn(kind, id, title) {
   app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please keep this page open. It takes a few seconds.</p></div>`;
   let last = null;
   for (let i = 0; i < 6; i++) {
     try {
       last = await api(kind === 'plan' ? `/plan-purchases/${id}/verify` : `/bookings/${id}/verify`, { method: 'POST' });
-      if (last.result === 'processed' || last.result === 'already_processed' || last.result === 'slot_taken' || last.result === 'refund_due') break;
-      if (last.result === 'amount_mismatch') break;
+      if (PAY_TERMINAL.includes(last.result)) break;
     } catch (e) { last = { result: 'error' }; }
     await sleep(2000);
   }
   return last ? last.result : 'not_paid';
 }
-async function bookingDetail(id, payResult) {
+async function bookingDetail(id, payResult, quiet) {
   const { booking: b } = await api('/bookings/' + id);
-  if (payResult && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'checked'].includes(payResult)) {
+  if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch', 'checked'].includes(payResult)) {
     const r = await confirmReturn('booking', id, 'Checking your payment…');
-    history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : r === 'slot_taken' || r === 'refund_due' ? r : r === 'amount_mismatch' ? 'amount_mismatch' : 'checked'));
+    history.replaceState(null, '', '#/booking/' + id + '?pay=' + (r === 'processed' || r === 'already_processed' ? 'processed' : PAY_TERMINAL.includes(r) ? r : 'checked'));
     return bookingDetail(id, new URLSearchParams(location.hash.split('?')[1] || '').get('pay'));
   }
   const q = b.queue;
-  let payMsg = '';
-  if (payResult === 'processed' || payResult === 'already_processed') payMsg = '<div class="ok">We got your payment. Your booking is confirmed.</div>';
-  else if (payResult === 'not_paid') payMsg = '<div class="err">Your payment did not go through. Your time is not saved yet. Pay below to save it, if it is still free.</div>';
-  else if (payResult === 'amount_mismatch') payMsg = '<div class="err">We got your payment, but the amount was not right for this booking, so we did not confirm it. Please contact support. Give them your booking number #' + id + ' We will confirm it or refund you.</div>';
-  else if (payResult === 'checked') payMsg = '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
-  else if (payResult === 'slot_taken' || payResult === 'refund_due') payMsg = '<div class="err">Sorry. Someone else booked that time before your payment finished, so this booking is <b>not confirmed</b>. We are refunding your payment. Please pick another time.</div>';
+  const payMsg = payBanner(b, payResult);
   const canCancel = b.can_cancel;
   const locked = ['CONFIRMED', 'ARRIVED'].includes(b.status) && !b.can_cancel;
   let qHtml = '';
@@ -706,12 +721,12 @@ async function bookingDetail(id, payResult) {
     ${qHtml}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).reviews ? (b.review ? `<div class="card review"><div class="row between"><b>Your review</b>${stars(b.review.rating)}</div>${b.review.comment ? `<p style="margin:8px 0 0">${esc(b.review.comment)}</p>` : ''}${b.review.reply ? `<div class="reply small"><b>Reply from your barber</b><div>${esc(b.review.reply)}</div></div>` : ''}</div>` : `<div class="card" id="rvcard"><h3 style="margin:0 0 4px">How was your visit?</h3><div class="starpick" id="starpick" role="radiogroup" aria-label="Rating">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-star="${i}" role="radio" aria-checked="false" aria-label="${i} star${i > 1 ? 's' : ''}">${ic('star')}</button>`).join('')}</div><textarea id="rvtext" rows="2" maxlength="500" placeholder="Add a short comment (optional)"></textarea><div class="btns"><button class="btn sm" id="rvsend" disabled>Send review</button></div></div>`) : ''}
     ${b.status === 'COMPLETED' && (state.cfg.features || {}).rebook ? `<div class="btns"><a class="btn sec" href="#/book/${b.barber_id}">${ic('repeat', 'sm')} Book again</a></div>` : ''}
-    ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your time is saved only after you pay. Until then, others can book it. Pay to save it. If someone takes it first, you will not be charged, or we will refund you.</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira(b.price_kobo)} now</button><button class="btn sec" id="verify">I paid. Check my payment</button></div>` : ''}
+    ${b.status === 'PENDING_PAYMENT' ? `<div class="warn small notice">${ic('warn', 'sm')}<div><b>Not confirmed yet.</b> Your time is saved only after you pay. Until then, others can book it. Pay to save it. If someone takes it first, we refund you.</div></div><div class="btns"><button class="btn" id="payNow">Pay ${naira((b.money && b.money.total_kobo) || b.price_kobo)} now</button><button class="btn sec" id="verify">I paid. Check my payment</button></div>` : ''}
     ${b.can_check_in ? `<button class="btn big green block" id="here">${ic('pin')} I'm Here</button>` : ''}
     ${b.status === 'CONFIRMED' && !b.can_check_in ? `<div class="info small">The "I'm Here" button shows on the day of your visit.</div>` : ''}
     ${canCancel ? `<div class="btns" style="margin-top:16px"><button class="btn sec" id="cancel">Cancel booking</button></div><p class="small muted" style="margin-top:8px">You can cancel until ${lagosTime(b.cancel_deadline)}. The time then opens for others.${b.payment_option === 'PLAN' ? ' You get your plan session back.' : b.payment_option === 'CREDIT' ? ' You get your credit back.' : b.payment_status === 'PAID' ? ' We send your money back the way you paid, once we approve it.' : ''}</p>` : ''}
     ${locked ? `<div class="info small notice">${ic('lock', 'sm')}<div>You can no longer cancel. The cut-off was ${lagosTime(b.cancel_deadline)} (${state.cfg.cancel_cutoff_min} min before). The time stays yours. If you miss a <b>paid</b> session, we do not refund it. You get 1 credit with this barber.</div></div>` : ''}
-    ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time. You were not charged.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
+    ${b.incomplete ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Not finished.</b> The payment was not finished, so we did not save a time, and we found no payment for it. If you still see a charge, tap “Report a problem” and we will sort it out.<div style="margin-top:8px"><a class="btn sm" href="#/book/${b.barber_id}">Book again</a></div></div></div>` : ''}
     <div class="btns" style="margin-top:14px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     ${b.payment_status === 'CREDITED' ? `<div class="ok small">${ic('ticket', 'sm')} We did not refund this session, but you have <b>1 session credit</b> with this barber. <a href="#/wallet">See my credits</a></div>` : ''}
     ${b.payment_status === 'REFUND_PENDING' ? `<div class="info small notice">${ic('clock', 'sm')}<div><b>Refund asked for.</b> It is waiting to be approved${b.refund && b.refund.due_at ? '. We approve it by ' + lagosTime(b.refund.due_at) + ' at the latest' : ''}. We will tell you when we send it back to your card.</div></div>` : ''}
@@ -722,10 +737,10 @@ async function bookingDetail(id, payResult) {
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
-  on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); toast(r.booking.status === 'CONFIRMED' ? 'Payment confirmed' : 'We have not got your payment yet', r.booking.status !== 'CONFIRMED'); route(); });
+  on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); const done = r.booking.status === 'CONFIRMED'; toast(done ? 'Payment confirmed' : ['slot_taken', 'late_refund', 'refund_due'].includes(r.result) ? 'That time was taken. We are refunding you' : r.result === 'duplicate_refund' ? 'Already paid. We are returning the extra payment' : r.result === 'amount_mismatch' ? 'Payment received. Our team will check it' : 'We have not got your payment yet', !done && r.result !== 'duplicate_refund'); route(); });
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) throw new Error('Not cancelled'); await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
-  if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id); });
+  if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
 }
 
 /* ---------- report a problem (customers + barbers) ---------- */
