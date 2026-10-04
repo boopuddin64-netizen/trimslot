@@ -29,7 +29,8 @@
     "avatar-ui": "tsx scripts/avatar-crop-run.ts",
     "haptics-ui": "node scripts/haptics-ui.mjs",
     "speed": "tsx scripts/with-server.ts scripts/speed-measure.mjs",
-    "offline-ui": "tsx scripts/with-server.ts scripts/offline-ui.mjs"
+    "offline-ui": "tsx scripts/with-server.ts scripts/offline-ui.mjs",
+    "pull-ui": "node scripts/pull-refresh-ui.mjs"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",

@@ -486,3 +486,25 @@ a.crow{text-decoration:none}
 .netbar[data-kind=retry] .nb-dot{background:var(--brand);animation:nbpulse 1.2s ease-in-out infinite}
 @keyframes nbpulse{0%,100%{opacity:1}50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.netbar{transition:none}.nb-dot{animation:none!important}}
+
+/* ---- pull-down to refresh (public/pull-refresh.js). No overscroll rules here: polish.css owns those. ---- */
+.ptr{position:fixed;left:0;right:0;top:var(--ptr-top,56px);height:0;z-index:19;pointer-events:none;display:none;opacity:0}
+.ptr.ptr-on{display:block}
+.ptr.ptr-anim{transition:opacity .2s ease}
+.ptr .ptr-chip{position:absolute;left:50%;top:0;transform:translate3d(-50%,-44px,0);display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:999px;background:var(--card);color:var(--ink);border:1px solid var(--line2);font-size:13px;font-weight:600;line-height:1;white-space:nowrap;max-width:calc(100vw - 32px);will-change:transform}
+.ptr.ptr-anim .ptr-chip{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.ptr .ptr-arrow{flex:none;fill:none;stroke:var(--brand);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform .15s ease}
+.ptr[data-state=ready] .ptr-arrow{transform:rotate(180deg)}
+.ptr .ptr-spin{display:none;flex:none;width:16px;height:16px;border-radius:50%;border:2px solid var(--line2);border-top-color:var(--brand);animation:ptrspin .8s linear infinite}
+.ptr[data-state=busy] .ptr-arrow,.ptr[data-state=error] .ptr-arrow{display:none}
+.ptr[data-state=busy] .ptr-spin{display:block}
+.ptr[data-state=error] .ptr-spin{display:none}
+.ptr[data-state=error] .ptr-chip{background:#fbeded;color:#9b2c2c;border-color:#f3cfcf}
+:root[data-theme=dark] .ptr[data-state=error] .ptr-chip{background:#2f1517;color:#f4a3a3;border-color:#4a2024}
+.ptr-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@keyframes ptrspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){
+  .ptr.ptr-anim,.ptr.ptr-anim .ptr-chip,.ptr .ptr-arrow{transition:none}
+  .ptr[data-state=ready] .ptr-arrow{transform:none}
+  .ptr .ptr-spin{animation:none;border-top-color:var(--brand);border-right-color:var(--brand)}
+}
