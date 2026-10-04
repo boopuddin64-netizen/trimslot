@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex"><title>Privacy Policy — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script><style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}.legal .tblwrap{overflow-x:auto;margin:12px 0}.legal table{border-collapse:collapse;font-size:13px;min-width:520px}.legal th,.legal td{border:1px solid var(--ctl);padding:6px 8px;text-align:left;vertical-align:top}.legal th{background:var(--bg2);color:var(--ink)}.legal blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--ctl)}.legal code{overflow-wrap:anywhere}.legal li{margin:4px 0}</style></head>
+<meta name="robots" content="noindex"><title>Privacy Policy — TrimSlot</title><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/theme.js"></script><style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}.legal .tblwrap{overflow-x:auto;margin:12px 0}.legal table{border-collapse:collapse;font-size:13px;min-width:520px}.legal th,.legal td{border:1px solid var(--ctl);padding:6px 8px;text-align:left;vertical-align:top}.legal th{background:var(--bg2);color:var(--ink)}.legal blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--ctl)}.legal code{overflow-wrap:anywhere}.legal li{margin:4px 0}</style><script src="/legal-live.js" defer></script></head>
 <body><header class="topbar"><a class="brand" href="/"><span class="logo"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></span>Trim<b>Slot</b></a><a href="/" class="toplink">← Back to app</a></header>
 <div class="legal">
 <h1>Privacy Policy</h1><div class="draft"><b>DRAFT – not legal advice – lawyer review required.</b> This page is a draft prepared for review by a qualified Nigerian lawyer. Items in <mark class="ph">[SQUARE BRACKETS]</mark> are not decided yet. Do not rely on it until it has been reviewed and completed.</div>
-<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <mark class="ph">[VERSION]</mark></p>
+<p><strong>Effective date:</strong> <mark class="ph">[EFFECTIVE DATE]</mark>  <strong>Version:</strong> <span data-s="privacy_version">1</span></p>
 <h2>1. Who we are</h2>
 <p><strong><mark class="ph">[COMPANY NAME]</mark></strong> (RC <mark class="ph">[CAC RC NUMBER]</mark>), <mark class="ph">[REGISTERED ADDRESS]</mark> ("<strong>TrimSlot</strong>", "<strong>we</strong>", "<strong>us</strong>") runs the TrimSlot booking and queue service at <mark class="ph">[WEBSITE URL]</mark>. For the personal data described here we are the <strong>data controller</strong> under the <strong>Nigeria Data Protection Act 2023 ("NDPA")</strong>. NDPC registration / status: [NDPC REGISTRATION NUMBER or "pending"]. Data Protection Officer: <mark class="ph">[DPO NAME]</mark>, <mark class="ph">[DPO EMAIL]</mark>. General privacy contact: <mark class="ph">[EMAIL]</mark>.</p>
 <p>This policy explains, in plain English, what personal data we collect, why, who sees it, how long we keep it, and what rights you have.</p>
@@ -22,6 +22,16 @@
 <td><strong>Account</strong></td>
 <td>Name; e-mail and/or phone number (at least one); role (customer or barber); password (stored only as a one-way <strong>bcrypt hash</strong>, never the password itself); account status</td>
 <td>You</td>
+</tr>
+<tr>
+<td><strong>Profile picture</strong> (customers, optional)</td>
+<td>A small square photo you choose to upload or take (cropped and compressed on your device, about 256 × 256 pixels). Barbers you book with, and our staff, can see it so they can tell customers with the same name apart. Staff can remove a photo that breaks our rules.</td>
+<td>You</td>
+</tr>
+<tr>
+<td><strong>Acceptance record</strong></td>
+<td>Which documents you accepted (Terms, Privacy Policy, Barber Agreement), the version, the date and time, and the IP address and browser details of the device you used</td>
+<td>You, your device</td>
 </tr>
 <tr>
 <td><strong>Barber / shop profile</strong></td>
@@ -65,7 +75,7 @@
 </tr>
 <tr>
 <td><strong>Admin records</strong></td>
-<td>An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why)</td>
+<td>An audit trail of actions by staff and the system on accounts, bookings and payments (who, what, when, why); alerts to staff about refunds waiting, auto-approved refunds, refund failures and deletion requests</td>
 <td>System</td>
 </tr>
 </tbody>
@@ -87,6 +97,14 @@
 <tr>
 <td>Take payments, issue refunds and credits, run plans, pay barbers, keep commission balances, detect failed or duplicate payments</td>
 <td>Performance of a contract; legal obligation (financial records)</td>
+</tr>
+<tr>
+<td>Keep a record that you accepted our documents and ask you to accept new versions</td>
+<td>Legal obligation / legitimate interests (evidence)</td>
+</tr>
+<tr>
+<td>Show your optional profile picture to barbers you book with</td>
+<td>Consent — you choose to upload it and can remove it at any time</td>
 </tr>
 <tr>
 <td>Prevent fraud, abuse, fake bookings and misuse; security; rate-limiting; audit trail; resolving disputes and reports</td>
@@ -140,76 +158,86 @@
 <h2>5. Sending data outside Nigeria</h2>
 <p>Our database and hosting are outside Nigeria (<strong>United Kingdom</strong>), and our providers (Supabase, Vercel, Paystack and its group companies) are international companies that may process data in other countries, including the United States and the European Economic Area. Where personal data leaves Nigeria we rely on the transfer rules in the NDPA (Part VIII): <mark class="ph">[LAWYER: choose and document the basis — adequacy of the destination, standard contractual clauses / binding corporate rules, or another permitted basis — and check each provider's data processing agreement.]</mark> We ask providers to protect data to a standard at least equal to the NDPA.</p>
 <h2>6. How long we keep it</h2>
-<p><mark class="ph">[LAWYER: confirm every period. The first column reflects what the system really does today; the second is a proposal.]</mark></p>
+<p><mark class="ph">[LAWYER: confirm every period.]</mark> The periods marked "automatic" are run by a clean-up job that runs about once an hour. TrimSlot staff can change these periods in the admin settings and this page shows the current values.</p>
 <div class="tblwrap"><table>
 <thead>
 <tr>
 <th>Data</th>
-<th>What happens today</th>
-<th>Proposed retention</th>
+<th>How long</th>
+<th>How</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Account and profile</td>
-<td>Kept while the account exists. An admin can hide ("soft-delete") an account, restorable for <strong>30 days</strong>, after which it can be erased unless money records exist</td>
-<td>Until you ask us to delete, or <mark class="ph">[24]</mark> months after last use</td>
+<td>While the account exists. If you delete your account, your name, contact details, picture, notifications, favourites, waitlist entries, notes and push subscriptions are removed or anonymised at once. If staff hide ("soft-delete") an account, it can be restored for <strong><span data-s="retention_deleted_days">30</span> days</strong>; after that it is erased, or anonymised if payment records exist.</td>
+<td>Self-service or automatic</td>
 </tr>
 <tr>
-<td>Bookings, plans, credits, reviews</td>
-<td>Kept; no automatic deletion yet</td>
-<td>[Account life + 6 years] for those linked to payments; others <mark class="ph">[24]</mark> months</td>
+<td>Bookings, payments, refunds, credits, plans and the audit trail</td>
+<td>These are <strong>financial records</strong> and are kept for <mark class="ph">[6]</mark> years <mark class="ph">[LAWYER: confirm]</mark>. After deletion they stay but <strong>without your name</strong> (shown as "Deleted customer"). A payment that succeeded cannot be hard-deleted.</td>
+<td>Kept; anonymised</td>
 </tr>
 <tr>
-<td>Payment and refund records, audit trail</td>
-<td>Kept; <strong>cannot be hard-deleted once a payment succeeded</strong> (financial record)</td>
-<td><mark class="ph">[6]</mark> years (tax and accounting)</td>
+<td>Raw payment webhook messages from Paystack</td>
+<td><strong><span data-s="retention_events_days">400</span> days</strong>; messages with an invalid signature <strong><span data-s="retention_bad_events_days">30</span> days</strong></td>
+<td>Automatic</td>
 </tr>
 <tr>
-<td>Raw payment webhook messages</td>
-<td>Kept; those with an invalid signature deleted after <strong>30 days</strong></td>
-<td>[400 days]</td>
-</tr>
-<tr>
-<td>Notifications</td>
-<td>Kept; no automatic deletion yet</td>
-<td><mark class="ph">[12]</mark> months</td>
+<td>In-app notifications</td>
+<td><strong><span data-s="retention_notifications_days">180</span> days</strong></td>
+<td>Automatic</td>
 </tr>
 <tr>
 <td>Push subscriptions</td>
-<td>Removed when your browser says the subscription is gone, when you switch notifications off, or when the account is erased</td>
-<td>Same</td>
+<td>Removed when you switch notifications off, when your browser says the subscription is gone, when the account is deleted, or when unused for <strong><span data-s="retention_push_stale_days">60</span> days</strong></td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Staff alerts</td>
+<td><strong><span data-s="retention_admin_alerts_days">90</span> days</strong></td>
+<td>Automatic</td>
 </tr>
 <tr>
 <td>Security counters and rate limits</td>
-<td>Deleted automatically after about <strong>2 hours</strong></td>
-<td>Same</td>
+<td><strong><span data-s="retention_rate_limit_hours">2</span> hours</strong></td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Unpaid "Pay now" attempts, abandoned plan checkouts</td>
+<td>Marked incomplete; never-paid plan checkouts are deleted after <strong><span data-s="retention_checkout_days">2</span> days</strong> (after checking with Paystack that no money was taken)</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Hidden (deleted) reviews, reports and unsold plans</td>
+<td><strong><span data-s="retention_deleted_days">30</span> days</strong> after being deleted</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Acceptance record</td>
+<td>Kept with your account; the IP address and browser details are removed if you delete your account</td>
+<td>Kept</td>
 </tr>
 <tr>
 <td>Request/application logs</td>
 <td>Kept by the hosting provider under its log retention (typically days to weeks) <mark class="ph">[CHECK]</mark></td>
-<td>[30–90] days</td>
-</tr>
-<tr>
-<td>Unpaid "Pay now" attempts, abandoned plan checkouts</td>
-<td>Marked incomplete; abandoned never-paid plan checkouts deleted after <strong>2 days</strong></td>
-<td>Same</td>
+<td>Provider</td>
 </tr>
 <tr>
 <td>Backups</td>
 <td>[Provider backups — CHECK plan; a free-tier database may have none]</td>
-<td><mark class="ph">[30]</mark> days</td>
+<td>Provider</td>
 </tr>
 </tbody>
 </table></div>
 <h2>7. Your rights</h2>
 <p>Under the NDPA you have the right to: <strong>be informed</strong> (this policy); <strong>access</strong> your data and get a copy; <strong>correct</strong> wrong data; <strong>erase</strong> data we no longer need or hold unlawfully; <strong>restrict</strong> processing; <strong>object</strong> to processing based on legitimate interests or for direct marketing; <strong>data portability</strong> (a machine-readable copy of data you gave us); <strong>withdraw consent</strong> at any time (for example, turn off notifications — this does not affect earlier use); and <strong>not to be subject to a decision based only on automated processing</strong> that significantly affects you. </p>
-<p>To use a right, e-mail <mark class="ph">[PRIVACY EMAIL]</mark> or write to <mark class="ph">[REGISTERED ADDRESS]</mark>. We will confirm your identity, and reply within [one month] <mark class="ph">[LAWYER: confirm NDPA/GAID time limit]</mark>. We may keep what the law requires us to (for example payment records). There is currently <strong>no self-service button for data export or account deletion</strong> in the app; requests are handled by e-mail. <mark class="ph">[OWNER: consider building these.]</mark></p>
+<p>To use a right, e-mail <mark class="ph">[PRIVACY EMAIL]</mark> or write to <mark class="ph">[REGISTERED ADDRESS]</mark>. We will confirm your identity, and reply within [one month] <mark class="ph">[LAWYER: confirm NDPA/GAID time limit]</mark>. We may keep what the law requires us to (for example payment records). You can do the two most common things yourself in the app, under <strong>Profile</strong>: <strong>Download my data</strong> (a JSON file with your account, bookings, payments, plans, credits, reviews, favourites, waitlist, notifications and the documents you accepted; passwords are never included, and private notes a barber keeps about you are not included <mark class="ph">[LAWYER: confirm]</mark>) and <strong>Delete my account</strong> (see section 6 for what is removed and what is kept). For anything else, e-mail <mark class="ph">[PRIVACY EMAIL]</mark>.</p>
 <p>If you are unhappy with our answer you may complain to the <strong>Nigeria Data Protection Commission (NDPC)</strong>, <mark class="ph">[NDPC CONTACT DETAILS]</mark>, or go to court.</p>
 <h2>8. Security</h2>
 <p>We use HTTPS; password hashing; login cookies that scripts cannot read; access controls and staff PIN protection for destructive admin actions; audit logging; rate limits and lock-outs against guessing; and payment details that stay with Paystack. No system is perfectly secure. If a personal-data breach is likely to harm you, we will tell the NDPC within <strong>72 hours</strong> and tell you without undue delay, as the NDPA requires.</p>
 <h2>9. Cookies and device storage</h2>
-<p>We use one essential cookie to keep you logged in, and small items in your browser's storage for settings. We use no advertising or analytics cookies. See the Cookie and Notification Notice.</p>
+<p>We use one essential cookie to keep you logged in, and small items in your browser's storage for settings. We use no advertising or analytics cookies. See the <a href="cookies.html">Cookie and Notification Notice</a>.</p>
 <h2>10. Children</h2>
 <p>The Service is for people aged <strong>18 and over</strong>. <mark class="ph">[LAWYER: the app lets an adult book for a child; decide whether to allow this and how to treat children's data under NDPA s.31.]</mark> If you think a child has given us data, contact us and we will remove it.</p>
 <h2>11. Third-party links and content</h2>
@@ -219,4 +247,4 @@
 <h2>13. Contact</h2>
 <p><strong><mark class="ph">[COMPANY NAME]</mark></strong>, <mark class="ph">[REGISTERED ADDRESS]</mark> · Privacy: <mark class="ph">[PRIVACY EMAIL]</mark> · DPO: <mark class="ph">[DPO NAME / EMAIL]</mark> · Phone: <mark class="ph">[PHONE]</mark></p>
 </div>
-<footer class="foot"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></footer></body></html>
+<footer class="foot"><a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/refunds.html">Refunds</a> · <a href="/plan-terms.html">Plan terms</a> · <a href="/cookies.html">Cookies</a> · <a href="/barber-agreement.html">Barber agreement</a></footer></body></html>
