@@ -19,7 +19,7 @@
 
 ## 1. Who we are
 
-**[COMPANY NAME]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**", "**we**", "**us**") runs the TrimSlot booking and queue service at [WEBSITE URL]. For the personal data described here we are the **data controller** under the **Nigeria Data Protection Act 2023 ("NDPA")**. NDPC registration / status: [NDPC REGISTRATION NUMBER or "pending"]. Data Protection Officer: [DPO NAME], [DPO EMAIL]. General privacy contact: [EMAIL].
+**[TrimSlot]** (RC [CAC RC NUMBER]), [REGISTERED ADDRESS] ("**TrimSlot**", "**we**", "**us**") runs the TrimSlot booking and queue service at [WEBSITE URL]. For the personal data described here we are the **data controller** under the **Nigeria Data Protection Act 2023 ("NDPA")**. NDPC registration / status: [NDPC REGISTRATION NUMBER or "pending"]. Data Protection Officer: [DPO NAME], [DPO EMAIL]. General privacy contact: [EMAIL].
 
 This policy explains, in plain English, what personal data we collect, why, who sees it, how long we keep it, and what rights you have.
 
