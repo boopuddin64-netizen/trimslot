@@ -43,8 +43,8 @@ def fill_tokens(text, live):
         if live and k not in PUBLIC_TOKENS: raise SystemExit("{{%s}} is an internal business number and must not appear on a public page" % k)
         return '<span data-s="%s">%s</span>' % (k, H.escape(DEFAULTS[k])) if live else DEFAULTS[k]
     return TOKEN.sub(one, text)
-DOCS = ["00-open-questions-for-lawyer.md", "01-terms-of-service.md", "02-barber-agreement.md", "03-privacy-policy.md",
-        "04-refund-cancellation-credit-policy.md", "05-plan-subscription-terms.md", "06-cookie-and-notification-consent.md",
+DOCS = ["00-open-questions-for-lawyer.md", "interim/01-terms-of-service.md", "interim/02-barber-agreement.md", "interim/03-privacy-policy.md",
+        "interim/04-refund-cancellation-credit-policy.md", "interim/05-plan-subscription-terms.md", "interim/06-cookie-and-notification-consent.md",
         "07-compliance-checklist.md", "08-app-behaviour-reference.md"]
 LIVE = {page for page, _ in PAGES.values()}
 INLINE_CSS = ('<style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}'
