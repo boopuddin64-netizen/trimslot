@@ -7,12 +7,12 @@ import markdown
 ROOT = pathlib.Path(__file__).resolve().parent
 PUB = ROOT.parent / "public"
 PAGES = {  # md file -> (public page, <title>)
-    "01-terms-of-service.md": ("terms.html", "Terms of Service"),
-    "03-privacy-policy.md": ("privacy.html", "Privacy Policy"),
-    "04-refund-cancellation-credit-policy.md": ("refunds.html", "Refund, Cancellation and Credit Policy"),
-    "05-plan-subscription-terms.md": ("plan-terms.html", "Plan Terms"),
-    "06-cookie-and-notification-consent.md": ("cookies.html", "Cookie and Notification Notice"),
-    "02-barber-agreement.md": ("barber-agreement.html", "Barber Agreement"),
+    "interim/01-terms-of-service.md": ("terms.html", "Terms of Service"),
+    "interim/03-privacy-policy.md": ("privacy.html", "Privacy Policy"),
+    "interim/04-refund-cancellation-credit-policy.md": ("refunds.html", "Refund, Cancellation and Credit Policy"),
+    "interim/05-plan-subscription-terms.md": ("plan-terms.html", "Plan Terms"),
+    "interim/06-cookie-and-notification-consent.md": ("cookies.html", "Cookie and Notification Notice"),
+    "interim/02-barber-agreement.md": ("barber-agreement.html", "Barber Agreement"),
 }
 # Built-in defaults = the platform defaults. {{key}} in the Markdown is a live number on the web pages (public/legal-live.js
 # fills <span data-s="key"> from /api/public-settings) and this default in the Word/PDF files.
