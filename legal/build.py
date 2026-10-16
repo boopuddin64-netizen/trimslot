@@ -59,9 +59,9 @@ def unlink_unpublished(h):
     # links to documents that are not (yet) published as app pages become plain text
     return re.sub(r'<a href="(?!https?:|mailto:|#)([^"]*)">(.*?)</a>',
                   lambda m: m.group(0) if m.group(1).split("#")[0] in LIVE else m.group(2), h, flags=re.S)
-BANNER = ('<div class="draft"><b>DRAFT – not legal advice – lawyer review required.</b> '
-          'This page is a draft prepared for review by a qualified Nigerian lawyer. Items in '
-          '<mark class="ph">[SQUARE BRACKETS]</mark> are not decided yet. Do not rely on it until it has been reviewed and completed.</div>')
+BANNER = ('<div class="draft"><b>INTERIM PRODUCTION VERSION — LEGAL REVIEW PENDING.</b> '
+          'These temporary terms are published for operational use while qualified Nigerian counsel reviews the full documents. '
+          'They are not represented as lawyer-approved and may be updated following that review.</div>')
 PH = re.compile(r"\[(?:[A-Z][A-Z0-9 _/.\-]{1,60}|LAWYER:[^\]]*|OWNER:[^\]]*|\d+)\]")
 
 def md2html(text):
