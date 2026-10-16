@@ -97,6 +97,19 @@ export async function updateSettings(c: Conn, patch: unknown) {
   const parsed = settingsPatchSchema.safeParse(patch);
   if (!parsed.success) throw badRequest(parsed.error.issues.map((i) => `${i.path.join('.') || 'settings'}: ${i.message}`).join('; '));
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
+  // Document versions are server-managed. Ignore manual version edits and bump only when relevant policy settings actually change.
+  const changedAny = (keys: string[]) => keys.some((k) => Object.prototype.hasOwnProperty.call(p, k) && String((p as any)[k]) !== String((cur as any)[k]));
+  const bump = (version: unknown) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(version));
+    if (match) return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+    return `${Math.max(1, Number.parseInt(String(version), 10) || 1) + 1}`;
+  };
+  const termsPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','cancel_cutoff_min','payment_hold_min','refund_auto_approve_hours','liability_cap_naira','feature_plans','feature_credits','feature_pay_on_arrival','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira','commission_enabled','commission_factor','min_barber_payout_percent'];
+  const privacyPolicyKeys = ['retention_events_days','retention_bad_events_days','retention_notifications_days','retention_push_stale_days','retention_deleted_days','retention_checkout_days','retention_rate_limit_hours','retention_admin_alerts_days','feature_push','feature_reminders'];
+  const barberPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','commission_enabled','commission_factor','min_barber_payout_percent','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira'];
+  next.terms_version = changedAny(termsPolicyKeys) ? bump(cur.terms_version) : cur.terms_version;
+  next.privacy_version = changedAny(privacyPolicyKeys) ? bump(cur.privacy_version) : cur.privacy_version;
+  next.barber_agreement_version = changedAny(barberPolicyKeys) ? bump(cur.barber_agreement_version) : cur.barber_agreement_version;
   if (next.min_plan_price_naira > next.max_plan_price_naira) throw badRequest('The lowest plan price cannot be more than the highest plan price.');
   { const sum = Number(next.fee_share_customer_pct) + Number(next.fee_share_barber_pct) + Number(next.fee_share_platform_pct);
     if (Math.abs(sum - 100) > 0.0005) throw badRequest(`The three fee shares (customer, barber, platform) must add up to 100%. Now they add up to ${Math.round(sum * 10000) / 10000}%.`); }
@@ -122,8 +135,10 @@ export async function updateSettings(c: Conn, patch: unknown) {
       next.charge_percent, Math.round(next.charge_flat_naira * 100), Math.round(next.charge_min_naira * 100)]);
   clearSettingsCache(c);
   // audit: before/after of every changed key (the audit log is the record of who changed a published number and from what)
-  const before: Record<string, unknown> = {}; for (const k of Object.keys(p)) before[k] = (cur as any)[k];
-  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p, before });
+  const auditKeys = [...new Set([...Object.keys(p), 'terms_version', 'privacy_version', 'barber_agreement_version'])];
+  const before: Record<string, unknown> = {}; for (const k of auditKeys) before[k] = (cur as any)[k];
+  const values: Record<string, unknown> = {}; for (const k of auditKeys) values[k] = (next as any)[k];
+  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: auditKeys.filter((k) => String(before[k]) !== String(values[k])), values, before });
   return settingsView(await getSettings(c));
 }
 

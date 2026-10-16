@@ -7,12 +7,12 @@ import markdown
 ROOT = pathlib.Path(__file__).resolve().parent
 PUB = ROOT.parent / "public"
 PAGES = {  # md file -> (public page, <title>)
-    "01-terms-of-service.md": ("terms.html", "Terms of Service"),
-    "03-privacy-policy.md": ("privacy.html", "Privacy Policy"),
-    "04-refund-cancellation-credit-policy.md": ("refunds.html", "Refund, Cancellation and Credit Policy"),
-    "05-plan-subscription-terms.md": ("plan-terms.html", "Plan Terms"),
-    "06-cookie-and-notification-consent.md": ("cookies.html", "Cookie and Notification Notice"),
-    "02-barber-agreement.md": ("barber-agreement.html", "Barber Agreement"),
+    "interim/01-terms-of-service.md": ("terms.html", "Terms of Service"),
+    "interim/03-privacy-policy.md": ("privacy.html", "Privacy Policy"),
+    "interim/04-refund-cancellation-credit-policy.md": ("refunds.html", "Refund, Cancellation and Credit Policy"),
+    "interim/05-plan-subscription-terms.md": ("plan-terms.html", "Plan Terms"),
+    "interim/06-cookie-and-notification-consent.md": ("cookies.html", "Cookie and Notification Notice"),
+    "interim/02-barber-agreement.md": ("barber-agreement.html", "Barber Agreement"),
 }
 # Built-in defaults = the platform defaults. {{key}} in the Markdown is a live number on the web pages (public/legal-live.js
 # fills <span data-s="key"> from /api/public-settings) and this default in the Word/PDF files.
@@ -26,7 +26,7 @@ DEFAULTS = {
     "liability_cap_naira": "₦[AMOUNT]",
     "retention_events_days": "400", "retention_bad_events_days": "30", "retention_notifications_days": "180", "retention_push_stale_days": "60",
     "retention_deleted_days": "30", "loyalty_every_n": "10", "loyalty_credit_naira": "1,000", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
-    "terms_version": "1", "privacy_version": "1", "barber_agreement_version": "1",
+    "terms_version": "1.0.1", "privacy_version": "1.0.1", "barber_agreement_version": "1.0.1",
 }
 # The public pages may quote only these numbers (they are what /api/public-settings serves). Fee, charge, split, commission and refund-timing numbers are business settings:
 # they may appear in the internal lawyer files only (00, 07, 08 and the pack), never on a public page.
@@ -43,8 +43,8 @@ def fill_tokens(text, live):
         if live and k not in PUBLIC_TOKENS: raise SystemExit("{{%s}} is an internal business number and must not appear on a public page" % k)
         return '<span data-s="%s">%s</span>' % (k, H.escape(DEFAULTS[k])) if live else DEFAULTS[k]
     return TOKEN.sub(one, text)
-DOCS = ["00-open-questions-for-lawyer.md", "01-terms-of-service.md", "02-barber-agreement.md", "03-privacy-policy.md",
-        "04-refund-cancellation-credit-policy.md", "05-plan-subscription-terms.md", "06-cookie-and-notification-consent.md",
+DOCS = ["00-open-questions-for-lawyer.md", "interim/01-terms-of-service.md", "interim/02-barber-agreement.md", "interim/03-privacy-policy.md",
+        "interim/04-refund-cancellation-credit-policy.md", "interim/05-plan-subscription-terms.md", "interim/06-cookie-and-notification-consent.md",
         "07-compliance-checklist.md", "08-app-behaviour-reference.md"]
 LIVE = {page for page, _ in PAGES.values()}
 INLINE_CSS = ('<style>.legal mark.ph{background:var(--accent-soft);color:var(--accent-ink);padding:0 3px;border-radius:3px;font-weight:600}'
@@ -59,9 +59,9 @@ def unlink_unpublished(h):
     # links to documents that are not (yet) published as app pages become plain text
     return re.sub(r'<a href="(?!https?:|mailto:|#)([^"]*)">(.*?)</a>',
                   lambda m: m.group(0) if m.group(1).split("#")[0] in LIVE else m.group(2), h, flags=re.S)
-BANNER = ('<div class="draft"><b>DRAFT – not legal advice – lawyer review required.</b> '
-          'This page is a draft prepared for review by a qualified Nigerian lawyer. Items in '
-          '<mark class="ph">[SQUARE BRACKETS]</mark> are not decided yet. Do not rely on it until it has been reviewed and completed.</div>')
+BANNER = ('<div class="draft"><b>INTERIM PRODUCTION VERSION — LEGAL REVIEW PENDING.</b> '
+          'These temporary terms are published for operational use while qualified Nigerian counsel reviews the full documents. '
+          'They are not represented as lawyer-approved and may be updated following that review.</div>')
 PH = re.compile(r"\[(?:[A-Z][A-Z0-9 _/.\-]{1,60}|LAWYER:[^\]]*|OWNER:[^\]]*|\d+)\]")
 
 def md2html(text):
