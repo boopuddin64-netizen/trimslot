@@ -26,7 +26,7 @@ DEFAULTS = {
     "liability_cap_naira": "₦[AMOUNT]",
     "retention_events_days": "400", "retention_bad_events_days": "30", "retention_notifications_days": "180", "retention_push_stale_days": "60",
     "retention_deleted_days": "30", "loyalty_every_n": "10", "loyalty_credit_naira": "1,000", "retention_checkout_days": "2", "retention_rate_limit_hours": "2", "retention_admin_alerts_days": "90",
-    "terms_version": "1", "privacy_version": "1", "barber_agreement_version": "1",
+    "terms_version": "1.0.1", "privacy_version": "1.0.1", "barber_agreement_version": "1.0.1",
 }
 # The public pages may quote only these numbers (they are what /api/public-settings serves). Fee, charge, split, commission and refund-timing numbers are business settings:
 # they may appear in the internal lawyer files only (00, 07, 08 and the pack), never on a public page.
