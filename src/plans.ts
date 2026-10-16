@@ -131,8 +131,10 @@ export async function updateSettings(c: Conn, patch: unknown) {
       next.charge_percent, Math.round(next.charge_flat_naira * 100), Math.round(next.charge_min_naira * 100)]);
   clearSettingsCache(c);
   // audit: before/after of every changed key (the audit log is the record of who changed a published number and from what)
-  const before: Record<string, unknown> = {}; for (const k of Object.keys(p)) before[k] = (cur as any)[k];
-  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: Object.keys(p), values: p, before });
+  const auditKeys = [...new Set([...Object.keys(p), 'terms_version', 'privacy_version', 'barber_agreement_version'])];
+  const before: Record<string, unknown> = {}; for (const k of auditKeys) before[k] = (cur as any)[k];
+  const values: Record<string, unknown> = {}; for (const k of auditKeys) values[k] = (next as any)[k];
+  await audit(c, null, { id: null, role: 'admin' }, 'SETTINGS_UPDATED', { changed: auditKeys.filter((k) => String(before[k]) !== String(values[k])), values, before });
   return settingsView(await getSettings(c));
 }
 
