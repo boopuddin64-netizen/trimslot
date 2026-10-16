@@ -99,7 +99,11 @@ export async function updateSettings(c: Conn, patch: unknown) {
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
   // Document versions are server-managed. Ignore manual version edits and bump only when relevant policy settings actually change.
   const changedAny = (keys: string[]) => keys.some((k) => Object.prototype.hasOwnProperty.call(p, k) && String((p as any)[k]) !== String((cur as any)[k]));
-  const bump = (version: unknown) => String(Math.max(1, Number.parseInt(String(version), 10) || 1) + 1);
+  const bump = (version: unknown) => {
+    const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(version));
+    if (match) return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
+    return `${Math.max(1, Number.parseInt(String(version), 10) || 1) + 1}`;
+  };
   const termsPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','cancel_cutoff_min','payment_hold_min','refund_auto_approve_hours','liability_cap_naira','feature_plans','feature_credits','feature_pay_on_arrival','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira','commission_enabled','commission_factor','min_barber_payout_percent'];
   const privacyPolicyKeys = ['retention_events_days','retention_bad_events_days','retention_notifications_days','retention_push_stale_days','retention_deleted_days','retention_checkout_days','retention_rate_limit_hours','retention_admin_alerts_days','feature_push','feature_reminders'];
   const barberPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','commission_enabled','commission_factor','min_barber_payout_percent','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira'];
