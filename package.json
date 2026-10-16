@@ -1,6 +1,6 @@
 {
   "name": "trimslot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "TrimSlot - Book. Arrive. Get Trimmed.",
   "main": "src/index.ts",
   "scripts": {
