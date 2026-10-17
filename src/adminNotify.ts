@@ -136,8 +136,47 @@ export function registerAdminAlerts(api: Router, db: Db, guard: any, wrap: (fn: 
     res.json({ ok: true });
   }));
   api.post('/admin/alerts/test', guard, wrap(async (_req, res) => {
-    const id = await adminEvent(db, 'REFUND_WAITING', 'Test alert', 'This is a test alert from TrimSlot admin. If you see it, your alerts work.', { link: '/admin.html#/alerts' });
-    if (id == null) throw notFound('Alerts for "refund waiting" are off in your settings.');
-    res.json({ ok: true, flush: await flushAdminPush(db) });
+    // A test must exercise external push delivery directly. Do not create an in-app
+    // alert, depend on REFUND_WAITING preferences, or consume the normal quiet-hours queue.
+    let enabled = true;
+    try { enabled = (await getSettings(db)).feature_push; } catch { /* retain existing default-on behavior */ }
+    if (!enabled) throw badRequest('Push notifications are disabled for TrimSlot.');
+    const send = getPushSender();
+    if (!send || !pushAvailable()) throw badRequest('Push delivery is not configured on the server.');
+    const subs = await db.many<any>('SELECT id, endpoint, p256dh, auth FROM admin_push_subscriptions ORDER BY id');
+    if (!subs.length) throw notFound('No admin devices are registered for push notifications. Turn on push alerts on this device and try again.');
+    const payload = JSON.stringify({
+      title: 'TrimSlot admin test',
+      body: 'Push notifications are working on this device.',
+      url: '/admin.html#/alerts',
+      tag: 'admin:test:' + Date.now(),
+      type: 'ADMIN_TEST',
+      id: 0,
+      admin: true,
+    });
+    let sent = 0;
+    const dead: number[] = [];
+    const failures: string[] = [];
+    await Promise.all(subs.map(async (sub) => {
+      try {
+        await send({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+        sent++;
+        await db.query('UPDATE admin_push_subscriptions SET last_ok_at=$2, failures=0 WHERE id=$1', [sub.id, isoNow()]);
+      } catch (e: any) {
+        const code = e?.statusCode;
+        if (code === 404 || code === 410) {
+          dead.push(sub.id);
+        } else {
+          failures.push(String(code ?? e?.message ?? 'push send failed').slice(0, 100));
+          await db.query('UPDATE admin_push_subscriptions SET failures=failures+1 WHERE id=$1', [sub.id]);
+        }
+        logger.warn('admin_push_test_failed', { code: code ?? String(e?.message).slice(0, 80) });
+      }
+    }));
+    if (dead.length) await db.query('DELETE FROM admin_push_subscriptions WHERE id = ANY($1::int[])', [dead]);
+    if (!sent) throw badRequest(failures.length
+      ? 'The push service rejected the test. Check the VAPID configuration and device subscription, then try again.'
+      : 'No active admin devices accepted the test notification. Turn push off and on for this device, then retry.');
+    res.json({ ok: true, sent, devices: subs.length, removed: dead.length, partial: sent < subs.length });
   }));
 }
