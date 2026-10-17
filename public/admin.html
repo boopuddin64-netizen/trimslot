@@ -37,7 +37,33 @@
 <script src="/admin3.js"></script>
 <script src="/admin4.js"></script>
 <script src="/admin5.js"></script>
-<script>document.getElementById("adminRefresh")?.addEventListener("click",function(){this.disabled=true;this.textContent="Refreshing…";window.location.reload();});</script>
+<script>
+(function () {
+  const refresh = document.getElementById('adminRefresh');
+  if (refresh) refresh.addEventListener('click', function () {
+    this.disabled = true; this.textContent = 'Refreshing…';
+    // Force a fresh navigation; the service worker must not trap the admin on stale HTML.
+    window.location.href = '/admin.html?refresh=' + Date.now();
+  });
+  // Fail safe: if one of the admin bundles throws before startup, never leave a blank screen.
+  function recoverBlankAdmin() {
+    const shell = document.getElementById('shell');
+    const login = document.getElementById('login');
+    const app = document.getElementById('app');
+    const nav = document.getElementById('nav');
+    if (shell && login && shell.classList.contains('hidden') && login.classList.contains('hidden')) {
+      login.classList.remove('hidden');
+      const msg = document.getElementById('lmsg');
+      if (msg) { msg.textContent = 'The admin interface did not start correctly. Reload this page and try again.'; msg.classList.remove('hidden'); }
+    } else if (shell && !shell.classList.contains('hidden') && app && nav && !app.textContent.trim() && !nav.textContent.trim()) {
+      app.innerHTML = '<section class="card"><h2>Admin page did not finish loading</h2><p>Please use Refresh to reload the page. Your saved data has not been changed by this message.</p><button class="btn" type="button" onclick="location.href=\'/admin.html?refresh=\'+Date.now()">Reload admin</button></section>';
+    }
+  }
+  window.addEventListener('error', function () { setTimeout(recoverBlankAdmin, 0); });
+  window.addEventListener('unhandledrejection', function () { setTimeout(recoverBlankAdmin, 0); });
+  window.addEventListener('load', function () { setTimeout(recoverBlankAdmin, 1800); });
+})();
+</script>
 <script>
   window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
 </script>
