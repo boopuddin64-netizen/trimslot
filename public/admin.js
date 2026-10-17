@@ -111,6 +111,13 @@ function drawNav(cur) {
 }
 const head = (t, sub, right) => `<div class="page-h"><div><h1>${esc(t)}</h1>${sub ? `<p class="muted small">${esc(sub)}</p>` : ''}</div>${right || ''}</div>`;
 const refreshBtn = `<button class="btn sm sec" id="reload">Refresh</button>`;
+// Global refresh reuses the active section's existing data-refresh handler; it never reloads the document.
+const adminRefreshControl = document.getElementById('adminRefresh');
+if (adminRefreshControl) adminRefreshControl.addEventListener('click', () => {
+  const activeRefresh = document.getElementById('reload');
+  if (activeRefresh) activeRefresh.click();
+  else route();
+});
 const wireReload = (fn) => { const b = $('#reload'); if (b) b.onclick = fn; };
 const act = (label, cls, attrs) => `<button class="btn sm ${cls}" ${attrs}>${label}</button>`;
 function wireActions(root, handlers) {
