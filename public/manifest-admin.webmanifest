@@ -1,0 +1,20 @@
+{
+  "name": "TrimSlot Admin",
+  "short_name": "TrimSlot Admin",
+  "description": "TrimSlot administration",
+  "id": "/admin.html",
+  "start_url": "/admin.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7fb",
+  "theme_color": "#7A1826",
+  "icons": [
+    {
+      "src": "/icons/icon-admin.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
