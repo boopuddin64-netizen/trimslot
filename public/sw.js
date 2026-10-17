@@ -104,7 +104,10 @@ self.addEventListener('push', (event) => {
     const isAdminWin = (c) => new URL(c.url).pathname.startsWith('/admin');
     const targets = d.admin ? wins.filter(isAdminWin) : wins.filter((c) => !isAdminWin(c));
     for (const c of targets) c.postMessage({ type: 'push', payload: d });
-    if (targets.some((c) => c.visibilityState === 'visible')) return;
+    // An explicit admin push test must validate the OS-level notification too,
+    // even when the admin page is visible. Normal alerts avoid duplicate system
+    // notifications while the matching app window is in the foreground.
+    if (d.type !== 'ADMIN_TEST' && targets.some((c) => c.visibilityState === 'visible')) return;
     await self.registration.showNotification(title, {
       body: d.body || '', tag: d.tag || undefined, renotify: !!d.tag, data: { url: d.url || '/#/notifications', id: d.id },
       icon: '/icons/icon-192.png', badge: '/icons/badge-96.png', timestamp: Date.now(),
