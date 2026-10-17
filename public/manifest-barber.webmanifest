@@ -1,0 +1,20 @@
+{
+  "name": "TrimSlot Barber",
+  "short_name": "TrimSlot Barber",
+  "description": "TrimSlot barber dashboard",
+  "id": "/barber-app",
+  "start_url": "/barber-app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7fb",
+  "theme_color": "#C69A35",
+  "icons": [
+    {
+      "src": "/icons/icon-barber.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
