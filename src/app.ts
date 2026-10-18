@@ -288,10 +288,10 @@ export function createApp(db: Db) {
   const api = express.Router();
   api.use(barberAccessGuard(db));   // customer-facing barber routes need an added barber, an opened share link, or a past booking
 
-  /* ---------- admin: platform rules (Bearer ADMIN_KEY, or CRON_SECRET as fallback; never exposed to barbers/customers) ---------- */
+  /* ---------- admin: platform rules (dedicated Bearer ADMIN_KEY only; never exposed to barbers/customers) ---------- */
   const adminGuard = async (req: Request, res: Response, next: NextFunction) => {
     res.setHeader('Cache-Control', 'no-store');
-    if (!config.cronSecret && !config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not set up on the server yet.' } });
+    if (!config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not set up on the server yet.' } });
     const lockKey = 'admin:' + req.ip;
     const wait = await assertLoginNotLocked(db, lockKey);
     if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong keys. Try again in a few minutes.' } });
