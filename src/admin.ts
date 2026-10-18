@@ -1,4 +1,4 @@
-/** Admin portal API. Every route sits behind `adminGuard` (Bearer ADMIN_KEY or the CRON_SECRET fallback, constant-time compare, failed attempts rate-limited). All writes are audited (actor_role='admin'). */
+/** Admin portal API. Every route sits behind `adminGuard` (Bearer ADMIN_KEY only, constant-time compare, failed attempts rate-limited). All writes are audited (actor_role='admin'). */
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
