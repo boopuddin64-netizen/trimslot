@@ -255,3 +255,22 @@ test('admin sees a barber\'s private share link + QR (admin only, works for any 
     assert.equal((await s.j(`/api/admin/barbers/${s.barberId}/share`, { headers: { Authorization: 'Bearer not-the-admin-key-123456' } })).status, 401);
   } finally { s.server.close(); resetNow(); }
 });
+
+
+test('admin is disabled without ADMIN_KEY even when CRON_SECRET is configured', async () => {
+  const s = await boot();
+  const originalAdmin = process.env.ADMIN_KEY;
+  const originalCron = process.env.CRON_SECRET;
+  try {
+    delete process.env.ADMIN_KEY;
+    process.env.CRON_SECRET = CRON;
+    assert.equal((await s.j('/api/admin/overview', { headers: { Authorization: 'Bearer ' + CRON } })).status, 503,
+      'the cron secret must not enable the admin API');
+    assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer ' + CRON } })).status, 200,
+      'the cron secret remains valid for the cron endpoint');
+  } finally {
+    if (originalAdmin === undefined) delete process.env.ADMIN_KEY; else process.env.ADMIN_KEY = originalAdmin;
+    if (originalCron === undefined) delete process.env.CRON_SECRET; else process.env.CRON_SECRET = originalCron;
+    s.server.close(); resetNow();
+  }
+});
