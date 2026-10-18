@@ -43,7 +43,7 @@ export const config = {
   get usesEmbeddedDevDb() { return !process.env.DATABASE_URL && !this.isProd; },
   get poolMax() { return Math.max(1, Number(process.env.PG_POOL_MAX || 3)); },
   get cronSecret() { return process.env.CRON_SECRET || ''; },
-  /** Optional separate admin key for /admin.html and /api/admin/*. Ignored unless >= 16 chars. CRON_SECRET keeps working as a fallback. */
+  /** Dedicated key for /admin.html and /api/admin/*. Ignored unless >= 16 chars. It must be separate from CRON_SECRET. */
   get adminKey() { const k = process.env.ADMIN_KEY || ''; return k.length >= 16 ? k : ''; },
   get appBaseUrl() {
     const v = process.env.APP_BASE_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') || `http://localhost:${this.port}`;
@@ -105,7 +105,9 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv = process.env): { 
   }
   if (!env.CRON_SECRET) warnings.push('CRON_SECRET is not set: /api/cron/sweep is disabled (expired payment holds are still enforced lazily on every request).');
   else if (env.CRON_SECRET.length < 16) errors.push('CRON_SECRET must be at least 16 characters (generate: openssl rand -hex 24)');
-  if (env.ADMIN_KEY && env.ADMIN_KEY.length < 16) warnings.push('ADMIN_KEY is shorter than 16 characters and is IGNORED (admin login falls back to CRON_SECRET). Generate one: openssl rand -hex 24');
+  if (!env.ADMIN_KEY) errors.push('ADMIN_KEY is not set (admin access is disabled without a dedicated key; generate one: openssl rand -hex 24)');
+  else if (env.ADMIN_KEY.length < 16) errors.push('ADMIN_KEY must be at least 16 characters (generate: openssl rand -hex 24)');
+  else if (env.ADMIN_KEY === env.CRON_SECRET) errors.push('ADMIN_KEY must be different from CRON_SECRET');
   if (/^(1|true|yes|on)$/i.test((env.EMAIL_VERIFICATION_REQUIRED || '').trim()) && (!env.RESEND_API_KEY || !env.MAIL_FROM)) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: email codes (sign-up and booking verification) cannot be sent. Set a real email provider key before launch.');
   const base = env.APP_BASE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
   if (!/^https:\/\/[^/]+/.test(base)) errors.push('APP_BASE_URL must be set to your public https:// URL (used for Paystack callbacks and CSRF origin checks)');

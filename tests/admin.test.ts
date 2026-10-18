@@ -10,11 +10,12 @@ import { barberAction, createBooking, customerCancel, getBooking } from '../src/
 import { initializePayment, mockMarkPaid, processReference } from '../src/paystack';
 
 const KEY = 'test-admin-key-0123456789';
+const CRON = 'test-cron-secret-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
 
 async function boot() {
   const s = await freshDb(); setNow(NOW);
-  process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  process.env.CRON_SECRET = CRON; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: (await r.json().catch(() => ({}))) as any }; };
@@ -113,19 +114,19 @@ test('admin login brute force: repeated wrong keys are locked out (429) even for
   } finally { process.env.NODE_ENV = 'test'; s.server.close(); resetNow(); }
 });
 
-test('ADMIN_KEY works for admin (not for cron), CRON_SECRET still works for both; short ADMIN_KEY is ignored', async () => {
+test('ADMIN_KEY is required for admin; CRON_SECRET is restricted to cron; short ADMIN_KEY is rejected', async () => {
   const s = await boot(); const AK = 'separate-admin-key-abcdef123456';
   try {
     process.env.ADMIN_KEY = AK;
     const H = (k: string) => ({ Authorization: 'Bearer ' + k });
     assert.equal((await s.j('/api/admin/overview', { headers: H(AK) })).status, 200, 'ADMIN_KEY opens admin');
-    assert.equal((await s.j('/api/admin/overview', { headers: H(KEY) })).status, 200, 'CRON_SECRET fallback opens admin');
+    assert.equal((await s.j('/api/admin/overview', { headers: H(CRON) })).status, 401, 'CRON_SECRET must not open admin');
     assert.equal((await s.j('/api/admin/overview', { headers: H(AK + 'x') })).status, 401);
     assert.equal((await s.j('/api/admin/overview')).status, 401);
     assert.equal((await s.j('/api/cron/sweep', { headers: H(AK) })).status, 401, 'ADMIN_KEY must not run the cron sweep');
-    assert.equal((await s.j('/api/cron/sweep', { headers: H(KEY) })).status, 200, 'CRON_SECRET still runs the sweep');
+    assert.equal((await s.j('/api/cron/sweep', { headers: H(CRON) })).status, 200, 'CRON_SECRET runs the sweep');
     process.env.ADMIN_KEY = 'short';
-    assert.equal((await s.j('/api/admin/overview', { headers: H('short') })).status, 401, 'too-short ADMIN_KEY is ignored');
+    assert.equal((await s.j('/api/admin/overview', { headers: H('short') })).status, 401, 'too-short ADMIN_KEY is rejected');
     process.env.ADMIN_KEY = AK;
     process.env.NODE_ENV = 'development';
     for (let i = 0; i < 8; i++) assert.equal((await s.j('/api/admin/overview', { headers: H('wrong' + i) })).status, 401);
