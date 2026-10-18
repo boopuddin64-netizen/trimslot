@@ -117,9 +117,8 @@ export function cronAuth(req: Request): boolean {
   const secret = config.cronSecret;
   return !!secret && safeEqual(bearer(req), secret);
 }
-/** Admin portal / API: accepts ADMIN_KEY (if set) OR CRON_SECRET (fallback). Both compares always run. The cron endpoint still accepts only CRON_SECRET. */
+/** Admin portal / API: accepts only the dedicated ADMIN_KEY. A scheduler secret must never grant interactive admin privileges. */
 export function adminAuth(req: Request): boolean {
-  const got = bearer(req), ak = config.adminKey, cs = config.cronSecret;
-  const a = !!ak && safeEqual(got, ak), c = !!cs && safeEqual(got, cs);
-  return a || c;
+  const got = bearer(req), ak = config.adminKey;
+  return !!ak && safeEqual(got, ak);
 }
