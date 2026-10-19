@@ -316,8 +316,8 @@ export function createApp(db: Db) {
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
-    cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: true, today: lagosDate(), now: clock.now().toISOString(),
-    ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
+    cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: (await getSettings(db)).feature_plans, today: lagosDate(), now: clock.now().toISOString(),
+    ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { online_payments: st.feature_online_payments, plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   })));
 
   /* ---------- auth ---------- */
@@ -417,7 +417,7 @@ export function createApp(db: Db) {
     const extras: any = { rating: st.feature_reviews ? await ratingSummary(db, b.id) : null };
     if (req.user?.role === 'customer') {
       if (st.feature_favourites) extras.favourite = !!(await db.maybeOne('SELECT 1 FROM favourites WHERE customer_id=$1 AND barber_id=$2', [req.user.id, b.id]));
-      extras.loyalty = await loyaltyProgress(db, st, req.user.id, b.id);
+      if (st.feature_loyalty) extras.loyalty = await loyaltyProgress(db, st, req.user.id, b.id);
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),

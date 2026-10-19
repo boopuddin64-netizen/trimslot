@@ -83,6 +83,7 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
 /** Start a payment for a PENDING_PAYMENT booking. Amount always comes from the booking's snapshotted price.
  *  The network call to Paystack happens OUTSIDE any DB transaction (a pooled connection is never held while waiting on the network). */
 export async function initializePayment(db: Db, bookingId: number, customerEmail: string | null) {
+  if (!(await getSettings(db)).feature_online_payments) throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily unavailable. Please choose another payment option or try again later.');
   const b = (await getBooking(db, bookingId))!;
   if (b.status !== 'PENDING_PAYMENT' || b.payment_option !== 'ONLINE') throw new AppError(409, 'NOT_PAYABLE', 'This booking is not waiting for an online payment.');
   // A payment for this booking is still being sorted out (amount mismatch waiting for staff, or a refund on its way): a second payment would be a duplicate charge.
@@ -163,6 +164,7 @@ async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; b
 /** Customer starts buying a plan. A PENDING purchase row is created (invisible to the barber, worthless until paid); amount/terms are snapshotted server-side. */
 export async function initializePlanPurchase(db: Db, customerId: number, planId: number, customerEmail: string | null) {
   { const st = await getSettings(db);
+    if (!st.feature_online_payments) throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily unavailable. Please try again later.');
     if (st.maintenance_mode) throw new AppError(503, 'MAINTENANCE', st.maintenance_message);
     if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are off right now.'); }
   const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, b.fee_percent_override, b.fee_flat_kobo_override, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids

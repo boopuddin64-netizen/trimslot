@@ -277,7 +277,7 @@ async function controls() {
     `<div class="card ${s.maintenance_mode ? 'warnbox' : ''}"><form id="cf"><h2 style="margin-top:0">Platform</h2>
       ${sw('maintenance_mode', 'Maintenance mode', 'Stops ALL new bookings and plan purchases. Bookings you already have and the barbers\' tools keep working. Customers see a banner.')}
       <label>Maintenance message (shown to customers)</label><input name="maintenance_message" maxlength="200" value="${esc(s.maintenance_message)}">
-      <h2>Features</h2>${sw('feature_plans', 'Plans', 'Customers can buy and use session plans.')}${sw('feature_credits', 'Credits', 'Customers can use session credits.')}${sw('feature_pay_on_arrival', 'Pay on arrival', 'Customers can book and pay with cash or transfer at the shop.')}
+      <h2>Features</h2>${sw('feature_online_payments', 'Online payments (Paystack)', 'OFF blocks new Paystack checkouts for bookings and plan purchases. Existing payment verification and refunds continue working. Turn ON only when the live Paystack setup is ready.')}${sw('feature_plans', 'Plans', 'Customers can buy and use session plans.')}${sw('feature_credits', 'Credits', 'Customers can use session credits.')}${sw('feature_pay_on_arrival', 'Pay on arrival', 'Customers can book and pay with cash or transfer at the shop.')}
       <h2>Notifications and smart features</h2><p class="small muted" style="margin:0 0 4px">Each one can be switched off instantly; nothing else changes. Push also needs the VAPID keys on the server (set).</p>
       ${SMART.map(([k, l, sub]) => sw(k, l, sub)).join('')}
       <div class="formgrid"><div><label>Loyalty: every Nth completed visit earns a credit</label><input type="number" name="loyalty_every_n" step="1" min="2" max="100" value="${esc(s.loyalty_every_n)}"></div>
@@ -291,7 +291,7 @@ async function controls() {
       <div class="btns cta"><button class="btn" type="submit">Save controls</button></div></form></div>`;
   $('#cf').onsubmit = async (ev) => {
     ev.preventDefault(); const f = ev.target.elements; const body = {};
-    for (const k of ['maintenance_mode', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', ...SMART.map((x) => x[0])]) body[k] = f[k].checked;
+    for (const k of ['maintenance_mode', 'feature_online_payments', 'feature_plans', 'feature_credits', 'feature_pay_on_arrival', 'commission_enabled', ...SMART.map((x) => x[0])]) body[k] = f[k].checked;
     body.maintenance_message = f.maintenance_message.value.trim();
     for (const k of ['loyalty_every_n', 'loyalty_credit_naira', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days']) body[k] = Number(f[k].value);
     if (body.maintenance_mode && !s.maintenance_mode && !confirm('Turn maintenance mode ON? Customers cannot book until you turn it off.')) return;
