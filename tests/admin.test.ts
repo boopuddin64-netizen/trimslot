@@ -7,7 +7,7 @@ import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking, customerCancel, getBooking } from '../src/bookingService';
-import { initializePayment, mockMarkPaid, processReference } from '../src/paystack';
+import { initializePayment, mockMarkPaid, processReference, requestRefund, setGatewayVerifier } from '../src/paystack';
 
 const KEY = 'test-admin-key-0123456789';
 const CRON = 'test-cron-secret-0123456789';
@@ -61,6 +61,36 @@ test('admin overview + lists reflect real data; verify / suspend a barber is aud
     assert.equal((await s.j(`/api/admin/bookings?status=CANCELLED`, { headers: s.A })).body.bookings.length, 0);
     const pays = (await s.j('/api/admin/payments?filter=paid', { headers: s.A })).body; assert.equal(pays.payments.length, 1); assert.equal(pays.summary.paid, 1);
   } finally { s.server.close(); resetNow(); }
+});
+
+test('confirm-anyway cannot race a refund claim and revive a payment', async () => {
+  const s = await boot();
+  let release!: (v: any) => void;
+  try {
+    const b = await createBooking(s.db, s.customerIds[0], { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '10:00', payment_option: 'ONLINE' });
+    const i = await initializePayment(s.db, b.id, null);
+    setGatewayVerifier(async () => ({ ok: true, status: 'success', amount_kobo: 123456, requested_amount_kobo: 123456, currency: 'NGN', reference: i.reference }));
+    assert.equal((await processReference(s.db, i.reference)).result, 'amount_mismatch');
+    const before = await s.db.one<any>('SELECT amount_kobo, status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
+    assert.equal(before.refund_status, 'NEEDS_REFUND');
+    setGatewayVerifier(async () => new Promise((resolve) => { release = resolve; }));
+    const pending = s.j('/api/admin/payments/' + i.reference + '/confirm-anyway', { method: 'POST', headers: s.A, body: {} });
+    for (let n = 0; n < 50 && !release; n++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(typeof release, 'function', 'confirm request reached gateway verification');
+    assert.equal(await requestRefund(s.db, i.reference), 'requested', 'refund claim wins while gateway verification is in flight');
+    release({ ok: true, status: 'success', amount_kobo: 123456, requested_amount_kobo: 123456, currency: 'NGN', reference: i.reference });
+    const response = await pending;
+    assert.equal(response.status, 200);
+    assert.equal(response.body.result, 'amount_mismatch');
+    const after = await s.db.one<any>('SELECT status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
+    assert.equal(after.status, 'INITIATED', 'must not mark the payment successful after refund is claimed');
+    assert.equal(after.refund_status, 'REFUND_REQUESTED');
+    assert.equal(after.refund_reason, 'Amount mismatch');
+  } finally {
+    setGatewayVerifier(null);
+    s.server.close();
+    resetNow();
+  }
 });
 
 test('admin refunds: a flagged payment can be retried (mock gateway) or marked refunded; states are idempotent and audited', async () => {
