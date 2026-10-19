@@ -144,7 +144,10 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     // 1) Serialise every booking attempt for this barber: whoever gets this row lock first books first; the other then sees the new row.
     const barber = await t.maybeOne('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1 AND verified FOR UPDATE', [input.barber_id]);
     if (!barber) throw notFound('We could not find that barber.');
-    if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
+    if (input.payment_option === 'ONLINE') {
+      if (!(await getSettings(t)).feature_online_payments) throw new AppError(409, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily unavailable. Choose Pay on arrival if the barber offers it.');
+      assertPayoutReady(barber);
+    }
     if (!(await t.maybeOne(`SELECT 1 FROM barbers b WHERE b.id=$1 AND ${barberEmailReadySql('b')}`, [input.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
     await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
     const featureSettings = await getSettings(t);
