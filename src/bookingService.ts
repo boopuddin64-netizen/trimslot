@@ -147,6 +147,10 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     if (input.payment_option === 'ONLINE') assertPayoutReady(barber);
     if (!(await t.maybeOne(`SELECT 1 FROM barbers b WHERE b.id=$1 AND ${barberEmailReadySql('b')}`, [input.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
     await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
+    const featureSettings = await getSettings(t);
+    if (input.payment_option === 'ON_ARRIVAL' && !featureSettings.feature_pay_on_arrival) throw new AppError(409, 'FEATURE_OFF', 'Pay on arrival is unavailable right now. Choose another payment option.');
+    if (input.payment_option === 'PLAN' && !featureSettings.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are unavailable right now.');
+    if (input.payment_option === 'CREDIT' && !featureSettings.feature_credits) throw new AppError(409, 'FEATURE_OFF', 'Session credits are unavailable right now.');
     await assertBookable(t, input.barber_id, input.payment_option);
     { const cu = await t.maybeOne<any>('SELECT account_status, status_reason FROM users WHERE id=$1', [customerId]); if (cu && cu.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', `Your account cannot book right now${cu.status_reason ? ': ' + cu.status_reason : ''}. Please contact support.`); }
     // (Unpaid Pay-now attempts never occupy a slot, so there is nothing to release here.)
