@@ -258,7 +258,7 @@ export async function processReference(db: Db, reference: string, o: { force?: b
     const claim = await t.query(`UPDATE payments SET status='SUCCESS', verified_at=$2, paid_kobo=$3, gateway_fee_kobo=$4, ps_fee_actual_kobo=$5,
         refund_status = CASE WHEN refund_status='NEEDS_REFUND' AND refund_reason='${MISMATCH_REASON}' THEN NULL ELSE refund_status END,
         refund_reason = CASE WHEN refund_status='NEEDS_REFUND' AND refund_reason='${MISMATCH_REASON}' THEN NULL ELSE refund_reason END
-      WHERE reference=$1 AND status<>'SUCCESS'`, [reference, isoNow(), am.paid_kobo, am.fee_kobo, v.fees_kobo && v.fees_kobo > 0 ? v.fees_kobo : null]);
+      WHERE reference=$1 AND status<>'SUCCESS' AND ($6::boolean = FALSE OR (refund_status='NEEDS_REFUND' AND refund_reason='Amount mismatch'))`, [reference, isoNow(), am.paid_kobo, am.fee_kobo, v.fees_kobo && v.fees_kobo > 0 ? v.fees_kobo : null, !!o.force]);
     if (claim.rowCount !== 1) return null;                     // someone else already processed it
     if (pay.plan_purchase_id) {
       const r = await applyPlanPayment(t, pay.plan_purchase_id);
@@ -274,7 +274,11 @@ export async function processReference(db: Db, reference: string, o: { force?: b
     if (o === 'confirmed') await applyNettingForPayment(t, pay.id);
     return o;
   });
-  if (outcome === null) return { result: await settledResult(db, (await db.maybeOne('SELECT * FROM payments WHERE reference=$1', [reference])) ?? pay), ...ids };
+  if (outcome === null) {
+    const current = await db.maybeOne<any>('SELECT * FROM payments WHERE reference=$1', [reference]);
+    if (current?.status !== 'SUCCESS') return { result: 'amount_mismatch', ...ids }; // confirm-anyway lost the race to a refund claim or another state change
+    return { result: await settledResult(db, current ?? pay), ...ids };
+  }
   const needsRefund = outcome === 'slot_taken' || outcome === 'late_payment' || outcome === 'already_paid' || outcome === 'already_active';
   if (needsRefund) await requestRefund(db, reference);
   const result: ProcessResult = outcome === 'slot_taken' ? 'slot_taken' : outcome === 'late_payment' ? 'late_refund' : outcome === 'already_paid' ? 'duplicate_refund' : needsRefund ? 'refund_due' : 'processed';
