@@ -311,17 +311,19 @@ test('admin is disabled without ADMIN_KEY even when CRON_SECRET is configured', 
 test('feature flags are enforced server-side and public config reports the live plans setting', async () => {
   const s = await boot();
   try {
-    await s.db.query('UPDATE platform_settings SET feature_plans=FALSE, feature_credits=FALSE, feature_pay_on_arrival=FALSE WHERE id=1');
+    await s.db.query('UPDATE platform_settings SET feature_online_payments=FALSE, feature_plans=FALSE, feature_credits=FALSE, feature_pay_on_arrival=FALSE WHERE id=1');
     const cfg = await s.j('/api/config');
     assert.equal(cfg.status, 200);
     assert.equal(cfg.body.plans, false, 'legacy plans flag reflects the admin setting');
+    assert.equal(cfg.body.features.online_payments, false);
     assert.equal(cfg.body.features.plans, false);
     assert.equal(cfg.body.features.credits, false);
     assert.equal(cfg.body.features.pay_on_arrival, false);
 
-    const create = (option: 'ON_ARRIVAL' | 'PLAN' | 'CREDIT') => createBooking(s.db, s.customerIds[0], {
-      barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: option === 'ON_ARRIVAL' ? '10:00' : option === 'PLAN' ? '11:00' : '12:00', payment_option: option,
+    const create = (option: 'ONLINE' | 'ON_ARRIVAL' | 'PLAN' | 'CREDIT') => createBooking(s.db, s.customerIds[0], {
+      barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: option === 'ONLINE' ? '09:30' : option === 'ON_ARRIVAL' ? '10:00' : option === 'PLAN' ? '11:00' : '12:00', payment_option: option,
     });
+    await assert.rejects(create('ONLINE'), (e: any) => e.code === 'ONLINE_PAYMENTS_DISABLED' && /Online payments/.test(e.message));
     await assert.rejects(create('ON_ARRIVAL'), (e: any) => e.code === 'FEATURE_OFF' && /Pay on arrival/.test(e.message));
     await assert.rejects(create('PLAN'), (e: any) => e.code === 'FEATURE_OFF' && /Plans/.test(e.message));
     await assert.rejects(create('CREDIT'), (e: any) => e.code === 'FEATURE_OFF' && /Session credits/.test(e.message));
