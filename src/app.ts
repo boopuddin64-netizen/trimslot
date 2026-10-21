@@ -510,7 +510,10 @@ export function createApp(db: Db) {
   /* ---------- customer: plans & credits (customers only browse, buy and use) ---------- */
   api.get('/me/wallet', cust, wrap(async (req, res) => res.json(await customerWallet(db, req.user!.id))));
   api.post('/plans/:id/buy', limits.payment, cust, wrap(async (req, res) => {
+    const settings = await getSettings(db);
+    if (!settings.feature_online_payments) throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily disabled. Your plan has not been charged.');
     const u = await db.one('SELECT email FROM users WHERE id=$1', [req.user!.id]);
+    res.setHeader('Cache-Control', 'no-store');
     res.status(201).json(await initializePlanPurchase(db, req.user!.id, Number(req.params.id) || 0, u.email));
   }));
   // Re-check a plan purchase with the gateway (server-side verification; client claims are ignored)
