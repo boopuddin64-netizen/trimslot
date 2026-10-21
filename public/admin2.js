@@ -271,7 +271,7 @@ const SMART = [
   ['feature_loyalty', 'Loyalty credits (off by default)', 'Every Nth finished visit earns the customer a credit with that barber (amounts below).'],
 ];
 async function controls() {
-  const [{ settings: s }, earn] = await Promise.all([api('/settings'), api('/earnings?from=' + today0() + '&to=' + today0())]); drawNav('controls');
+  const { settings: s } = await api('/settings'); drawNav('controls');
   const sw = (k, l, sub) => `<label class="chk tog"><input type="checkbox" name="${k}" ${s[k] ? 'checked' : ''}> <span><b>${esc(l)}</b><small class="muted" style="display:block">${esc(sub)}</small></span></label>`;
   app.innerHTML = head('Controls', 'These switches work at once for everyone. Pause, fee and balance controls for one barber are in that barber\'s sheet.') +
     `<div class="card ${s.maintenance_mode ? 'warnbox' : ''}"><form id="cf"><h2 style="margin-top:0">Platform</h2>
