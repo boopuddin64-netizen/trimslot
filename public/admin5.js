@@ -101,7 +101,7 @@ async function alertsPage() {
   const state = !pushOk() ? 'This browser cannot get push alerts.' : !prefs.push.available ? 'The server has no push keys, so only alerts in the app work.' : Notification.permission === 'denied' ? 'Alerts are blocked in this browser.' : sub ? 'Push is ON for this device.' : 'Push is off on this device.';
   const q = prefs.quiet;
   const items = list.items.length ? list.items.map((n) => `<a class="kv alrt${n.read_at ? '' : ' unread'}" href="${esc(n.link || '#/alerts')}" data-read="${n.id}"><span><b>${esc(n.title)}</b><small class="muted" style="display:block">${esc(n.body)}</small></span><b class="small">${stamp(n.created_at)}</b></a>`).join('') : '<div class="empty">No alerts yet.</div>';
-  app.innerHTML = head('Alerts', 'Refunds that need you, refunds approved by themselves, and refunds that failed. Choose which alerts you get and how.', `<button class="btn sm sec" id="readall">Mark all read</button>`) +
+  app.innerHTML = head('Alerts', 'Refunds that need you, refunds approved by themselves, and refunds that failed. Choose which alerts you get and how.', `<button class="btn sm sec" id="refresh-alerts">Refresh</button><button class="btn sm sec" id="readall">Mark all read</button>`) +
     `<div class="card">${items}</div>
     <div class="card"><form id="apf"><h2 style="margin-top:0">What to tell me</h2>
       <table class="tbl"><thead><tr><th>Event</th><th>In the app</th><th>Push</th></tr></thead><tbody>${prefs.events.map((e) => `<tr><td data-l="Event">${esc(e.label)}</td><td data-l="In the app"><input type="checkbox" name="${e.event}:in_app" aria-label="${esc(e.label)} in the app" ${e.in_app ? 'checked' : ''}></td><td data-l="Push"><input type="checkbox" name="${e.event}:push" aria-label="${esc(e.label)} by push" ${e.push ? 'checked' : ''}></td></tr>`).join('')}</tbody></table>
@@ -110,6 +110,7 @@ async function alertsPage() {
       <div class="btns cta"><button class="btn" type="submit">Save preferences</button></div></form></div>
     <div class="card"><h2 style="margin-top:0">Push on this device</h2><p class="muted small">${esc(state)} ${prefs.push.devices} device${prefs.push.devices === 1 ? '' : 's'} registered in total.</p>
       <div class="btns">${sub ? '<button class="btn sec" id="pushoff">Turn off on this device</button><button class="btn sec" id="pushtest">Send a test</button>' : '<button class="btn" id="pushon">Turn on push on this device</button>'}</div></div>`;
+  $('#refresh-alerts').onclick = async () => { const b = $('#refresh-alerts'); b.disabled = true; try { await alertsPage(); } catch (e) { toast(e.message, true); } finally { const again = $('#refresh-alerts'); if (again) again.disabled = false; } };
   $('#readall').onclick = async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); alertsUnread = 0; await alertsPage(); };
   app.querySelectorAll('[data-read]').forEach((a) => a.addEventListener('click', () => { api('/alerts/read', { method: 'POST', body: { id: Number(a.dataset.read) } }).catch(() => {}); }));
   $('#apf').onsubmit = async (ev) => {
