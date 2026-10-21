@@ -41,7 +41,7 @@ const avatar = (b, cls = '', eager = false) => b.photo_url ? `<img class="avatar
 const cav = (c, cls = '') => (window.Account ? Account.av(c, cls) : '');
 
 const gcache = new Map(); // tiny GET cache: public, slow-changing data only (perceived speed when navigating back and forth)
-const CACHEABLE = /^\/(config|barbers)$/;   // NOT /barbers/:id - it carries per-customer plan/credit balances
+const CACHEABLE = /^\/barbers$/; // Feature flags must be fetched fresh after admin changes.   // NOT /barbers/:id - it carries per-customer plan/credit balances
 async function api(path, opts = {}) {
   const isGet = (opts.method || 'GET') === 'GET';
   if (isGet && CACHEABLE.test(path)) {
