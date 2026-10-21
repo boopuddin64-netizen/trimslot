@@ -421,7 +421,7 @@ export function createApp(db: Db) {
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
+      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: st.feature_online_payments && (!config.requirePayout || !!b.paystack_subaccount), maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
   };
   api.get('/barbers/:id', wrap(async (req, res) => {
     const id = Number(req.params.id);
