@@ -73,7 +73,7 @@ export const settingsPatchSchema = z.object({
   credit_on_missed_session: z.boolean(),
   credit_on_early_cancel_prepaid: z.boolean(),   // deprecated and ignored: an in-time cancellation of a prepaid booking is always a (pending) refund, never a credit
   plan_refund_policy: z.enum(['NONE', 'MANUAL']),
-  maintenance_mode: z.boolean(), maintenance_message: z.string().trim().min(3).max(200), feature_online_payments: z.boolean(),
+  maintenance_mode: z.boolean(), maintenance_message: z.string().trim().max(200), feature_online_payments: z.boolean(),
   feature_plans: z.boolean(), feature_credits: z.boolean(), feature_pay_on_arrival: z.boolean(), commission_enabled: z.boolean(),
   commission_factor: z.coerce.number().min(0).max(1), min_barber_payout_percent: z.coerce.number().int().min(0).max(100),
   ledger_max_debt_naira: z.coerce.number().min(0).max(100_000_000), ledger_max_age_days: z.coerce.number().int().min(0).max(3650),
@@ -97,6 +97,7 @@ export async function updateSettings(c: Conn, patch: unknown) {
   const parsed = settingsPatchSchema.safeParse(patch);
   if (!parsed.success) throw badRequest(parsed.error.issues.map((i) => `${i.path.join('.') || 'settings'}: ${i.message}`).join('; '));
   const p = parsed.data; const cur = settingsView(await getSettings(c)); const next: any = { ...cur, ...p };
+  if (next.maintenance_mode && String(next.maintenance_message || '').trim().length < 3) throw badRequest('Add a maintenance message of at least 3 characters before turning maintenance mode on.');
   // Document versions are server-managed. Ignore manual version edits and bump only when relevant policy settings actually change.
   const changedAny = (keys: string[]) => keys.some((k) => Object.prototype.hasOwnProperty.call(p, k) && String((p as any)[k]) !== String((cur as any)[k]));
   const bump = (version: unknown) => {

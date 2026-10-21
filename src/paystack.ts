@@ -272,9 +272,9 @@ export async function processReference(db: Db, reference: string, o: { force?: b
       else await applyNettingForPayment(t, pay.id);
       return r;
     }
-    const o = await applyVerifiedPayment(t, pay.booking_id, 'PAYSTACK', reference);
-    if (o === 'confirmed') await applyNettingForPayment(t, pay.id);
-    return o;
+    const bookingOutcome = await applyVerifiedPayment(t, pay.booking_id, 'PAYSTACK', reference);
+    if (bookingOutcome === 'confirmed') await applyNettingForPayment(t, pay.id);
+    return bookingOutcome;
   });
   if (outcome === null) {
     const current = await db.maybeOne<any>('SELECT * FROM payments WHERE reference=$1', [reference]);

@@ -314,11 +314,11 @@ export function createApp(db: Db) {
   /* ---------- meta ---------- */
   /** Published policy numbers for the legal pages (cancel lock, credit expiry, fee, ...). Public and cacheable for a minute. */
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
-  api.get('/config', wrap(async (_req, res) => res.json({
+  api.get('/config', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
     cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: (await getSettings(db)).feature_plans, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { online_payments: st.feature_online_payments, plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
-  })));
+  }); }));
 
   /* ---------- auth ---------- */
   api.post('/auth/signup', limits.signup, wrap(async (req, res) => {
@@ -421,7 +421,7 @@ export function createApp(db: Db) {
       if (st.feature_waitlist) extras.waitlist = await db.many(`SELECT id, date, status FROM waitlist WHERE customer_id=$1 AND barber_id=$2 AND status IN ('WAITING','NOTIFIED') AND date >= $3`, [req.user.id, b.id, lagosDate()]);
     }
     return { ...extras, barber: barberCard(b), queue: qn, services, schedule: schedule.map(fmtScheduleRow), notices: await publicNotices(db, b.id), plans: st.feature_plans ? plans : [], my: st.feature_plans && st.feature_credits ? ent : { plans: st.feature_plans ? ent.plans : [], credits: st.feature_credits ? ent.credits : [] }, plan_rules: limitsOf(st),
-      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: !config.requirePayout || !!b.paystack_subaccount, maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
+      booking: { paused: !!b.booking_paused || !(await db.maybeOne(`SELECT 1 FROM barbers x WHERE x.id=$1 AND ${barberEmailReadySql('x')}`, [b.id])), online_payments: st.feature_online_payments && (!config.requirePayout || !!b.paystack_subaccount), maintenance: st.maintenance_mode, pay_on_arrival: st.feature_pay_on_arrival && !lb.blocked, credits: st.feature_credits, plans: st.feature_plans } };
   };
   api.get('/barbers/:id', wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -469,7 +469,16 @@ export function createApp(db: Db) {
   api.get('/bookings/:id', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await ownBooking(req)) })));
   api.post('/bookings/:id/pay', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
+    // Enforce the platform switch on the server; hiding the button is not a security boundary.
+    const settings = await getSettings(db);
+    if (!settings.feature_online_payments) {
+      throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily disabled. Choose Pay on arrival if it is available. Your booking has not been charged.');
+    }
+    if (b.payment_option !== 'ONLINE') {
+      throw conflict('PAYMENT_METHOD_MISMATCH', 'This booking is not set up for online payment. Refresh your booking and try again.');
+    }
     const u = await db.one('SELECT email FROM users WHERE id=$1', [req.user!.id]);
+    res.setHeader('Cache-Control', 'no-store');
     res.json(await initializePayment(db, b.id, u.email));
   }));
   // Customer asks us to (re)check payment. The server verifies with the gateway; client claims are ignored.
@@ -501,7 +510,10 @@ export function createApp(db: Db) {
   /* ---------- customer: plans & credits (customers only browse, buy and use) ---------- */
   api.get('/me/wallet', cust, wrap(async (req, res) => res.json(await customerWallet(db, req.user!.id))));
   api.post('/plans/:id/buy', limits.payment, cust, wrap(async (req, res) => {
+    const settings = await getSettings(db);
+    if (!settings.feature_online_payments) throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily disabled. Your plan has not been charged.');
     const u = await db.one('SELECT email FROM users WHERE id=$1', [req.user!.id]);
+    res.setHeader('Cache-Control', 'no-store');
     res.status(201).json(await initializePlanPurchase(db, req.user!.id, Number(req.params.id) || 0, u.email));
   }));
   // Re-check a plan purchase with the gateway (server-side verification; client claims are ignored)
