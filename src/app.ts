@@ -299,7 +299,24 @@ export function createApp(db: Db) {
     next();
   };
   api.get('/admin/settings', adminGuard, wrap(async (_req, res) => res.json({ settings: settingsView(await getSettings(db)) })));
-  api.put('/admin/settings', adminGuard, wrap(async (req, res) => res.json({ settings: await db.tx((t) => updateSettings(t, req.body)) })));
+  api.put('/admin/settings', adminGuard, wrap(async (req, res) => {
+    try {
+      const settings = await db.tx((t) => updateSettings(t, req.body));
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ settings });
+    } catch (err: any) {
+      // Keep the API response safe for admins while recording the underlying database/validation failure.
+      logger.error('admin_settings_update_failed', {
+        rid: (req as any).rid,
+        path: req.path,
+        code: err?.code,
+        constraint: err?.constraint,
+        column: err?.column,
+        message: String(err?.message || err).slice(0, 300),
+      });
+      throw err;
+    }
+  }));
   registerAdmin(api, db, adminGuard, wrap);
   registerAdminPower(api, db, adminGuard, wrap);
   registerAdmin3(api, db, adminGuard, wrap);
