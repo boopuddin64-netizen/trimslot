@@ -427,7 +427,7 @@ async function bookWizard(barberId) {
       } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
     } else {
       const cr = creditFor(), pls = plansFor(), pl = planFor();
-      const onlineOk = bk.online_payments !== false;
+      const onlineOk = bk.online_payments === true;
       const opts = (onlineOk ? ['ONLINE'] : []).concat(bk.pay_on_arrival ? ['ON_ARRIVAL'] : [], pls.length ? ['PLAN'] : [], cr ? ['CREDIT'] : []);
       if (!w.payTouched) w.pay = cr ? 'CREDIT' : pls.length === 1 ? 'PLAN' : bk.pay_on_arrival ? 'ON_ARRIVAL' : onlineOk ? 'ONLINE' : null;   // credit / plan session are auto-applied by default
       if (!opts.includes(w.pay)) w.pay = opts[0];
