@@ -135,7 +135,7 @@ async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; b
   const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
   assertPayoutReady(barber);
   const subaccount: string | null = barber.paystack_subaccount || null;
-  const { fee, netted, charge } = await planCheckoutSplit(db, barber, bd);
+  const { fee, netted } = await planCheckoutSplit(db, barber, bd);
   let authUrl: string;
   let provider: 'PAYSTACK' | 'MOCK';
   if (config.mockMode) {
@@ -145,11 +145,17 @@ async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; b
     provider = 'PAYSTACK';
     const payload: any = { email: o.email, amount, currency: 'NGN', reference, callback_url: `${config.appBaseUrl}/api/payments/callback`, metadata: o.metadata };
     if (subaccount) {
-      // Paystack splits NOTHING by itself: we tell it exactly how much stays with the platform account (everything except the barber's payout).
-      // bearer 'account' = the platform account pays Paystack's fee out of what it keeps; that is the fee the three shares were calculated for.
-      payload.subaccount = subaccount;
-      payload.bearer = 'account';
-      payload.transaction_charge = charge;
+      // Dynamic flat split: the barber receives the snapshotted payout after their Paystack-fee share,
+      // the separate TrimSlot platform charge, and any approved ledger netting.
+      // bearer_type 'all' divides Paystack's actual processing fee equally between the main account
+      // (TrimSlot) and the barber subaccount. The customer's third is collected in booking_fee_kobo.
+      // Do not also send transaction_charge/bearer: those are the single-subaccount API fields and
+      // would override/conflict with the multi-split fee allocation.
+      payload.split = {
+        type: 'flat',
+        bearer_type: 'all',
+        subaccounts: [{ subaccount, share: Math.max(0, bd.payout_kobo - netted) }],
+      };
     }
     const json = await paystackFetch('/transaction/initialize', { method: 'POST', body: JSON.stringify(payload) });
     authUrl = json.data.authorization_url;
