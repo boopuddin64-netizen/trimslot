@@ -135,7 +135,7 @@ async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; b
   const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
   assertPayoutReady(barber);
   const subaccount: string | null = barber.paystack_subaccount || null;
-  const { fee, netted, charge } = await planCheckoutSplit(db, barber, bd);
+  const { fee, netted } = await planCheckoutSplit(db, barber, bd);
   let authUrl: string;
   let provider: 'PAYSTACK' | 'MOCK';
   if (config.mockMode) {
