@@ -171,11 +171,56 @@ async function addNumbersCard() {
     <div class="formgrid">${VERS.map(([k, l]) => `<div><label>${esc(l)}</label><input name="${k}" maxlength="30" value="${esc(s[k])}"></div>`).join('')}</div>
     <div class="btns cta"><button class="btn" type="submit">Save published numbers</button><button class="btn sec" type="button" id="runret">Run data clean-up now</button></div></form></div>`;
   const host = app.querySelector('.card:last-of-type'); (host || app).insertAdjacentHTML(host ? 'afterend' : 'beforeend', html);
-  const prev = await api('/fee-preview').catch(() => null);
-  if (prev) $('#feeprev').innerHTML = `<h3>What the saved numbers mean in Naira (₦)</h3><div class="tblwrap"><table class="tbl"><thead><tr><th>Price</th><th>Customer pays</th><th>Booking fee</th><th>Barber receives</th><th>TrimSlot keeps*</th><th>Pay on arrival charge</th></tr></thead><tbody>${prev.rows.map((r) => `<tr><td>${naira(r.price_kobo)}</td><td>${naira(r.total_kobo)}</td><td>${naira(r.booking_fee_kobo)}</td><td>${naira(r.payout_kobo)}</td><td>${naira(r.platform_net_kobo)}</td><td>${naira(r.cash)}</td></tr>`).join('')}</tbody></table></div><small class="muted">*After Paystack takes its fee (worked out from the rate above). Pay now only.</small>`;
+  // Live calculator based on the unsaved values currently entered in this admin form.
+  const renderLivePreview = () => {
+    const el = $('#nf').elements;
+    const val = (key) => Number(el[key]?.value ?? 0);
+    const kobo = (n) => Math.round(n * 100);
+    const processorFee = (amount) => {
+      if (amount <= 0) return 0;
+      const base = amount * val('ps_percent') / 100 + (amount >= kobo(val('ps_flat_waived_below_naira')) ? kobo(val('ps_flat_naira')) : 0);
+      return Math.max(0, Math.round(Math.min(base, kobo(val('ps_cap_naira'))) * (1 + val('ps_vat_percent') / 100)));
+    };
+    const platformCharge = (price) => Math.max(0, Math.min(price,
+      Math.max(kobo(val('charge_min_naira')), Math.round(price * val('charge_percent') / 100) + kobo(val('charge_flat_naira')))));
+    const breakdown = (price) => {
+      const customerShare = val('fee_share_customer_pct') / 100;
+      const barberShare = val('fee_share_barber_pct') / 100;
+      let total = price, fee = processorFee(total), customerPart = Math.round(fee * customerShare);
+      for (let i = 0; i < 8; i++) {
+        const next = price + customerPart;
+        if (next === total) break;
+        total = next; fee = processorFee(total); customerPart = Math.round(fee * customerShare);
+      }
+      total = price + customerPart; fee = processorFee(total);
+      const bookingFee = Math.min(customerPart, fee);
+      const barberFee = Math.min(Math.round(fee * barberShare), fee - bookingFee);
+      const charge = Math.min(platformCharge(price), Math.max(0, price - barberFee));
+      return { total, fee, bookingFee, barberFee, payout: Math.max(0, price - barberFee - charge),
+        net: bookingFee + barberFee + charge - fee, cash: platformCharge(price) };
+    };
+    const shareTotal = val('fee_share_customer_pct') + val('fee_share_barber_pct') + val('fee_share_platform_pct');
+    const validShares = Math.abs(shareTotal - 100) < 0.001;
+    const prices = [1500, 2500, 5000, 10000];
+    $('#feeprev').innerHTML = `<h3>Live profit calculator (₦)</h3>
+      <p class="muted small">Updates as you edit these settings; changes are not saved until you press Save. Paystack fees are estimates until the payment is verified.</p>
+      <p class="small ${validShares ? 'muted' : 'err'}">Fee shares total: ${shareTotal.toFixed(4)}% ${validShares ? '— valid' : '— must equal 100% before saving'}.</p>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>Service price</th><th>Customer pays</th><th>Estimated Paystack fee</th><th>Customer booking fee</th><th>Barber fee share</th><th>TrimSlot net*</th><th>Barber receives</th><th>Pay-on-arrival charge</th></tr></thead><tbody>
+      ${prices.map((n) => { const r = breakdown(kobo(n)); return `<tr><td>${naira(kobo(n))}</td><td>${naira(r.total)}</td><td>${naira(r.fee)}</td><td>${naira(r.bookingFee)}</td><td>${naira(r.barberFee)}</td><td>${naira(r.net)}</td><td>${naira(r.payout)}</td><td>${naira(r.cash)}</td></tr>`; }).join('')}
+      </tbody></table></div><small class="muted">*Estimated online net after the Paystack processing fee. Pay-on-arrival charge is shown separately; no gateway fee is assumed for cash bookings.</small>`;
+  };
+  renderLivePreview();
   // the three shares must add up: the platform share follows the other two
   const fr = $('#nf').elements; const sync = () => { fr.fee_share_platform_pct.value = String(Math.round((100 - Number(fr.fee_share_customer_pct.value) - Number(fr.fee_share_barber_pct.value)) * 10000) / 10000); };
   fr.fee_share_customer_pct.addEventListener('input', sync); fr.fee_share_barber_pct.addEventListener('input', sync);
+  const liveFeeFields = ['fee_share_customer_pct', 'fee_share_barber_pct', 'fee_share_platform_pct',
+    'ps_percent', 'ps_flat_naira', 'ps_flat_waived_below_naira', 'ps_cap_naira', 'ps_vat_percent',
+    'charge_percent', 'charge_flat_naira', 'charge_min_naira'];
+  for (const name of liveFeeFields) {
+    const input = fr[name];
+    if (input) input.addEventListener('input', () => { sync(); renderLivePreview(); });
+    if (input) input.addEventListener('change', renderLivePreview);
+  }
   // the old commission factor input and this % input must agree
   const fac = app.querySelector('#cf [name=commission_factor]');
   $('#nf').elements.commission_pct.addEventListener('input', (e) => { if (fac) fac.value = String(Math.round(Number(e.target.value) * 10) / 1000); });
