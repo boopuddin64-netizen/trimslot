@@ -246,7 +246,13 @@ function collapsify(form) {
   for (const el of kids) {
     if (el.tagName === 'H2' && first && form.id === 'nf') { first = false; continue; }   // the card title stays a heading
     if (el.tagName === 'H2') { first = false; cur = mk(el.textContent.trim(), el); el.remove(); continue; }
-    if (el.id === 'feeprev') { cur = mk('What the saved numbers mean in Naira (₦)', el); cur.appendChild(el); cur = null; continue; }
+    if (el.id === 'feeprev') {
+      // Keep the live calculator inside the charge settings section, not in a separate collapsed section.
+      const chargeSection = [...form.querySelectorAll('details.sect')].find((d) => d.dataset.sect === 'TrimSlot charge on each booking');
+      if (chargeSection) chargeSection.appendChild(el);
+      else if (cur) cur.appendChild(el);
+      continue;
+    }
     if (el.classList.contains('btns')) { cur = null; continue; }
     if (cur) cur.appendChild(el);
     else if (el.tagName === 'H2') first = false;
