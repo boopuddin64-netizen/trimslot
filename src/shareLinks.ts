@@ -56,7 +56,7 @@ export async function regenerateShareCode(t: Conn, barberId: number, actor: { id
   const row = await t.one<{ shop_name: string }>('SELECT shop_name FROM barbers WHERE id=$1', [barberId]);
   for (let i = 0; i < 12; i++) {
     const code = newShareCode(row.shop_name);
-    const exists = await t.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 AND id<>$2 LIMIT 1', [code, barberId]);
+    const exists = await t.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 AND id<>$2 UNION ALL SELECT 1 FROM barber_share_code_aliases WHERE code=$1 AND barber_id<>$2 LIMIT 1', [code, barberId]);
     if (exists) continue;
     try {
       await t.query('DELETE FROM barber_share_code_aliases WHERE barber_id=$1', [barberId]);
