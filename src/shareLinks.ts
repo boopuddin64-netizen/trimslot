@@ -18,33 +18,61 @@ import * as S from './smart';
 type H = (req: Request, res: Response) => any;
 type U = { id: number; role: string; barberId?: number | null } | undefined;
 
-export const CODE_RE = /^[a-f0-9]{12,32}$/;
-/** 64 random bits: unguessable, and safe to paste in a chat. */
-export const newShareCode = () => crypto.randomBytes(8).toString('hex');
+export const CODE_RE = /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/;
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const shopPrefix = (shopName: string) => {
+  const normalized = shopName.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return (normalized || 'SHP').padEnd(3, 'X').slice(0, 3);
+};
+/** Three stable shop-name characters + four securely generated letters/digits. */
+export const newShareCode = (shopName = 'Shop') => {
+  const prefix = shopPrefix(shopName);
+  let suffix = '';
+  for (let i = 0; i < 4; i++) suffix += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
+  return prefix + suffix;
+};
 
 export async function ensureShareCode(c: Conn, barberId: number): Promise<string> {
-  const r = await c.one<{ share_code: string | null }>('SELECT share_code FROM barbers WHERE id=$1', [barberId]);
-  if (r.share_code) return r.share_code;
-  for (let i = 0; i < 5; i++) {
-    const code = newShareCode();
-    const u = await c.maybeOne<{ share_code: string }>('UPDATE barbers SET share_code=$1 WHERE id=$2 AND share_code IS NULL RETURNING share_code', [code, barberId]);
-    if (u) return u.share_code;
-    const again = await c.one<{ share_code: string | null }>('SELECT share_code FROM barbers WHERE id=$1', [barberId]);
-    if (again.share_code) return again.share_code;
+  const r = await c.one<{ share_code: string | null; shop_name: string }>('SELECT share_code, shop_name FROM barbers WHERE id=$1', [barberId]);
+  if (r.share_code && /^[A-Z0-9]{7}$/.test(r.share_code)) return r.share_code;
+  for (let i = 0; i < 12; i++) {
+    const code = newShareCode(r.shop_name);
+    const exists = await c.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 UNION ALL SELECT 1 FROM barber_share_code_aliases WHERE code=$1 LIMIT 1', [code]);
+    if (exists) continue;
+    try {
+      const u = await c.maybeOne<{ share_code: string }>('UPDATE barbers SET share_code=$1 WHERE id=$2 AND (share_code IS NULL OR share_code !~ \'^[A-Z0-9]{7}$\') RETURNING share_code', [code, barberId]);
+      if (u) return u.share_code;
+      const again = await c.one<{ share_code: string | null }>('SELECT share_code FROM barbers WHERE id=$1', [barberId]);
+      if (again.share_code) return again.share_code;
+    } catch (e: any) {
+      if (e?.code !== '23505') throw e;
+    }
   }
-  throw new Error('could not create a share code');
+  throw new Error('could not create a unique share code');
 }
 
-/** New code; the old link stops working immediately. */
+/** New code; revoke legacy aliases so the old link stops working immediately. */
 export async function regenerateShareCode(t: Conn, barberId: number, actor: { id: number; role: 'barber' | 'admin' }): Promise<string> {
-  const code = newShareCode();
-  await t.query('UPDATE barbers SET share_code=$1, share_code_rotated_at=$2 WHERE id=$3', [code, isoNow(), barberId]);
-  await audit(t, null, actor, 'SHARE_CODE_ROTATED', { barber_id: barberId, note: 'old link no longer works' });
-  return code;
+  const row = await t.one<{ shop_name: string }>('SELECT shop_name FROM barbers WHERE id=$1', [barberId]);
+  for (let i = 0; i < 12; i++) {
+    const code = newShareCode(row.shop_name);
+    const exists = await t.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 AND id<>$2 LIMIT 1', [code, barberId]);
+    if (exists) continue;
+    try {
+      await t.query('DELETE FROM barber_share_code_aliases WHERE barber_id=$1', [barberId]);
+      await t.query('UPDATE barbers SET share_code=$1, share_code_rotated_at=$2 WHERE id=$3', [code, isoNow(), barberId]);
+      await audit(t, null, actor, 'SHARE_CODE_ROTATED', { barber_id: barberId, note: 'old link no longer works' });
+      return code;
+    } catch (e: any) {
+      if (e?.code !== '23505') throw e;
+    }
+  }
+  throw new Error('could not create a unique share code');
 }
 
 export const barberByCode = (c: Conn, code: string) =>
-  CODE_RE.test(code) ? c.maybeOne<any>('SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id WHERE b.share_code=$1 AND b.verified', [code]) : Promise.resolve(undefined);
+  CODE_RE.test(code) ? c.maybeOne<any>(`SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id
+    WHERE b.verified AND (b.share_code=$1 OR b.id=(SELECT a.barber_id FROM barber_share_code_aliases a WHERE a.code=$1))`, [code]) : Promise.resolve(undefined);
 
 /** May this signed-in user see / book this barber? Barbers: only themselves. Customers: added, opened by link, or booked before. */
 export async function canUseBarber(c: Conn, user: U, barberId: number): Promise<boolean> {
