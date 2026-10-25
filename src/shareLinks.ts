@@ -18,7 +18,7 @@ import * as S from './smart';
 type H = (req: Request, res: Response) => any;
 type U = { id: number; role: string; barberId?: number | null } | undefined;
 
-export const CODE_RE = /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/;
+export const CODE_RE = /^[A-Z0-9]{7}$/;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const shopPrefix = (shopName: string) => {
   const normalized = shopName.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -139,7 +139,7 @@ export function barberAccessGuard(db: Db) {
 
 /** The link a customer who can use this barber may pass on. Only for barbers the guard already let the customer see. */
 export async function shareLinkFor(c: Conn, req: Request, barberId: number, code?: string | null) {
-  const cd = code || await ensureShareCode(c, barberId);
+  const cd = code && CODE_RE.test(code) ? code : await ensureShareCode(c, barberId);
   return { url: absolute(req, `/b/${cd}`), qr_url: `/api/barbers/${barberId}/share/qr.svg?c=${cd.slice(0, 6)}` };
 }
 export async function myBarbersWithLinks(c: Conn, req: Request) {
