@@ -46,7 +46,7 @@ export const config = {
   /** Dedicated key for /admin.html and /api/admin/*. Ignored unless >= 16 chars. It must be separate from CRON_SECRET. */
   get adminKey() { const k = process.env.ADMIN_KEY || ''; return k.length >= 16 ? k : ''; },
   get appBaseUrl() {
-    const v = process.env.APP_BASE_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '') || `http://localhost:${this.port}`;
+    const v = process.env.APP_BASE_URL || (this.isProd ? 'https://www.trimslot.com.ng' : `http://localhost:${this.port}`);
     return v.replace(/\/$/, '');
   },
   get jwtSecret() {
