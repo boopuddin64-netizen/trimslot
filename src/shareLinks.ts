@@ -37,7 +37,7 @@ export async function ensureShareCode(c: Conn, barberId: number): Promise<string
   if (r.share_code && /^[A-Z0-9]{7}$/.test(r.share_code)) return r.share_code;
   for (let i = 0; i < 12; i++) {
     const code = newShareCode(r.shop_name);
-    const exists = await c.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 UNION ALL SELECT 1 FROM barber_share_code_aliases WHERE code=$1 LIMIT 1', [code]);
+    const exists = await c.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 LIMIT 1', [code]);
     if (exists) continue;
     try {
       const u = await c.maybeOne<{ share_code: string }>('UPDATE barbers SET share_code=$1 WHERE id=$2 AND (share_code IS NULL OR share_code !~ \'^[A-Z0-9]{7}$\') RETURNING share_code', [code, barberId]);
@@ -56,10 +56,9 @@ export async function regenerateShareCode(t: Conn, barberId: number, actor: { id
   const row = await t.one<{ shop_name: string }>('SELECT shop_name FROM barbers WHERE id=$1', [barberId]);
   for (let i = 0; i < 12; i++) {
     const code = newShareCode(row.shop_name);
-    const exists = await t.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 AND id<>$2 UNION ALL SELECT 1 FROM barber_share_code_aliases WHERE code=$1 AND barber_id<>$2 LIMIT 1', [code, barberId]);
+    const exists = await t.maybeOne('SELECT 1 FROM barbers WHERE share_code=$1 AND id<>$2 LIMIT 1', [code, barberId]);
     if (exists) continue;
     try {
-      await t.query('DELETE FROM barber_share_code_aliases WHERE barber_id=$1', [barberId]);
       await t.query('UPDATE barbers SET share_code=$1, share_code_rotated_at=$2 WHERE id=$3', [code, isoNow(), barberId]);
       await audit(t, null, actor, 'SHARE_CODE_ROTATED', { barber_id: barberId, note: 'old link no longer works' });
       return code;
@@ -72,7 +71,7 @@ export async function regenerateShareCode(t: Conn, barberId: number, actor: { id
 
 export const barberByCode = (c: Conn, code: string) =>
   CODE_RE.test(code) ? c.maybeOne<any>(`SELECT b.*, u.name FROM barbers b JOIN users u ON u.id=b.user_id
-    WHERE b.verified AND (b.share_code=$1 OR b.id=(SELECT a.barber_id FROM barber_share_code_aliases a WHERE a.code=$1))`, [code]) : Promise.resolve(undefined);
+    WHERE b.verified AND b.share_code=$1`, [code]) : Promise.resolve(undefined);
 
 /** May this signed-in user see / book this barber? Barbers: only themselves. Customers: added, opened by link, or booked before. */
 export async function canUseBarber(c: Conn, user: U, barberId: number): Promise<boolean> {
