@@ -38,8 +38,8 @@ const done = (c: Ctx) => { c.server.close(); resetNow(); };
 test('share codes: random, unguessable, stable until regenerated; regenerating is audited and kills the old code', async () => {
   const c = await boot();
   try {
-    const a = newShareCode(), b = newShareCode();
-    assert.notEqual(a, b); assert.match(a, CODE_RE); assert.ok(a.length >= 16);
+    const a = newShareCode('Shop'), b = newShareCode('Shop');
+    assert.notEqual(a, b); assert.match(a, CODE_RE); assert.equal(a.length, 7); assert.match(a, /^[A-Z0-9]{7}$/); assert.equal(a.slice(0, 3), 'SHO');
     const code = await ensureShareCode(c.db, c.barberId);
     assert.equal(code, DEMO_SHARE_CODE); assert.equal(await ensureShareCode(c.db, c.barberId), code, 'stable');
     await c.db.query('UPDATE barbers SET share_code=NULL WHERE id=$1', [c.barberId]);
