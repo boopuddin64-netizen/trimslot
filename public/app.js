@@ -198,7 +198,7 @@ async function route() {
     if (!parts.length) return role === 'barber' ? go('#/today') : role === 'customer' ? customerHome() : landing();
     if (parts[0] === 'login') return authPage('login');
     if (parts[0] === 'signup') return authPage('signup', q.get('role'));
-    if (parts[0] === 'b' && /^[a-f0-9]{12,32}$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
+    if (parts[0] === 'b' && /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
     if (parts[0] === 'verify-email') { if (!emailCheckOn()) { const nx = q.get('next'); return go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup|verify-email)/.test(nx) ? nx : '#/'); } return verifyEmail(q.get('next')); }
@@ -540,12 +540,13 @@ function openShareSheet(b) {
 
 /* ---------- barber: profile hub ---------- */
 async function barberProfile() {
-  const [r, po] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null)]);
+  const [r, po, shr] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null), api('/barber/share').catch(() => null)]);
   const p = r.profile, u = state.user;
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
   app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg', true)}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
+    ${shr ? `<h2>My share link</h2>${shareCardHtml({ id: 'profile-sharecard', qr: shr.qr_url, name: p.shop_name, title: 'Your current shop link', hint: 'Share this link so customers can find and book your shop. Old links no longer work.', url: shr.url })}` : `<div class="card small muted">Your share link is temporarily unavailable. Open Shop settings to retry.</div>`}
     <h2>My shop</h2>
-    <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Share your shop<span class="sub">Your link and QR code</span></span><span class="end">${ic('right', 'sm')}</span></a>
+    <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Share your shop<span class="sub">Manage your link and QR code</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
       <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
@@ -559,6 +560,7 @@ async function barberProfile() {
     <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
     <div class="list">${signOutRow()}</div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
+  if (shr) wireShareCard($('#profile-sharecard'), shr.url, p.shop_name);
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
 }
 
