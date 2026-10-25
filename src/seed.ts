@@ -10,7 +10,7 @@ export const DEMO = {
   ],
 };
 
-export const DEMO_SHARE_CODE = 'de30c0de5a1e0001';
+export const DEMO_SHARE_CODE = 'MIK7K2M';
 export async function seed(db: Db, rounds = 10) {
   const now = isoNow();
   return db.tx(async (t) => {
