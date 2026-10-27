@@ -135,6 +135,31 @@ test('plan fit: a plan session only books a service the plan includes (also when
   } finally { resetNow(); }
 });
 
+test('editing a plan keeps existing customer purchases on their original snapshot and reopens approval', async () => {
+  const c = await setup();
+  try {
+    const bought = await buy(c, c.customerIds[0], { name: 'Original pack', price_naira: 12000, sessions: 4, validity_days: 30 });
+    const before = await c.db.one<any>('SELECT plan_name, price_kobo, sessions_total, validity_days, service_ids FROM plan_purchases WHERE id=$1', [bought.purchaseId]);
+    await c.db.query('UPDATE platform_settings SET plan_approval_required=TRUE WHERE id=1');
+
+    await c.db.tx((t) => savePlan(t, c.barberId, bought.planId, planInput([c.serviceIds[0]], { name: 'Updated pack', price_naira: 16000, sessions: 2, validity_days: 45 })));
+
+    const current = await c.db.one<any>('SELECT name, price_kobo, sessions, validity_days, approval_status, active FROM plans WHERE id=$1', [bought.planId]);
+    const after = await c.db.one<any>('SELECT plan_name, price_kobo, sessions_total, validity_days, service_ids FROM plan_purchases WHERE id=$1', [bought.purchaseId]);
+    assert.equal(current.name, 'Updated pack');
+    assert.equal(current.price_kobo, 1_600_000);
+    assert.equal(current.sessions, 2);
+    assert.equal(current.validity_days, 45);
+    assert.equal(current.approval_status, 'PENDING');
+    assert.equal(current.active, true);
+    assert.equal(after.plan_name, before.plan_name);
+    assert.equal(after.price_kobo, before.price_kobo);
+    assert.equal(after.sessions_total, before.sessions_total);
+    assert.equal(after.validity_days, before.validity_days);
+    assert.deepEqual(after.service_ids, before.service_ids);
+  } finally { resetNow(); }
+});
+
 test('two bookings racing for the LAST plan session: exactly one wins (no double spend)', async () => {
   const c = await setup();
   try {

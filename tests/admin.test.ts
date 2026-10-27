@@ -290,6 +290,19 @@ test('catalog controls keep safe defaults, gate new plans until approval, and ne
     const publicPlans = (await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans;
     assert.equal(publicPlans.length, 1); assert.equal(publicPlans[0].id, planId);
 
+    const rejectedAgain = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'REJECTED', reason: 'Pause this offer while the barber updates the details.' } });
+    assert.equal(rejectedAgain.status, 200); assert.equal(rejectedAgain.body.approval_status, 'REJECTED');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'an approved plan can be rejected later and is no longer public');
+
+    const approvedAgain = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'APPROVED' } });
+    assert.equal(approvedAgain.status, 200); assert.equal(approvedAgain.body.approval_status, 'APPROVED');
+    const hidden = await s.j(`/api/admin/plans/${planId}/visibility`, { method: 'POST', headers: s.A, body: { active: false, reason: 'Pause new sales while reviewing demand.' } });
+    assert.equal(hidden.status, 200); assert.equal(hidden.body.active, false);
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'hiding stops new sales without changing approval');
+    const restored = await s.j(`/api/admin/plans/${planId}/visibility`, { method: 'POST', headers: s.A, body: { active: true, reason: 'Resume sales.' } });
+    assert.equal(restored.status, 200); assert.equal(restored.body.active, true);
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 1, 'restoring an approved plan makes it public again');
+
     await s.db.query('UPDATE platform_settings SET catalog_limits_enabled=TRUE, default_plan_limit=1 WHERE id=1');
     await assert.rejects(s.db.tx((t: any) => savePlan(t, s.barberId, null, planSchema.parse({ name: 'Second plan', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [s.serviceIds[0]] }))), (e: any) => e.code === 'PLAN_LIMIT_REACHED');
     const actions = (await s.j('/api/admin/audit', { headers: s.A })).body.entries.map((e: any) => e.action);

@@ -200,7 +200,7 @@ export async function savePlan(c: Conn, barberId: number, planId: number | null,
   if (id == null) id = (await c.one<{ id: number }>('INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, approval_status, approved_at, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [barberId, d.name, kobo, d.sessions, d.validity_days, approvalStatus, approvedAt, isoNow()])).id;
   else {
     // Existing purchases keep their own snapshot: editing only affects future buyers.
-    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4, needs_review=FALSE, approval_status=$5, approval_reason=NULL, approved_at=$6 WHERE id=$7 AND barber_id=$8 AND active', [d.name, kobo, d.sessions, d.validity_days, approvalStatus, approvedAt, id, barberId]);
+    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4, needs_review=FALSE, approval_status=$5, approval_reason=NULL, approved_at=$6 WHERE id=$7 AND barber_id=$8 AND deleted_at IS NULL', [d.name, kobo, d.sessions, d.validity_days, approvalStatus, approvedAt, id, barberId]);
     if (!r.rowCount) throw notFound('We could not find that plan.');
     await c.query('DELETE FROM plan_services WHERE plan_id=$1', [id]);
   }
@@ -211,7 +211,9 @@ export async function savePlan(c: Conn, barberId: number, planId: number | null,
 /** Barber dashboard: plans + who bought them (paid only - pending checkouts are invisible) + outstanding credits. */
 export async function barberPlanOverview(c: Conn, barberId: number) {
   const s = await getSettings(c);
-  const plans = await c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active ORDER BY p.id`, [barberId]);
+  // Keep stopped/hidden plans visible to the barber so the dashboard explains why a plan is not live.
+  // Existing purchases still appear below and continue to use their own snapshots.
+  const plans = await c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.deleted_at IS NULL ORDER BY p.active DESC, p.id`, [barberId]);
   const purchases = await c.many(`SELECT pp.id, pp.plan_id, pp.plan_name, pp.price_kobo, pp.sessions_total, pp.sessions_used, pp.paid_at, pp.expires_at, u.id AS customer_id, u.name AS customer_name,
       (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live
     FROM plan_purchases pp JOIN users u ON u.id=pp.customer_id WHERE pp.barber_id=$1 AND pp.status='ACTIVE' ORDER BY pp.paid_at DESC LIMIT 100`, [barberId, isoNow()]);
