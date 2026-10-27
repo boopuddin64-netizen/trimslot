@@ -135,5 +135,12 @@
     "env": {
       "NODEJS_HELPERS": "0"
     }
-  }
+  },
+  "redirects": [
+    {
+      "source": "/b/:code",
+      "destination": "/#/b/:code",
+      "permanent": false
+    }
+  ]
 }
