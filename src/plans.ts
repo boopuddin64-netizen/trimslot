@@ -21,6 +21,7 @@ export interface Settings {
   fee_share_customer_pct: number; fee_share_barber_pct: number; fee_share_platform_pct: number;
   ps_percent: number; ps_flat_kobo: number; ps_flat_waived_below_kobo: number; ps_cap_kobo: number; ps_vat_percent: number;
   charge_percent: number; charge_flat_kobo: number; charge_min_kobo: number;
+  catalog_limits_enabled: boolean; default_service_limit: number; default_plan_limit: number; plan_approval_required: boolean;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
@@ -56,6 +57,7 @@ export const settingsView = (s: Settings) => ({
   fee_share_customer_pct: s.fee_share_customer_pct, fee_share_barber_pct: s.fee_share_barber_pct, fee_share_platform_pct: s.fee_share_platform_pct,
   ps_percent: s.ps_percent, ps_flat_naira: s.ps_flat_kobo / 100, ps_flat_waived_below_naira: s.ps_flat_waived_below_kobo / 100, ps_cap_naira: s.ps_cap_kobo / 100, ps_vat_percent: s.ps_vat_percent,
   charge_percent: s.charge_percent, charge_flat_naira: s.charge_flat_kobo / 100, charge_min_naira: s.charge_min_kobo / 100,
+  catalog_limits_enabled: s.catalog_limits_enabled, default_service_limit: s.default_service_limit, default_plan_limit: s.default_plan_limit, plan_approval_required: s.plan_approval_required,
 });
 export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions',
   'credit_expiry_days', 'credit_on_missed_session', 'plan_refund_policy',
@@ -63,7 +65,8 @@ export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'ma
   'feature_push', 'feature_favourites', 'feature_rebook', 'feature_reminders', 'feature_waitlist', 'feature_reviews', 'feature_barber_notes', 'feature_quick_actions', 'feature_reliability', 'feature_daily_summary', 'feature_booking_note', 'feature_loyalty', 'loyalty_every_n', 'loyalty_credit_naira',
   'cancel_cutoff_min', 'payment_hold_min', 'refund_auto_approve_hours', 'liability_cap_naira', 'retention_events_days', 'retention_bad_events_days', 'retention_notifications_days', 'retention_push_stale_days',
   'retention_deleted_days', 'retention_checkout_days', 'retention_rate_limit_hours', 'retention_admin_alerts_days', 'terms_version', 'privacy_version', 'barber_agreement_version',
-  'fee_share_customer_pct', 'fee_share_barber_pct', 'fee_share_platform_pct', 'ps_percent', 'ps_flat_naira', 'ps_flat_waived_below_naira', 'ps_cap_naira', 'ps_vat_percent', 'charge_percent', 'charge_flat_naira', 'charge_min_naira'] as const;
+  'fee_share_customer_pct', 'fee_share_barber_pct', 'fee_share_platform_pct', 'ps_percent', 'ps_flat_naira', 'ps_flat_waived_below_naira', 'ps_cap_naira', 'ps_vat_percent', 'charge_percent', 'charge_flat_naira', 'charge_min_naira',
+  'catalog_limits_enabled', 'default_service_limit', 'default_plan_limit', 'plan_approval_required'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
@@ -89,6 +92,7 @@ export const settingsPatchSchema = z.object({
   fee_share_customer_pct: z.coerce.number().min(0).max(100), fee_share_barber_pct: z.coerce.number().min(0).max(100), fee_share_platform_pct: z.coerce.number().min(0).max(100),
   ps_percent: z.coerce.number().min(0).max(20), ps_flat_naira: z.coerce.number().min(0).max(100_000), ps_flat_waived_below_naira: z.coerce.number().min(0).max(10_000_000), ps_cap_naira: z.coerce.number().min(0).max(10_000_000), ps_vat_percent: z.coerce.number().min(0).max(50),
   charge_percent: z.coerce.number().min(0).max(50), charge_flat_naira: z.coerce.number().min(0).max(1_000_000), charge_min_naira: z.coerce.number().min(0).max(1_000_000),
+  catalog_limits_enabled: z.boolean(), default_service_limit: z.coerce.number().int().min(1).max(100), default_plan_limit: z.coerce.number().int().min(1).max(100), plan_approval_required: z.boolean(),
 }).partial().strict();
 
 const FEATS = ['push', 'favourites', 'rebook', 'reminders', 'waitlist', 'reviews', 'barber_notes', 'quick_actions', 'reliability', 'daily_summary', 'booking_note', 'loyalty'] as const;
@@ -105,7 +109,7 @@ export async function updateSettings(c: Conn, patch: unknown) {
     if (match) return `${match[1]}.${match[2]}.${Number(match[3]) + 1}`;
     return `${Math.max(1, Number.parseInt(String(version), 10) || 1) + 1}`;
   };
-  const termsPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','cancel_cutoff_min','payment_hold_min','refund_auto_approve_hours','liability_cap_naira','feature_online_payments','feature_plans','feature_credits','feature_pay_on_arrival','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira','commission_enabled','commission_factor','min_barber_payout_percent'];
+  const termsPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','cancel_cutoff_min','payment_hold_min','refund_auto_approve_hours','liability_cap_naira','feature_online_payments','feature_plans','feature_credits','feature_pay_on_arrival','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira','commission_enabled','commission_factor','min_barber_payout_percent','plan_approval_required'];
   const privacyPolicyKeys = ['retention_events_days','retention_bad_events_days','retention_notifications_days','retention_push_stale_days','retention_deleted_days','retention_checkout_days','retention_rate_limit_hours','retention_admin_alerts_days','feature_push','feature_reminders'];
   const barberPolicyKeys = ['min_plan_price_naira','max_plan_price_naira','max_plan_validity_days','max_plan_sessions','credit_expiry_days','credit_on_missed_session','plan_refund_policy','commission_enabled','commission_factor','min_barber_payout_percent','fee_share_customer_pct','fee_share_barber_pct','fee_share_platform_pct','ps_percent','ps_flat_naira','ps_flat_waived_below_naira','ps_cap_naira','ps_vat_percent','charge_percent','charge_flat_naira','charge_min_naira'];
   next.terms_version = changedAny(termsPolicyKeys) ? bump(cur.terms_version) : cur.terms_version;
@@ -117,11 +121,11 @@ export async function updateSettings(c: Conn, patch: unknown) {
   await c.query(`UPDATE platform_settings SET min_plan_price_kobo=$1, max_plan_price_kobo=$2, max_plan_validity_days=$3, max_plan_sessions=$4, platform_fee_percent=$5,
       platform_fee_kobo=$6, credit_expiry_days=$7, credit_on_missed_session=$8, plan_refund_policy=$9, updated_at=$10,
       maintenance_mode=$11, maintenance_message=$12, feature_online_payments=$13, feature_plans=$14, feature_credits=$15, feature_pay_on_arrival=$16, commission_enabled=$17, commission_factor=$18,
-      min_barber_payout_percent=$19, ledger_max_debt_kobo=$20, ledger_max_age_days=$21 WHERE id=1`,
+      min_barber_payout_percent=$19, ledger_max_debt_kobo=$20, ledger_max_age_days=$21, catalog_limits_enabled=$22, default_service_limit=$23, default_plan_limit=$24, plan_approval_required=$25 WHERE id=1`,
     [Math.round(next.min_plan_price_naira * 100), Math.round(next.max_plan_price_naira * 100), next.max_plan_validity_days, next.max_plan_sessions, next.platform_fee_percent,
       Math.round(next.platform_fee_naira * 100), next.credit_expiry_days, next.credit_on_missed_session, next.plan_refund_policy, isoNow(),
       next.maintenance_mode, next.maintenance_message, next.feature_online_payments, next.feature_plans, next.feature_credits, next.feature_pay_on_arrival, next.commission_enabled, next.commission_factor,
-      next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days]);
+      next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days, next.catalog_limits_enabled, next.default_service_limit, next.default_plan_limit, next.plan_approval_required]);
   await c.query(`UPDATE platform_settings SET ${FEATS.map((f, i) => `feature_${f}=$${i + 1}`).join(', ')}, loyalty_every_n=$${FEATS.length + 1}, loyalty_credit_kobo=$${FEATS.length + 2} WHERE id=1`,
     [...FEATS.map((f) => next['feature_' + f]), next.loyalty_every_n, Math.round(next.loyalty_credit_naira * 100)]);
   await c.query(`UPDATE platform_settings SET cancel_cutoff_min=$1, payment_hold_min=$2, refund_auto_approve_hours=$3, liability_cap_kobo=$4, retention_events_days=$5, retention_bad_events_days=$6,
@@ -175,21 +179,28 @@ export async function validatePlanInput(c: Conn, barberId: number, d: z.infer<ty
 }
 export const limitsOf = (s: Settings) => ({
   min_price_kobo: s.min_plan_price_kobo, max_price_kobo: s.max_plan_price_kobo, max_validity_days: s.max_plan_validity_days, max_sessions: s.max_plan_sessions,
-  credit_expiry_days: s.credit_expiry_days, refund_policy: s.plan_refund_policy,
+  credit_expiry_days: s.credit_expiry_days, refund_policy: s.plan_refund_policy, approval_required: s.plan_approval_required,
 });
 
-const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.needs_review,
+const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.needs_review, p.approval_status, p.approval_reason, p.approved_at,
   COALESCE((SELECT array_agg(ps.service_id ORDER BY ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id), '{}') AS service_ids FROM plans p`;
 /** Active plans of one barber (one query: included service ids are aggregated). */
-export const publicPlans = (c: Conn, barberId: number) => c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active ORDER BY p.price_kobo, p.id`, [barberId]);
+export const publicPlans = (c: Conn, barberId: number) => c.many(`${PLAN_SELECT} WHERE p.barber_id=$1 AND p.active AND p.approval_status='APPROVED' ORDER BY p.price_kobo, p.id`, [barberId]);
 
 export async function savePlan(c: Conn, barberId: number, planId: number | null, d: z.infer<typeof planSchema>) {
-  const { kobo, ids } = await validatePlanInput(c, barberId, d);
+  const { kobo, ids, settings } = await validatePlanInput(c, barberId, d);
+  if (settings.catalog_limits_enabled && planId == null) {
+    await c.query('SELECT id FROM barbers WHERE id=$1 FOR UPDATE', [barberId]);
+    const active = (await c.one<{ c: number }>('SELECT COUNT(*)::int c FROM plans WHERE barber_id=$1 AND active', [barberId])).c;
+    if (active >= settings.default_plan_limit) throw new AppError(409, 'PLAN_LIMIT_REACHED', `This barber has reached the ${settings.default_plan_limit}-plan limit.`);
+  }
+  const approvalStatus = settings.plan_approval_required ? 'PENDING' : 'APPROVED';
+  const approvedAt = approvalStatus === 'APPROVED' ? isoNow() : null;
   let id = planId;
-  if (id == null) id = (await c.one<{ id: number }>('INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id', [barberId, d.name, kobo, d.sessions, d.validity_days, isoNow()])).id;
+  if (id == null) id = (await c.one<{ id: number }>('INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days, approval_status, approved_at, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id', [barberId, d.name, kobo, d.sessions, d.validity_days, approvalStatus, approvedAt, isoNow()])).id;
   else {
     // Existing purchases keep their own snapshot: editing only affects future buyers.
-    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4, needs_review=FALSE WHERE id=$5 AND barber_id=$6 AND active', [d.name, kobo, d.sessions, d.validity_days, id, barberId]);
+    const r = await c.query('UPDATE plans SET name=$1, price_kobo=$2, sessions=$3, validity_days=$4, needs_review=FALSE, approval_status=$5, approval_reason=NULL, approved_at=$6 WHERE id=$7 AND barber_id=$8 AND active', [d.name, kobo, d.sessions, d.validity_days, approvalStatus, approvedAt, id, barberId]);
     if (!r.rowCount) throw notFound('We could not find that plan.');
     await c.query('DELETE FROM plan_services WHERE plan_id=$1', [id]);
   }

@@ -206,6 +206,15 @@ body.adm{padding-bottom:16px}
 .bulkbar{box-shadow:none;border:1px solid var(--line2)}
 .sheet,.modal .sheet{box-shadow:none}
 @media (min-width:720px){.tblset .clist{display:none}}
+.catalog-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:4px 0 8px}
+.catalog-control{display:block;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg2);color:var(--ink);text-align:left;font:inherit;cursor:pointer}
+.catalog-control:hover{border-color:var(--line2);background:var(--card)}
+.catalog-control span,.catalog-control small{display:block;color:var(--mut);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.catalog-control b{display:block;margin:2px 0;font-size:14px;white-space:nowrap}
+.catalog-plan{align-items:center}
+.catalog-plan>span:first-child{min-width:0}
+.catalog-plan small{display:block;margin-top:2px;overflow-wrap:anywhere}
+.catalog-plan-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 @media (max-width:719.98px){
   .tblset .tblwrap{display:none}
   .page-h>div>p.muted{display:none}

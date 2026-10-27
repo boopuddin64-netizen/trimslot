@@ -50,6 +50,8 @@ export async function emptyDatabase(): Promise<{ db: Db; name: string }> {
 export async function freshDb(opts: { poolMax?: number } = {}): Promise<{ db: Db; barberId: number; customerIds: number[]; serviceIds: number[]; name: string }> {
   const { db, name } = await newDatabase(opts);
   const { barberId } = await seed(db, 4);
+  // Keep legacy integration scenarios focused on booking/payment behavior; approval-specific tests opt back in explicitly.
+  await db.query('UPDATE platform_settings SET plan_approval_required=FALSE WHERE id=1');
   const customerIds = (await db.many<{ id: number }>(`SELECT id FROM users WHERE role='customer' ORDER BY id`)).map((r) => r.id);
   const serviceIds = (await db.many<{ id: number }>('SELECT id FROM services WHERE barber_id=$1 ORDER BY id', [barberId])).map((r) => r.id);
   return { db, barberId, customerIds, serviceIds, name };

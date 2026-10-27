@@ -64,11 +64,18 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
     if (!b) throw notFound('We could not find that barber.');
     const extra = await db.one<any>('SELECT about, photo_url FROM barbers WHERE id=$1', [id]);
     const services = await db.many('SELECT id, name, price_kobo, duration_min, active FROM services WHERE barber_id=$1 ORDER BY active DESC, price_kobo, id', [id]);
+    const plans = await db.many<any>(`SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.approval_status, p.approval_reason, p.created_at, p.approved_at,
+        COALESCE(array_agg(s.name ORDER BY s.name) FILTER (WHERE s.id IS NOT NULL), '{}') AS service_names
+      FROM plans p LEFT JOIN plan_services ps ON ps.plan_id=p.id LEFT JOIN services s ON s.id=ps.service_id
+      WHERE p.barber_id=$1 AND p.deleted_at IS NULL
+      GROUP BY p.id ORDER BY p.active DESC, p.id DESC`, [id]);
     const schedule = await db.many('SELECT weekday, is_working, start_min, end_min, break_start_min, break_end_min FROM barber_schedule WHERE barber_id=$1 ORDER BY weekday', [id]);
     const uid = (await db.one<any>('SELECT user_id FROM barbers WHERE id=$1', [id])).user_id;
     const history = await db.many(`SELECT id, actor_role, action, details, created_at FROM audit_log
       WHERE booking_id IS NULL AND ((details->>'barber_id') = $1 OR (actor_user_id = $2 AND action IN ('BARBER_SIGNUP','BARBER_RESUBMITTED'))) ORDER BY id DESC LIMIT 30`, [String(id), uid]);
-    res.json({ barber: { ...barberRow(b), about: extra.about, has_photo: !!extra.photo_url }, services, schedule, history, plans: (await db.one<any>('SELECT COUNT(*)::int c FROM plans WHERE barber_id=$1 AND active', [id])).c });
+    const s = await getSettings(db);
+    res.json({ barber: { ...barberRow(b), about: extra.about, has_photo: !!extra.photo_url }, services, schedule, history, plans,
+      catalog: { service_limit: s.default_service_limit, plan_limit: s.default_plan_limit, limits_enabled: s.catalog_limits_enabled, plan_approval_required: s.plan_approval_required } });
   }));
 
   const reasonSchema = (what: string) => z.object({ reason: z.string().trim().min(3, `Write a ${what} (at least 3 letters).`).max(500, 'Keep it under 500 characters.') });
@@ -285,7 +292,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
 
   /* ---------- plans, purchases, credits ---------- */
   api.get('/admin/plans', guard, wrap(async (_req, res) => {
-    const plans = await db.many(`SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, b.shop_name, p.barber_id,
+    const plans = await db.many(`SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.approval_status, p.approval_reason, b.shop_name, p.barber_id,
         (SELECT COUNT(*) FROM plan_purchases pp WHERE pp.plan_id=p.id AND pp.status='ACTIVE')::int AS buyers,
         (SELECT COALESCE(SUM(pp.price_kobo),0) FROM plan_purchases pp WHERE pp.plan_id=p.id AND pp.status='ACTIVE')::bigint AS revenue_kobo
       FROM plans p JOIN barbers b ON b.id=p.barber_id ORDER BY p.id DESC LIMIT 200`);

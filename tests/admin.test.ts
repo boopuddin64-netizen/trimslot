@@ -8,6 +8,8 @@ import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
 import { barberAction, createBooking, customerCancel, getBooking } from '../src/bookingService';
 import { initializePayment, mockMarkPaid, processReference, requestRefund, setGatewayVerifier } from '../src/paystack';
+import { planSchema, savePlan } from '../src/plans';
+import { Db } from '../src/db';
 
 const KEY = 'test-admin-key-0123456789';
 const CRON = 'test-cron-secret-0123456789';
@@ -69,11 +71,11 @@ test('confirm-anyway cannot race a refund claim and revive a payment', async () 
   try {
     const b = await createBooking(s.db, s.customerIds[0], { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '10:00', payment_option: 'ONLINE' });
     const i = await initializePayment(s.db, b.id, null);
-    const before = await s.db.one<any>('SELECT amount_kobo, status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
+    const before = await (s.db as Db).one<{ amount_kobo: number; status: string; refund_status: string; refund_reason: string | null }>('SELECT amount_kobo, status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
     const mismatchedAmount = Number(before.amount_kobo) + 50000;
     setGatewayVerifier(async () => ({ ok: true, status: 'success', amount_kobo: mismatchedAmount, requested_amount_kobo: mismatchedAmount, currency: 'NGN', reference: i.reference }));
     assert.equal((await processReference(s.db, i.reference)).result, 'amount_mismatch');
-    const flagged = await s.db.one<any>('SELECT amount_kobo, status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
+    const flagged = await (s.db as Db).one<{ amount_kobo: number; status: string; refund_status: string; refund_reason: string | null }>('SELECT amount_kobo, status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
     assert.equal(flagged.refund_status, 'NEEDS_REFUND');
     setGatewayVerifier(async () => new Promise((resolve) => { release = resolve; }));
     const pending = s.j('/api/admin/payments/' + i.reference + '/confirm-anyway', { method: 'POST', headers: s.A, body: {} });
@@ -84,7 +86,7 @@ test('confirm-anyway cannot race a refund claim and revive a payment', async () 
     const response = await pending;
     assert.equal(response.status, 200);
     assert.equal(response.body.result, 'amount_mismatch');
-    const after = await s.db.one<any>('SELECT status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
+    const after = await (s.db as Db).one<{ status: string; refund_status: string; refund_reason: string | null }>('SELECT status, refund_status, refund_reason FROM payments WHERE reference=$1', [i.reference]);
     assert.equal(after.status, 'INITIATED', 'must not mark the payment successful after refund is claimed');
     assert.equal(after.refund_status, 'REFUND_REQUESTED');
     assert.equal(after.refund_reason, 'Amount mismatch');
@@ -254,6 +256,44 @@ test('legacy paths still work: CLI-style UPDATE verified keeps review_status in 
     assert.equal((await s.db.one('SELECT review_status FROM barbers WHERE id=$1', [s.barberId])).review_status, 'SUSPENDED');
     await s.db.query('UPDATE barbers SET verified=TRUE WHERE id=$1', [s.barberId]);
     assert.equal((await s.db.one('SELECT review_status FROM barbers WHERE id=$1', [s.barberId])).review_status, 'VERIFIED');
+  } finally { s.server.close(); resetNow(); }
+});
+
+test('catalog controls keep safe defaults, gate new plans until approval, and never alter existing data', async () => {
+  const s = await boot();
+  try {
+    await s.db.query('UPDATE platform_settings SET plan_approval_required=TRUE WHERE id=1');
+    const settings = (await s.j('/api/admin/settings', { headers: s.A })).body.settings;
+    assert.equal(settings.default_service_limit, 5);
+    assert.equal(settings.default_plan_limit, 5);
+    assert.equal(settings.catalog_limits_enabled, false);
+    assert.equal(settings.plan_approval_required, true);
+
+    const detail = (await s.j(`/api/admin/barbers/${s.barberId}`, { headers: s.A })).body;
+    assert.equal(detail.catalog.service_limit, 5);
+    assert.equal(detail.catalog.plan_limit, 5);
+    assert.equal(detail.catalog.limits_enabled, false);
+    assert.equal(detail.catalog.plan_approval_required, true);
+    assert.equal(detail.plans.length, 0);
+
+    const planId = await s.db.tx((t: any) => savePlan(t, s.barberId, null, planSchema.parse({ name: 'Review plan', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [s.serviceIds[0]] })));
+    const pending = (await s.j(`/api/admin/barbers/${s.barberId}`, { headers: s.A })).body.plans.find((p: any) => p.id === planId);
+    assert.equal(pending.approval_status, 'PENDING');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'pending plans are not public');
+
+    const rejected = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'REJECTED', reason: 'Please clarify the included services.' } });
+    assert.equal(rejected.status, 200); assert.equal(rejected.body.approval_status, 'REJECTED');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'rejected plans are not public');
+
+    const approved = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'APPROVED' } });
+    assert.equal(approved.status, 200); assert.equal(approved.body.approval_status, 'APPROVED');
+    const publicPlans = (await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans;
+    assert.equal(publicPlans.length, 1); assert.equal(publicPlans[0].id, planId);
+
+    await s.db.query('UPDATE platform_settings SET catalog_limits_enabled=TRUE, default_plan_limit=1 WHERE id=1');
+    await assert.rejects(s.db.tx((t: any) => savePlan(t, s.barberId, null, planSchema.parse({ name: 'Second plan', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [s.serviceIds[0]] }))), (e: any) => e.code === 'PLAN_LIMIT_REACHED');
+    const actions = (await s.j('/api/admin/audit', { headers: s.A })).body.entries.map((e: any) => e.action);
+    assert.ok(actions.includes('ADMIN_PLAN_REJECTED') && actions.includes('ADMIN_PLAN_APPROVED'));
   } finally { s.server.close(); resetNow(); }
 });
 

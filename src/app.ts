@@ -698,7 +698,15 @@ export function createApp(db: Db) {
   }));
   barberR.post('/services', wrap(async (req, res) => {
     const d = parse(V.serviceSchema, req.body);
-    const r = await db.one<{ id: number }>('INSERT INTO services (barber_id, name, price_kobo, duration_min, active, created_at) VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id', [bid(req), d.name, Math.round(d.price_naira * 100), d.duration_min, isoNow()]);
+    const r = await db.tx(async (t) => {
+      const s = await getSettings(t);
+      if (s.catalog_limits_enabled) {
+        await t.query('SELECT id FROM barbers WHERE id=$1 FOR UPDATE', [bid(req)]);
+        const active = (await t.one<{ c: number }>('SELECT COUNT(*)::int c FROM services WHERE barber_id=$1 AND active', [bid(req)])).c;
+        if (active >= s.default_service_limit) throw new AppError(409, 'SERVICE_LIMIT_REACHED', `This barber has reached the ${s.default_service_limit}-service limit.`);
+      }
+      return t.one<{ id: number }>('INSERT INTO services (barber_id, name, price_kobo, duration_min, active, created_at) VALUES ($1,$2,$3,$4,TRUE,$5) RETURNING id', [bid(req), d.name, Math.round(d.price_naira * 100), d.duration_min, isoNow()]);
+    });
     res.status(201).json({ id: r.id });
   }));
   barberR.put('/services/:id', wrap(async (req, res) => {
