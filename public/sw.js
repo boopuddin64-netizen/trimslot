@@ -81,8 +81,8 @@ self.addEventListener('fetch', (event) => {
   if (req.cache === 'no-store' || req.cache === 'reload') return;       // explicit "go to the network" (hard reload, connection checks)
   const p = url.pathname;
   if (req.mode === 'navigate') {
-    const code = /^\/b\/([a-f0-9]{12,32})$/.exec(p);
-    if (code) { event.respondWith(fetch(req).catch(() => Response.redirect('/#/b/' + code[1], 302))); return; }   // offline: open the app on the same link
+    const code = /^\/b\/([A-Z0-9]{7}|[a-f0-9]{12,32})$/i.exec(p);
+    if (code) { event.respondWith(fetch(req).catch(() => Response.redirect('/#/b/' + (code[1].length === 7 ? code[1].toUpperCase() : code[1].toLowerCase()), 302))); return; }   // offline: open the app on the same link
     if (BYPASS.test(p)) return;
     if (p === '/' || p === '/index.html') { event.respondWith(shellResponse(event)); return; }
     if (LEGAL.test(p)) { event.respondWith(networkFirst(event)); return; }
