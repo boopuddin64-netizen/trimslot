@@ -174,7 +174,7 @@ export async function initializePlanPurchase(db: Db, customerId: number, planId:
     if (st.maintenance_mode) throw new AppError(503, 'MAINTENANCE', st.maintenance_message);
     if (!st.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are off right now.'); }
   const plan = await db.maybeOne<any>(`SELECT p.*, b.paystack_subaccount, b.fee_percent_override, b.fee_flat_kobo_override, COALESCE((SELECT array_agg(ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id),'{}') AS service_ids
-    FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND b.verified`, [planId]);
+    FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.active AND p.approval_status='APPROVED' AND b.verified`, [planId]);
   if (!plan) throw notFound('We could not find that plan.');
   assertPayoutReady(plan);
   if (!plan.service_ids || !plan.service_ids.length) throw new AppError(409, 'PLAN_NO_SERVICES', 'This plan has no services yet, so you cannot buy it. Ask the barber to fix it.');

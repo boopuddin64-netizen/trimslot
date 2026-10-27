@@ -262,6 +262,21 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
       return { changed: true, active: d.active };
     }));
   });
+  post('/plans/:id/approval', async (req, res) => {
+    const id = idOf(req.params.id);
+    const d = parseB(z.object({ status: z.enum(['APPROVED', 'REJECTED']), reason: z.string().trim().max(500).optional() }), req.body);
+    if (d.status === 'REJECTED' && (!d.reason || d.reason.length < 3)) throw badRequest('Write a reason for rejecting this plan (at least 3 letters).');
+    res.json(await db.tx(async (t) => {
+      const p = await t.maybeOne<any>(`SELECT p.id, p.name, p.barber_id, p.approval_status, b.shop_name, b.user_id
+        FROM plans p JOIN barbers b ON b.id=p.barber_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE`, [id]);
+      if (!p) throw notFound('We could not find that plan.');
+      if (p.approval_status === d.status) return { changed: false, approval_status: d.status };
+      await t.query('UPDATE plans SET approval_status=$2, approval_reason=$3, approved_at=$4 WHERE id=$1', [id, d.status, d.status === 'REJECTED' ? d.reason : null, d.status === 'APPROVED' ? isoNow() : null]);
+      await audit(t, null, ADMIN, d.status === 'APPROVED' ? 'ADMIN_PLAN_APPROVED' : 'ADMIN_PLAN_REJECTED', { plan_id: id, barber_id: p.barber_id, shop: p.shop_name, reason: d.reason || null });
+      await notify(t, p.user_id, d.status === 'APPROVED' ? 'PLAN_APPROVED' : 'PLAN_REJECTED', d.status === 'APPROVED' ? 'Plan approved' : 'Plan needs changes', d.status === 'APPROVED' ? `${p.name} is approved and can be shown to customers.` : `${p.name} was not approved: ${d.reason}`);
+      return { changed: true, approval_status: d.status };
+    }));
+  });
   post('/plan-purchases/:id/adjust', async (req, res) => {
     const id = idOf(req.params.id);
     const d = parseB(z.object({ reason: reasonZ.shape.reason, delta: z.coerce.number().int().min(-100).max(100).optional(), extend_days: z.coerce.number().int().min(-365).max(365).optional() }), req.body);

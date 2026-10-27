@@ -157,6 +157,14 @@ async function barberDetail(id, reload) {
   const sched = r.schedule.map((d) => `<div class="kv"><span>${DAYN[d.weekday]}</span><b>${d.is_working ? t12(d.start_min) + ' – ' + t12(d.end_min) + (d.break_start_min != null ? ` <small class="muted">(break ${t12(d.break_start_min)}–${t12(d.break_end_min)})</small>` : '') : '<span class="muted">Closed</span>'}</b></div>`).join('');
   const svc = r.services.length ? r.services.map((x) => `<div class="kv"><span>${esc(x.name)}${x.active ? '' : ' <small class="muted">(hidden)</small>'}</span><b>${naira(x.price_kobo)} · ${x.duration_min} min</b></div>`).join('') : '<div class="muted small">No services yet.</div>';
   const hist = r.history.length ? r.history.map((h) => `<div class="kv"><span>${esc(ACTION_TXT[h.action] || h.action)}${h.details && (h.details.reason || h.details.message || h.details.note) ? `<small class="muted" style="display:block">${esc(h.details.reason || h.details.message || h.details.note)}</small>` : ''}</span><b class="small muted">${stamp(h.created_at)}</b></div>`).join('') : '<div class="muted small">No review history yet.</div>';
+  const catalog = r.catalog || { service_limit: 5, plan_limit: 5, limits_enabled: false, plan_approval_required: true };
+  const activeServices = r.services.filter((x) => x.active).length;
+  const plans = Array.isArray(r.plans) ? r.plans : [];
+  const activePlans = plans.filter((p) => p.active);
+  const pendingPlans = plans.filter((p) => p.active && p.approval_status === 'PENDING');
+  const planStatus = (p) => bd({ PENDING: 'b-amber', APPROVED: 'b-green', REJECTED: 'b-red' }[p.approval_status] || 'b-gray', p.approval_status || 'UNKNOWN');
+  const planRows = plans.length ? plans.map((p) => `<div class="kv catalog-plan"><span><b>${esc(p.name)}</b><small class="muted">${naira(p.price_kobo)} · ${p.sessions} session${p.sessions === 1 ? '' : 's'} · ${p.validity_days} days${p.service_names?.length ? ' · ' + esc(p.service_names.join(', ')) : ''}</small></span><span class="catalog-plan-actions">${planStatus(p)}${p.approval_status === 'PENDING' ? '<button type="button" class="btn sm sec" data-k="plan" data-plan-id="' + p.id + '">Review</button>' : ''}</span></div>`).join('') : '<div class="muted small">No plans yet.</div>';
+  const catalogControls = `<div class="catalog-controls"><button type="button" class="catalog-control" data-k="catalog"><span>Services</span><b>${activeServices} / ${catalog.service_limit}</b><small>${catalog.limits_enabled ? 'Limit on' : 'Limit off'}</small></button><button type="button" class="catalog-control" data-k="catalog"><span>Plans</span><b>${activePlans.length} / ${catalog.plan_limit}</b><small>${catalog.limits_enabled ? 'Limit on' : 'Limit off'}</small></button><button type="button" class="catalog-control" data-k="catalog"><span>Approval</span><b>${catalog.plan_approval_required ? 'Required' : 'Optional'}</b><small>${pendingPlans.length ? pendingPlans.length + ' awaiting' : 'No pending plans'}</small></button></div>`;
   const btns = [];
   if (st === 'VERIFIED') { btns.push(act(b.booking_paused ? 'Resume bookings' : 'Pause bookings', 'sec', 'data-k="pause"')); }
   btns.push(act('Fee', 'sec', 'data-k="fee"')); btns.push(act('Ledger', 'sec', 'data-k="ledger"'));
@@ -172,13 +180,42 @@ async function barberDetail(id, reload) {
     ${b.resubmit_note || b.resubmitted_at ? `<div class="note"><b>Resubmitted ${stamp(b.resubmitted_at)}</b>${esc(b.resubmit_note || 'No note added.')}</div>` : ''}
     <h3>Owner &amp; contact</h3><div class="kv"><span>Name</span><b>${esc(b.name)}</b></div><div class="kv"><span>Email</span><b>${esc(b.email || '—')}</b></div><div class="kv"><span>Phone</span><b>${esc(b.phone || '—')}</b></div><div class="kv"><span>Signed up</span><b>${dshort(b.created_at)}</b></div>
     ${b.about ? `<h3>About</h3><p class="small" style="margin:0;overflow-wrap:anywhere">${esc(b.about)}</p>` : ''}
-    <h3>Activity</h3><div class="kv"><span>Completed / active bookings</span><b>${b.bookings}</b></div><div class="kv"><span>Upcoming bookings</span><b>${b.upcoming}</b></div><div class="kv"><span>Active plans</span><b>${r.plans}</b></div><div class="kv"><span>Photo</span><b>${b.has_photo ? 'Yes' : 'No'}</b></div>
-    <h3>Services (${r.services.length})</h3>${svc}<h3>Opening hours</h3>${sched}<h3>Review history</h3>${hist}
+    <h3>Activity</h3><div class="kv"><span>Completed / active bookings</span><b>${b.bookings}</b></div><div class="kv"><span>Upcoming bookings</span><b>${b.upcoming}</b></div><div class="kv"><span>Active plans</span><b>${activePlans.length}</b></div><div class="kv"><span>Photo</span><b>${b.has_photo ? 'Yes' : 'No'}</b></div>
+    <h3>Plans &amp; services</h3>${catalogControls}${pendingPlans.length ? `<div class="note"><b>Plan approval</b>${pendingPlans.length} plan${pendingPlans.length === 1 ? '' : 's'} waiting for review.</div>` : ''}
+    <h3>Services (${r.services.length})</h3>${svc}<h3>Plans (${plans.length})</h3>${planRows}<h3>Opening hours</h3>${sched}<h3>Review history</h3>${hist}
     <div class="btns end sticky">${btns.join('')}</div>`);
+  const openCatalogControls = () => {
+    const f = modal(`<form class="rform" id="catalog-controls"><h2 style="margin-top:0">Plans &amp; services</h2><p class="muted small">These defaults apply to every barber. Existing services, plans and bookings stay unchanged when you adjust them.</p>
+      <div class="formgrid"><div><label for="service-limit">Services per barber</label><input id="service-limit" name="default_service_limit" type="number" min="1" max="100" step="1" value="${esc(catalog.service_limit)}"></div><div><label for="plan-limit">Plans per barber</label><input id="plan-limit" name="default_plan_limit" type="number" min="1" max="100" step="1" value="${esc(catalog.plan_limit)}"></div></div>
+      <label class="chk"><input name="catalog_limits_enabled" type="checkbox" ${catalog.limits_enabled ? 'checked' : ''}> Enforce these limits for new services and plans</label><p class="small muted" style="margin-top:-8px">Limit enforcement is currently ${catalog.limits_enabled ? 'on' : 'off'}.</p>
+      <label class="chk"><input name="plan_approval_required" type="checkbox" ${catalog.plan_approval_required ? 'checked' : ''}> Require admin approval before new plans go public</label>
+      <div class="err hidden" id="catalog-error"></div><div class="btns end"><button type="button" class="btn sec" data-close>Cancel</button><button class="btn" type="submit">Save controls</button></div></form>`);
+    f.el.querySelector('#catalog-controls').onsubmit = async (ev) => {
+      ev.preventDefault(); const form = ev.currentTarget; const button = form.querySelector('button[type="submit"]'); const error = form.querySelector('#catalog-error'); button.disabled = true; error.classList.add('hidden');
+      try {
+        await api('/settings', { method: 'PUT', body: { default_service_limit: Number(form.elements.default_service_limit.value), default_plan_limit: Number(form.elements.default_plan_limit.value), catalog_limits_enabled: form.elements.catalog_limits_enabled.checked, plan_approval_required: form.elements.plan_approval_required.checked } });
+        f.close(); m.close(); toast('Plan and service controls saved'); await reload();
+      } catch (e) { error.textContent = e.message; error.classList.remove('hidden'); button.disabled = false; }
+    };
+  };
+  const openPlanApproval = (p) => {
+    const review = modal(`<div class="sh-h"><div><h2 style="margin:0">Review plan</h2><div class="muted small">${esc(b.shop_name)}</div></div><button class="btn sm sec" data-close>Close</button></div>
+      <div class="row-badges">${planStatus(p)} ${p.active ? bd('b-green', 'ON SALE') : bd('b-gray', 'HIDDEN')}</div><h3>Plan details</h3>${kvr('Name', esc(p.name))}${kvr('Price', naira(p.price_kobo))}${kvr('Sessions', p.sessions)}${kvr('Validity', p.validity_days + ' days')}${kvr('Services', esc((p.service_names || []).join(', ') || '—'))}${p.approval_reason ? `<div class="note"><b>Previous decision</b>${esc(p.approval_reason)}</div>` : ''}
+      <div class="btns end sticky">${p.approval_status !== 'APPROVED' ? '<button type="button" class="btn" data-plan-action="approve">Approve</button>' : ''}${p.approval_status !== 'REJECTED' ? '<button type="button" class="btn red" data-plan-action="reject">Reject</button>' : ''}</div>`);
+    const applyApproval = async (status, reason) => {
+      const button = review.el.querySelector(`[data-plan-action="${status === 'APPROVED' ? 'approve' : 'reject'}"]`); if (button) button.disabled = true;
+      try { await api(`/plans/${p.id}/approval`, { method: 'POST', body: { status, ...(reason ? { reason } : {}) } }); review.close(); toast(status === 'APPROVED' ? 'Plan approved' : 'Plan rejected'); await reload(); }
+      catch (e) { toast(e.message, true); if (button) button.disabled = false; }
+    };
+    review.el.querySelector('[data-plan-action="approve"]')?.addEventListener('click', () => applyApproval('APPROVED'));
+    review.el.querySelector('[data-plan-action="reject"]')?.addEventListener('click', () => { review.close(); ADM2.formModal({ title: 'Reject ' + p.name, help: 'The barber sees this reason and can update the plan before sending it for review again.', go: 'Reject plan', cls: 'red', fields: [ADM2.REASON('Reason (the barber sees this)')], submit: async (v) => { await api(`/plans/${p.id}/approval`, { method: 'POST', body: { status: 'REJECTED', reason: v.reason } }); return 'Plan rejected'; }, after: reload }); });
+  };
   const done = async (msg) => { m.close(); toast(msg); await reload(); };
   const call = (k, body) => api(`/barbers/${id}/${k}`, { method: 'POST', body: body || {} });
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = async () => {
     const k = x.dataset.k;
+    if (k === 'catalog') { m.close(); openCatalogControls(); return; }
+    if (k === 'plan') { const p = plans.find((item) => String(item.id) === String(x.dataset.planId)); if (p) { m.close(); openPlanApproval(p); } return; }
     if (k === 'pause') { m.close(); ADM2.barberPause({ ...b, id }, reload); return; }
     if (k === 'fee') { m.close(); ADM2.barberFee({ ...b, id }, reload); return; }
     if (k === 'ledger') { m.close(); ADM2.ledgerSheet(id, reload); return; }
@@ -359,7 +396,7 @@ async function rules() {
   };
 }
 
-const ACTION_TXT = { SETTINGS_UPDATED: 'Platform rules updated', ADMIN_BARBER_VERIFIED: 'Barber approved', ADMIN_BARBER_SUSPENDED: 'Barber suspended', ADMIN_BARBER_REINSTATED: 'Barber reinstated', ADMIN_BARBER_REJECTED: 'Barber rejected', ADMIN_BARBER_INFO_REQUESTED: 'More information requested', ADMIN_BOOKING_CANCELLED_SUSPENSION: 'Booking cancelled (shop suspended)', BARBER_RESUBMITTED: 'Barber resubmitted for review', ADMIN_REFUND_RETRIED: 'Refund retried', ADMIN_MARKED_REFUNDED: 'Marked as refunded', ADMIN_RESOLVED_CREDIT: 'Cancellation converted to credit', ADMIN_RESOLVED_REFUND: 'Cancellation refunded', BARBER_SIGNUP: 'Barber signed up', BARBER_VERIFIED: 'Barber verified (CLI)', BARBER_UNVERIFIED: 'Barber unverified (CLI)' };
+const ACTION_TXT = { SETTINGS_UPDATED: 'Platform rules updated', ADMIN_BARBER_VERIFIED: 'Barber approved', ADMIN_BARBER_SUSPENDED: 'Barber suspended', ADMIN_BARBER_REINSTATED: 'Barber reinstated', ADMIN_BARBER_REJECTED: 'Barber rejected', ADMIN_BARBER_INFO_REQUESTED: 'More information requested', ADMIN_BOOKING_CANCELLED_SUSPENSION: 'Booking cancelled (shop suspended)', BARBER_RESUBMITTED: 'Barber resubmitted for review', ADMIN_PLAN_APPROVED: 'Plan approved', ADMIN_PLAN_REJECTED: 'Plan rejected', ADMIN_REFUND_RETRIED: 'Refund retried', ADMIN_MARKED_REFUNDED: 'Marked as refunded', ADMIN_RESOLVED_CREDIT: 'Cancellation converted to credit', ADMIN_RESOLVED_REFUND: 'Cancellation refunded', BARBER_SIGNUP: 'Barber signed up', BARBER_VERIFIED: 'Barber verified (CLI)', BARBER_UNVERIFIED: 'Barber unverified (CLI)' };
 async function audit() {
   const r = await api('/audit'); drawNav('audit');
   app.innerHTML = head('Audit log', 'What admins did and key events, newest first.', refreshBtn) +
