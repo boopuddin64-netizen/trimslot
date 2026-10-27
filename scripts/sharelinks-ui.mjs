@@ -52,7 +52,10 @@ for (const [w, dark] of [[390, false], [390, true], [1280, false], [1280, true]]
   ok(await p.locator('#linkin').count() === 1, tag + ' paste-link field is there');
   await p.fill('#linkin', 'nonsense'); await p.click('#addlink button'); await p.waitForSelector('#linkerr:not(.hidden)'); ok(true, tag + ' a bad paste is explained');
   await p.screenshot({ path: `screenshots/share/${tag}-empty.png`, fullPage: true });
-  await p.fill('#linkin', `${BASE}/b/${code}`); await p.click('#addlink button'); await p.waitForSelector('#addbtn');
+  const pastedLink = `${BASE}/b/${code}`;
+  await p.fill('#linkin', pastedLink);
+  if (tag === '390l') { await p.waitForTimeout(10500); ok(await p.inputValue('#linkin') === pastedLink, tag + ' pasted link survives the customer-home refresh'); }
+  await p.click('#addlink button'); await p.waitForSelector('#addbtn');
   ok(p.url().endsWith('/#/b/' + code), tag + ' pasting the full link opens the barber');
   // 5. a link that does not exist
   await p.goto('/#/b/0123456789abcdef'); await p.waitForSelector('.err'); ok(/not valid|not found/i.test(await p.innerText('.err')), tag + ' unknown link says so');
