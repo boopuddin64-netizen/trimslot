@@ -237,7 +237,7 @@ window.addEventListener('popstate', () => {   // Back/Forward between booking-wi
 /* ---------- landing / auth ---------- */
 function landing() {
   app.innerHTML = `
-    <div class="hero"><span class="pill">${ic('bolt', 'sm')} Skip the long wait</span><h1>Book. Arrive.<br>Get Trimmed.</h1><p>Pick your barber. Book your time. Watch the live line. No more long waits.</p>
+    <div class="hero"><span class="pill">${ic('bolt', 'sm')} Skip the long wait</span><h1>Book. Arrive.<br>Get Trimmed.</h1><p>Add your barber. Book your time. Watch the live line. No more long waits.</p>
       <a class="btn" href="#/signup?role=customer">Book a haircut</a></div>
     <div class="feat"><div>${ic('cal')}Pick a time</div><div>${ic('pin')}Just arrive</div><div>${ic('clock')}Live queue</div></div>
     <div class="card"><div class="row"><div class="avatar sm">${ic('store')}</div><div class="grow"><h3>Are you a barber?</h3><p class="muted small" style="margin:2px 0 0">Run your day, your services and your line from one simple screen.</p></div></div>
