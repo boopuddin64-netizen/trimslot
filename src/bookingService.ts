@@ -395,6 +395,55 @@ export async function customerCheckIn(db: Db, customerId: number, bookingId: num
 }
 
 /* ---------------- barber actions ---------------- */
+/**
+ * Money for a booking the customer did not come to (barber no-show, or missed after midnight). Rules agreed with the owner:
+ *  - Online paid      -> ONE same-barber session credit, expires after credit_expiry_days. No refund to the card.
+ *  - Plan session     -> the session goes back into the plan. No credit.
+ *  - Credit-funded    -> a NEW credit with the ORIGINAL expiry date, so it can never recycle forever.
+ *  - Cash / pay-on-arrival / unpaid -> nothing. No money was taken, so no credit.
+ */
+export async function applyMissedMoney(t: Conn, b: BookingRow, reason: 'NO_SHOW', actor: Actor) {
+  const s = await getSettings(t);
+  let credit: { id: number; expires_at: string } | null = null;
+  let message = `You did not come for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}, so it was marked missed.`;
+
+  if (b.payment_status === 'PENDING' || b.payment_status === 'PAYMENT_DUE') {
+    await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
+  } else if (b.payment_option === 'PLAN' && b.plan_purchase_id) {
+    await restoreEntitlement(t, b);
+    await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
+    message += ' Your plan session was given back, so you can book again.';
+  } else if (b.payment_option === 'CREDIT' && b.credit_id) {
+    const orig = await t.maybeOne<{ expires_at: string }>('SELECT expires_at FROM session_credits WHERE id=$1', [b.credit_id]);
+    credit = s.credit_on_missed_session ? await issueCredit(t, b, reason, s, orig?.expires_at) : null;
+    if (credit) message += ` You get a new session credit with this barber. It keeps its original expiry date, ${credit.expires_at.slice(0, 10)}.`;
+  } else if (b.payment_option === 'ONLINE' && b.payment_status === 'PAID') {
+    credit = s.credit_on_missed_session ? await issueCredit(t, b, reason, s) : null;
+    if (credit) message += ` You get no refund, but you now have 1 session credit with this barber, valid until ${credit.expires_at.slice(0, 10)}.`;
+  } else {
+    message += ' Nothing was paid online, so there is no credit.';
+  }
+  if (credit) await t.query(`UPDATE bookings SET payment_status='CREDITED' WHERE id=$1`, [b.id]);
+
+  await audit(t, b.id, actor, 'NO_SHOW', { credit_id: credit?.id ?? null, paid: b.payment_status === 'PAID', via: b.payment_option });
+  await notify(t, b.customer_id, 'NO_SHOW', 'Marked as missed', message, b.id);
+  return credit;
+}
+
+/** Customer's bookings whose day has ended while still CONFIRMED become missed. Runs on read (no cron needed). Arrived bookings are NOT touched. */
+export async function settleMissedBookings(db: Db, customerId: number) {
+  const today = lagosDate();
+  const due = await db.many<{ id: number }>(`SELECT id FROM bookings WHERE customer_id=$1 AND status='CONFIRMED' AND date < $2`, [customerId, today]);
+  for (const { id } of due) {
+    await db.tx(async (t) => {
+      const b = await t.maybeOne<BookingRow>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id]);
+      if (!b || b.status !== 'CONFIRMED' || String(b.date) >= today) return;
+      await setStatus(t, b, 'NO_SHOW');
+      await applyMissedMoney(t, b, 'NO_SHOW', { id: null, role: 'system' });
+    });
+  }
+}
+
 export type BarberAction = 'mark-present' | 'start' | 'complete' | 'record-payment' | 'no-show' | 'skip' | 'wait' | 'not-served';
 
 export async function barberAction(db: Db, barberUid: number, barberId: number, bookingId: number, action: BarberAction, body: any = {}) {
@@ -448,13 +497,7 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
         if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the booked time has passed.');
         await setStatus(t, b, 'NO_SHOW');
-        if (b.payment_status === 'PENDING' || b.payment_status === 'PAYMENT_DUE') await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
-        // Missed PAID session (online or plan session): no refund; ONE credit with the SAME barber. A session already paid by a credit is not re-credited (that credit was the make-good).
-        const s = await getSettings(t);
-        const credit = b.payment_status === 'PAID' && b.payment_option !== 'CREDIT' && s.credit_on_missed_session ? await issueCredit(t, b, 'NO_SHOW', s) : null;
-        if (credit) await t.query(`UPDATE bookings SET payment_status='CREDITED' WHERE id=$1`, [b.id]);
-        await audit(t, b.id, actor, 'NO_SHOW', { credit_id: credit?.id ?? null, paid: b.payment_status === 'PAID', via: b.payment_option });
-        await notify(t, b.customer_id, 'NO_SHOW', 'Marked as no-show', `You did not come for ${b.service_name} on ${fmtWhen(b.date, b.start_min)}, so we marked a no-show.${credit ? ' You get no refund, but you now have 1 session credit with this barber.' : ''}`, b.id);
+        await applyMissedMoney(t, b, 'NO_SHOW', actor);
         break;
       }
       case 'not-served': {

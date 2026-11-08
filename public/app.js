@@ -11,6 +11,7 @@ const state = { user: null, cfg: null, unread: 0, wiz: null, poll: null, open: n
 
 /* outline icon set (24px grid, stroke = currentColor) */
 const ICONS = {
+  more: '<circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none"/>',
   share: '<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h14M19 12v7"/>', copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 10a16 16 0 0 0 6 6l1.4-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/>', chat: '<path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.7-.8L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5Z"/>',
   scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
@@ -115,10 +116,10 @@ const STATUS_BADGE = {
   IN_SERVICE: ['b-purple', 'IN SERVICE'], COMPLETED: ['b-gray', 'COMPLETED'], CANCELLED: ['b-red', 'CANCELLED'],
   NO_SHOW: ['b-red', 'NO-SHOW'], NOT_SERVED: ['b-red', 'NOT SERVED'],
 };
-const statusBadge = (s, b) => (b && b.incomplete) ? '<span class="badge b-gray">INCOMPLETE</span>' : `<span class="badge ${STATUS_BADGE[s][0]}">${STATUS_BADGE[s][1]}</span>`;
+const statusBadge = (s, b) => (b && b.incomplete) ? '<span class="badge b-gray">INCOMPLETE</span>' : `<span class="badge ${STATUS_BADGE[s][0]}">${state.user?.role === 'customer' && s === 'NO_SHOW' ? 'MISSED' : STATUS_BADGE[s][1]}</span>`;
 function payBadge(b) {
   if (b.incomplete) return '<span class="badge b-gray">NO PAYMENT</span>';
-  if (b.payment_status === 'PAID' && b.payment_option === 'PLAN') return '<span class="badge b-blue">PLAN SESSION</span>';
+  if (b.payment_status === 'PAID' && b.payment_option === 'PLAN') return '<span class="badge b-blue">PAID FROM PLAN</span>';
   if (b.payment_status === 'PAID' && b.payment_option === 'CREDIT') return '<span class="badge b-purple">CREDIT USED</span>';
   if (b.payment_status === 'CREDITED') return '<span class="badge b-purple">CREDITED</span>';
   if (b.payment_status === 'PAID') return '<span class="badge b-green">PAID</span>';
@@ -319,15 +320,43 @@ async function verifyEmail(next) {
   draw();
 }
 
-async function customerHome() {
+let homeSig = '';
+/** Remove-barber confirmation: a bottom sheet that says what happens, with a clear Keep button. */
+function openRemoveSheet(name, id) {
+  const prev = document.activeElement, el = document.createElement('div'); el.className = 'scrim';
+  el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rms-t"><h3 id="rms-t" style="margin:0 0 8px">Remove ${esc(name)}?</h3>
+    <ul><li>They leave My barbers. You can add them again with their link.</li><li>Upcoming bookings with them still happen. You will see them under Bookings.</li><li>Nothing is paid or refunded because of this.</li></ul>
+    <div class="btns cta"><button class="btn sec" type="button" id="rm-keep">Keep them</button><button class="btn" type="button" id="rm-go" style="background:var(--red);border-color:var(--red)">Yes, remove</button></div></div>`;
+  const close = () => { el.remove(); if (prev && prev.focus) prev.focus(); };
+  document.body.appendChild(el);
+  el.onclick = (e) => { if (e.target === el) close(); };
+  el.querySelector('#rm-keep').onclick = close;
+  el.querySelector('#rm-go').onclick = async (e) => { const go = e.currentTarget; go.disabled = true; try { await api('/me/barbers/' + id, { method: 'DELETE' }); close(); toast('Removed'); customerHome(); } catch (err) { close(); fail(err); } };
+  el.querySelector('#rm-keep').focus();
+}
+/** Long text that does not fit slides right-to-left: 2s pause, slide, 2s pause, then starts again. Only when it overflows; off for reduced motion. */
+function initMarquees(root = document) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  root.querySelectorAll('.marq-wrap .marq').forEach((el) => {
+    const shift = el.scrollWidth - el.parentElement.clientWidth;
+    if (shift <= 4) return;
+    const move = shift / 40, total = 2 + move + 2;   // seconds; about 40px per second
+    el.animate([{ transform: 'translateX(0)', offset: 0 }, { transform: 'translateX(0)', offset: 2 / total }, { transform: `translateX(-${shift}px)`, offset: (2 + move) / total }, { transform: `translateX(-${shift}px)`, offset: 1 }], { duration: total * 1000, iterations: Infinity });
+  });
+}
+async function customerHome(poll = false) {
   const F = state.cfg.features || {};
   const linkDraft = $('#linkin')?.value || '';
   const [bs, bk, rb, fv, wl] = await Promise.all([api('/me/barbers'), api('/bookings'), F.rebook ? api('/me/rebook').catch(() => ({})) : {}, F.favourites ? api('/me/favourites').catch(() => ({})) : {}, F.waitlist ? api('/waitlist').catch(() => ({})) : {}]);
+  // Background refresh: redraw only when the data changed, and never while the customer is typing a link or has a menu open.
+  const sig = JSON.stringify([bs, bk, rb, fv, wl]);
+  if (poll && (sig === homeSig || document.querySelector('.mmenu.open') || document.activeElement?.closest?.('#addlink'))) return;
+  homeSig = sig;
   const favIds = new Set((fv.barbers || []).map((b) => b.id));
   const sg = rb.suggestion; const opt = sg && sg.options && sg.options[0];
   const rebookCard = sg && opt ? `<div class="card rebook"><div class="row between"><div><div class="small muted">${ic('repeat', 'sm')} Book again</div><h3 style="margin:2px 0 0">${esc(sg.service.name)} · ${esc(sg.barber.shop_name)}</h3></div><b>${naira(sg.service.price_kobo)}</b></div>
       <div class="small muted" style="margin:4px 0 10px">${sg.usual ? `Your usual: ${DAYFULL[sg.usual.weekday]}s around ${t12(sg.usual.time)}` : 'Same barber, same service'}</div>
-      <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}"><b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
+      <div class="chips rebook-opts">${sg.options.map((o) => `<button class="chip ${o.usual_day ? 'on' : ''}" data-rb="${o.date}|${o.time}">${o.usual_day ? '' : '<span class="next-tag">Next free</span>'}<b>${dateLabel(o.date)}</b><span class="small">${t12(o.time)}</span></button>`).join('')}</div></div>` : '';
   const waitCard = (wl.waitlist || []).length ? `<h2>On your waitlist</h2>${wl.waitlist.map((w) => `<div class="card row between ${w.status === 'NOTIFIED' ? 'hotcard' : ''}"><div><b>${esc(w.shop_name)}</b><div class="small muted">${esc(w.service_name)} · ${dateLabel(w.date)}${w.status === 'NOTIFIED' ? ' · <b style="color:var(--green)">a time is free now</b>' : ''}</div></div><div class="btns">${w.status === 'NOTIFIED' ? `<a class="btn sm" href="#/book/${w.barber_id}">Book</a>` : ''}<button class="btn sm sec" data-unwait="${w.id}">Leave</button></div></div>`).join('')}` : '';
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   // Unpaid bookings: the time is not saved until paid, so they must be visible here to be paid in time
@@ -344,21 +373,29 @@ async function customerHome() {
     <a class="card row wallet-chip" href="#/wallet"><span class="ico">${ic('wallet')}</span><div class="grow"><b>My plans &amp; credits</b><div class="small muted">Session packs and credits</div></div><span class="muted">${ic('right')}</span></a>
     ${waitCard}
     <h2>My barbers</h2>
-    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b, i) => `<div class="card row mybarber" data-bid="${b.id}"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
+    ${[...bs.barbers].sort((a, b) => Number(favIds.has(b.id)) - Number(favIds.has(a.id))).map((b, i) => `<div class="card mybarber" data-bid="${b.id}"><div class="row" style="gap:12px"><a class="row grow" style="gap:12px;min-width:0" href="#/barber/${b.id}">
         ${avatar(b, '', i < 4)}
-        <div class="grow" style="min-width:0"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small ellip">${esc(b.name)} · ${esc(b.location || 'Lagos')}</div></div></a>
-        <div class="row" style="gap:6px"><a class="btn sm" href="#/book/${b.id}">Book</a>${b.share ? `<button class="mini" data-shb="${b.id}" aria-label="Share ${esc(b.shop_name)}">${ic('share', 'sm')}</button>` : ''}<button class="mini red" data-rmb="${b.id}" aria-label="Remove ${esc(b.shop_name)} from My barbers">${ic('trash', 'sm')}</button></div></div>`).join('')
+        <div class="grow" style="min-width:0"><h3 class="ellip">${favIds.has(b.id) ? `<span class="fav-i">${ic('heart', 'sm')}</span> ` : ''}${esc(b.shop_name)}</h3><div class="muted small marq-wrap"><span class="marq">${esc(b.name)} · ${esc(b.location || 'Lagos')}</span></div></div></a>
+        <a class="btn book-lg" href="#/book/${b.id}">Book</a><button class="mini more" type="button" data-more="${b.id}" aria-label="More options for ${esc(b.shop_name)}" aria-expanded="false">${ic('more', 'sm')}</button></div>
+        <div class="mmenu" role="group" aria-label="Options for ${esc(b.shop_name)}">${b.share ? `<button class="menu-item" type="button" data-shb="${b.id}">${ic('share', 'sm')} Share link</button>` : ''}<button class="menu-item red" type="button" data-rmb="${b.id}">${ic('trash', 'sm')} Remove from My barbers</button></div></div>`).join('')
       || '<div class="card center muted" id="nobarbers"><b>No barbers yet.</b><br><span class="small">Ask your barber for their TrimSlot link or QR code. Open it, then tap Add barber.</span></div>'}
     <form class="card" id="addlink" novalidate><label for="linkin">Add a barber with their link</label>
       <div class="row" style="gap:8px"><input id="linkin" class="grow" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the link you were sent"><button class="btn sm" type="submit">Open</button></div>
       <div id="linkerr" class="err small hidden" role="alert"></div></form>`;
   const linkInput = $('#linkin'); if (linkInput) linkInput.value = linkDraft;
+  initMarquees(app);
   const lf = $('#addlink'); lf.onsubmit = (ev) => { ev.preventDefault(); const raw = $('#linkin').value.trim().replace(/[\/#?]+$/, ''); const m = /(?:\/b\/)?([A-Z0-9]{7}|[a-f0-9]{12,32})$/i.exec(raw); if (!m) { const er = $('#linkerr'); er.textContent = 'That does not look like a TrimSlot barber link. Ask the barber to send it again.'; er.classList.remove('hidden'); return; } location.hash = '#/b/' + (m[1].length === 7 ? m[1].toUpperCase() : m[1].toLowerCase()); };
   document.querySelectorAll('[data-shb]').forEach((el) => el.onclick = () => { const b = bs.barbers.find((x) => x.id === Number(el.dataset.shb)); if (b) openShareSheet(b); });
-  document.querySelectorAll('[data-rmb]').forEach((el) => el.onclick = async () => { const nm = el.closest('.mybarber').querySelector('h3').textContent.trim(); if (!confirm(`Remove ${nm} from My barbers? You can add them again with their link.`)) return; el.disabled = true; try { await api('/me/barbers/' + el.dataset.rmb, { method: 'DELETE' }); toast('Removed'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
+  document.querySelectorAll('[data-more]').forEach((el) => el.onclick = () => {
+    const menu = el.closest('.mybarber').querySelector('.mmenu'); const open = !menu.classList.contains('open');
+    document.querySelectorAll('.mmenu.open').forEach((m) => { m.classList.remove('open'); m.closest('.mybarber').querySelector('[data-more]').setAttribute('aria-expanded', 'false'); });
+    menu.classList.toggle('open', open); el.setAttribute('aria-expanded', String(open));
+  });
+  document.querySelectorAll('[data-rmb]').forEach((el) => el.onclick = () => openRemoveSheet(el.closest('.mybarber').querySelector('h3').textContent.trim(), el.dataset.rmb));
   document.querySelectorAll('[data-rb]').forEach((el) => el.onclick = () => {
     const [d, t] = el.dataset.rb.split('|');
-    state.wiz = { barberId: sg.barber.id, step: 3, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
+    // Shortcut: service, date and time are already chosen; land on the date & time screen so the customer can confirm or change it.
+    state.wiz = { barberId: sg.barber.id, step: 2, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
     location.hash = '#/book/' + sg.barber.id;
   });
   document.querySelectorAll('[data-cancelpay]').forEach((el) => el.onclick = async () => {
@@ -368,7 +405,7 @@ async function customerHome() {
     catch (e) { fail(e); el.disabled = false; }
   });
   document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Taken off the waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
-  startPoll(customerHome);
+  startPoll(() => customerHome(true));
 }
 /* compact tappable row (~58px): t title, p pills, m one-line meta, r trailing figure, x optional third line */
 const crowA = (d, href) => `<a class="crow" href="${href}"><span class="cb"><span class="c1"><span class="ct">${d.t}</span>${d.p ? `<span class="cp">${d.p}</span>` : ''}</span><span class="c2"><span class="cm">${d.m || ''}</span>${d.r ? `<span class="cr">${d.r}</span>` : ''}</span>${d.x ? `<span class="cx">${d.x}</span>` : ''}</span><span class="cgo" aria-hidden="true">›</span></a>`;
@@ -387,7 +424,7 @@ function barberMoney(b) {
 }
 function bookingCard(b) {
   const q = b.queue;
-  return crowA({ t: esc(b.service_name), p: statusBadge(b.status, b) + payBadge(b), m: `${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}`, r: naira(b.price_kobo), x: q && q.state !== 'NOT_ACTIVE' && q.is_today ? esc(q.message) : '' }, '#/booking/' + b.id);
+  return crowA({ t: esc(b.service_name), p: statusBadge(b.status, b) + payBadge(b), m: `${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}`, r: b.payment_option === 'PLAN' ? `<s class="muted">${naira(b.price_kobo)}</s>` : naira(b.price_kobo), x: q && q.state !== 'NOT_ACTIVE' && q.is_today ? esc(q.message) : '' }, '#/booking/' + b.id);
 }
 
 /* ---------- customer: booking wizard ---------- */

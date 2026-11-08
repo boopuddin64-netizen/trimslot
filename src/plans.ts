@@ -282,11 +282,12 @@ export async function restoreEntitlement(t: Conn, b: { plan_purchase_id: number 
 }
 
 /** A paid session that was missed: no refund, ONE credit with the SAME barber, not cashable, expires after `credit_expiry_days`. Idempotent per booking. */
-export async function issueCredit(t: Conn, b: { id: number; customer_id: number; barber_id: number; price_kobo: number; service_name: string; date: string; start_min: number }, reason: 'NO_SHOW' | 'LATE_CANCEL' | 'EARLY_CANCEL', settings?: Settings) {
+export async function issueCredit(t: Conn, b: { id: number; customer_id: number; barber_id: number; price_kobo: number; service_name: string; date: string; start_min: number }, reason: 'NO_SHOW' | 'LATE_CANCEL' | 'EARLY_CANCEL', settings?: Settings, keepExpiresAt?: string) {
   const s = settings ?? await getSettings(t);
   // One outcome per booking: a booking that has (or had) a refund never also gets a credit.
   if (await t.maybeOne(`SELECT 1 FROM payments WHERE booking_id=$1 AND refund_status IN ('PENDING_APPROVAL','NEEDS_REFUND','REFUND_REQUESTED','REFUNDED')`, [b.id])) return null;
-  const expires = new Date(new Date(isoNow()).getTime() + s.credit_expiry_days * 86400000).toISOString();
+  // A credit that was itself missed keeps its ORIGINAL expiry, so a credit can never be recycled forever.
+  const expires = keepExpiresAt ?? new Date(new Date(isoNow()).getTime() + s.credit_expiry_days * 86400000).toISOString();
   const r = await t.maybeOne<{ id: number }>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (source_booking_id) DO NOTHING RETURNING id`, [b.customer_id, b.barber_id, b.id, reason, b.price_kobo, expires, isoNow()]);
   if (!r) return null;
