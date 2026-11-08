@@ -332,7 +332,11 @@ async function customerHome() {
   const active = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
   // Unpaid bookings: the time is not saved until paid, so they must be visible here to be paid in time
   const unpaid = bk.bookings.filter((b) => b.status === 'PENDING_PAYMENT' && b.date >= bk.today).sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
-  const unpaidCard = unpaid.length ? `<h2>Waiting for payment</h2>${clist(unpaid.slice(0, 2).map((b) => crowA({ t: esc(b.service_name), p: statusBadge(b.status, b), m: `${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}`, r: naira((b.money && b.money.total_kobo) || b.price_kobo), x: 'Not confirmed. Pay to save your time.' }, '#/booking/' + b.id)))}` : '';
+  const unpaidCard = unpaid.length ? `<h2>Waiting for payment</h2>${unpaid.slice(0, 2).map((b) => `<div class="card unpaid-card">
+      <a href="#/booking/${b.id}" class="unpaid-link"><div class="row between"><b>${esc(b.service_name)}</b>${naira((b.money && b.money.total_kobo) || b.price_kobo)}</div>
+      <div class="small muted">${esc(b.shop_name)} · ${dateLabel(b.date)} · ${esc(b.start_label)}</div>
+      <div class="small">Not confirmed. Pay to save your time.</div></a>
+      <div class="btns" style="margin-top:10px"><a class="btn sm" href="#/booking/${b.id}">Pay now</a><button class="btn sm sec" data-cancelpay="${b.id}">Cancel</button></div></div>`).join('')}` : '';
   app.innerHTML = `${emailBanner()}<h1>Hi, ${esc(state.user.name.split(' ')[0])}</h1><p class="muted" style="margin-top:0">Book with your barbers, or add a new one with their link.</p>
     ${Notify.promptCard()}${rebookCard}
     ${unpaidCard}
@@ -356,6 +360,12 @@ async function customerHome() {
     const [d, t] = el.dataset.rb.split('|');
     state.wiz = { barberId: sg.barber.id, step: 3, service: sg.service, date: d, time: t, pay: 'ON_ARRIVAL', payTouched: false, note: '' };
     location.hash = '#/book/' + sg.barber.id;
+  });
+  document.querySelectorAll('[data-cancelpay]').forEach((el) => el.onclick = async () => {
+    if (!confirm('Cancel this booking?\n\nYour time is released. Nothing was paid, so there is nothing to refund.')) return;
+    el.disabled = true;
+    try { await api('/bookings/' + el.dataset.cancelpay + '/cancel', { method: 'POST' }); toast('Booking cancelled'); customerHome(); }
+    catch (e) { fail(e); el.disabled = false; }
   });
   document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Taken off the waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
   startPoll(customerHome);
