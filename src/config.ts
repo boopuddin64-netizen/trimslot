@@ -47,7 +47,8 @@ export const config = {
   get adminKey() { const k = process.env.ADMIN_KEY || ''; return k.length >= 16 ? k : ''; },
   get appBaseUrl() {
     const v = process.env.APP_BASE_URL || (this.isProd ? 'https://www.trimslot.com.ng' : `http://localhost:${this.port}`);
-    return v.replace(/\/$/, '');
+    // Strip trailing slashes and a trailing dot on the host (e.g. "https://www.example.com./"): a dotted host gives broken, different-looking links.
+    return v.trim().replace(/\/+$/, '').replace(/\.+(?=\/|$)/, '');
   },
   get jwtSecret() {
     const s = process.env.JWT_SECRET;
@@ -111,6 +112,7 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv = process.env): { 
   if (/^(1|true|yes|on)$/i.test((env.EMAIL_VERIFICATION_REQUIRED || '').trim()) && (!env.RESEND_API_KEY || !env.MAIL_FROM)) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: email codes (sign-up and booking verification) cannot be sent. Set a real email provider key before launch.');
   const base = env.APP_BASE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
   if (!/^https:\/\/[^/]+/.test(base)) errors.push('APP_BASE_URL must be set to your public https:// URL (used for Paystack callbacks and CSRF origin checks)');
+  if (/^https:\/\/[^/]*\.(\/|$)/.test(base.trim())) warnings.push('APP_BASE_URL ends with a dot after the domain (e.g. ".com.ng."). Remove the dot in your host settings; links are cleaned automatically for now.');
   if (env.TRIMSLOT_FAKE_NOW) errors.push('TRIMSLOT_FAKE_NOW must not be set in production');
   if (env.SEED_DEMO === 'true') warnings.push('SEED_DEMO=true: demo accounts with PUBLIC passwords exist. Never use this on a real launch.');
   for (const o of (env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)) {
