@@ -116,7 +116,8 @@ export function barberAccessGuard(db: Db) {
   return async (req: Request, _res: Response, next: NextFunction) => {
     try {
       let barberId = 0;
-      const m = /^\/barbers\/(\d+)(\/slots|\/reviews|\/favourite|\/share\/qr\.svg)?$/.exec(req.path);
+      // optional trailing slash: "/barbers/7/" must hit the same guard as "/barbers/7" (Express treats them as the same route)
+      const m = /^\/barbers\/(\d+)(\/slots|\/reviews|\/favourite|\/share\/qr\.svg)?\/?$/.exec(req.path);
       if (m) barberId = idOf(m[1]);
       else if (req.method === 'POST' && (req.path === '/bookings' || req.path === '/waitlist')) {
         if (!req.user) return next();                       // the route's own login check answers 401
