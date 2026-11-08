@@ -14,7 +14,7 @@ import { getAvailableSlots } from './slots';
 import { audit, fmtTime12, phoneLinks } from './helpers';
 import {
   BarberAction, barberAction, canCustomerCancel, cancelCutoff, createBooking, customerCancel, customerCheckIn,
-  expireHolds, getBooking, orderedQueue, queueInfo, BookingRow, isIncomplete, barberVisible,
+  expireHolds, getBooking, orderedQueue, queueInfo, BookingRow, isIncomplete, barberVisible, settleMissedBookings,
 } from './bookingService';
 import { handleWebhook, initializePayment, initializePlanPurchase, mockMarkPaid, processReference, recordPaymentEvent, bookingIdFromReference, planIdFromReference } from './paystack';
 import { barberPlanOverview, customerWallet, entitlementsFor, getSettings, limitsOf, planSchema, publicPlans, savePlan, settingsView, updateSettings } from './plans';
@@ -455,6 +455,8 @@ export function createApp(db: Db) {
     res.status(201).json({ booking: await decorate(db, b) });
   }));
   api.get('/bookings', cust, wrap(async (req, res) => {
+    // Bookings whose day has ended while still confirmed become missed here, so the customer always sees the right state.
+    await settleMissedBookings(db, req.user!.id).catch((e) => console.error('settleMissedBookings', e));
     const rows = await db.many<BookingRow>('SELECT * FROM bookings WHERE customer_id=$1 ORDER BY date DESC, start_min DESC, id DESC LIMIT 300', [req.user!.id]);
     const memo = newMemo();
     const issues = await paymentIssues(db, rows.filter((b) => b.payment_option === 'ONLINE').map((b) => b.id));

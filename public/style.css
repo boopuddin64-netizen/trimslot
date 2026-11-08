@@ -508,3 +508,19 @@ a.crow{text-decoration:none}
   .ptr[data-state=ready] .ptr-arrow{transform:none}
   .ptr .ptr-spin{animation:none;border-top-color:var(--brand);border-right-color:var(--brand)}
 }
+
+/* ---- Home polish ---- */
+.book-lg{min-height:48px;padding:0 22px;font-size:16px;font-weight:700;display:inline-flex;align-items:center}
+.mmenu{max-height:0;opacity:0;overflow:hidden;transition:max-height .25s ease,opacity .2s ease,margin-top .25s ease}
+.mmenu.open{max-height:160px;opacity:1;margin-top:10px}
+.menu-item{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;padding:0 14px;margin-top:6px;border:1px solid var(--line2);border-radius:10px;background:var(--card);color:var(--ink);font:inherit;font-size:14px;cursor:pointer;text-align:left}
+.menu-item:first-child{margin-top:0}
+.menu-item.red{color:var(--red)}
+.menu-item:focus-visible,.book-lg:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.marq-wrap{overflow:hidden;white-space:nowrap}
+.marq{display:inline-block;will-change:transform}
+.wallet-chip{flex-wrap:nowrap;align-items:center}
+.wallet-chip>.grow{min-width:0;flex:1 1 auto}
+.wallet-chip>span:last-child{flex:none;margin-left:auto;display:flex}
+.next-tag{display:block;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);margin-bottom:2px}
+@media (prefers-reduced-motion: reduce){.mmenu{transition:none}}
