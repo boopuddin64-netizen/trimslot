@@ -279,14 +279,14 @@ test('barber marks a plan-paid booking NOT SERVED: the session goes back; incomp
 
 test('HTTP: admin settings API needs the admin key; customers cannot create plans; barbers cannot buy; wallet + barber overview endpoints', async () => {
   const c = await setup();
-  process.env.CRON_SECRET = 'test-cron-secret-0123456789';
+  process.env.CRON_SECRET = 'test-cron-secret-0123456789'; process.env.ADMIN_KEY = 'test-admin-key-0123456789';
   const server = createApp(c.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = (p: string, o: any = {}) => fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) });
   const login = async (id: string, pw: string) => (await j('/api/auth/login', { method: 'POST', body: { identifier: id, password: pw } })).headers.get('set-cookie')!.split(';')[0];
   try {
     assert.equal((await j('/api/admin/settings')).status, 401);
-    const bearer = { Authorization: 'Bearer test-cron-secret-0123456789' };
+    const bearer = { Authorization: 'Bearer test-admin-key-0123456789' };   // admin routes take ADMIN_KEY only
     const put = await j('/api/admin/settings', { method: 'PUT', headers: bearer, body: { max_plan_price_naira: 20000, credit_expiry_days: 14 } });
     assert.equal(put.status, 200);
     assert.equal(((await put.json()) as any).settings.credit_expiry_days, 14);
@@ -318,5 +318,5 @@ test('HTTP: admin settings API needs the admin key; customers cannot create plan
     assert.equal((await j(`/api/barber/plans/${pid}`, { method: 'DELETE', headers: { Cookie: barber } })).status, 200);
     assert.equal(((await (await j('/api/b/' + DEMO_SHARE_CODE)).json()) as any).plans.length, 0, 'archived plan no longer for sale');
     assert.equal(((await (await j('/api/me/wallet', { headers: { Cookie: cust } })).json()) as any).plans.length, 1, 'but existing purchases keep working');
-  } finally { server.close(); delete process.env.CRON_SECRET; resetNow(); }
+  } finally { server.close(); delete process.env.CRON_SECRET; delete process.env.ADMIN_KEY; resetNow(); }
 });

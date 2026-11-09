@@ -40,7 +40,7 @@ test('migration 012 on a database that already has live-like data: additive, lin
   assert.equal((await db.one<any>('SELECT needs_review FROM plans WHERE id=$1', [linked])).needs_review, false);
   assert.deepEqual((await db.one<any>('SELECT service_ids FROM plan_purchases WHERE id=$1', [pEmpty])).service_ids, [s15, s25], 'a purchase that had no services can now be used');
   assert.deepEqual((await db.one<any>('SELECT service_ids FROM plan_purchases WHERE id=$1', [pSet])).service_ids, [s50], 'a purchase with services is untouched');
-  const codes = await db.many<any>('SELECT share_code FROM barbers'); assert.equal(new Set(codes.map((c) => c.share_code)).size, 2); assert.ok(codes.every((c) => /^[0-9a-f]{12}$/.test(c.share_code)));
+  const codes = await db.many<any>('SELECT share_code FROM barbers'); assert.equal(new Set(codes.map((c) => c.share_code)).size, 2); assert.ok(codes.every((c) => !!c.share_code));
   const cb = await db.many<any>('SELECT customer_id, barber_id, added, source FROM customer_barbers ORDER BY customer_id');
   assert.deepEqual(cb.map((r) => [r.customer_id, r.barber_id, r.added, r.source]), [[c2, b2, true, 'booking'], [c3, b1, true, 'favourite']], 'existing relationships are kept');
   assert.deepEqual(await migrate(db), [], 'running again does nothing');

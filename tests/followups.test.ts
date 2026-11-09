@@ -9,7 +9,7 @@ import { escalateUnansweredHelp } from '../src/help';
 
 const KEY = 'test-admin-key-0123456789';
 const ADMIN = { Authorization: 'Bearer ' + KEY, 'X-Admin-Pin': '4821', 'Content-Type': 'application/json' };
-async function adminOn(c: any) { process.env.CRON_SECRET = KEY; await (await import('../src/adminPin')).setupPin(c.db, '4821'); }
+async function adminOn(c: any) { process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await (await import('../src/adminPin')).setupPin(c.db, '4821'); }
 const notifs = (db: any, uid: number) => db.many('SELECT type, title, body FROM notifications WHERE user_id=$1 ORDER BY id', [uid]);
 
 async function mismatchBooking(c: Awaited<ReturnType<typeof bootApp>>, time = '10:00') {

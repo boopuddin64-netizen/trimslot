@@ -160,7 +160,7 @@ test('ADMIN_KEY is required for admin; CRON_SECRET is restricted to cron; short 
     assert.equal((await s.j('/api/cron/sweep', { headers: H(AK) })).status, 401, 'ADMIN_KEY must not run the cron sweep');
     assert.equal((await s.j('/api/cron/sweep', { headers: H(CRON) })).status, 200, 'CRON_SECRET runs the sweep');
     process.env.ADMIN_KEY = 'short';
-    assert.equal((await s.j('/api/admin/overview', { headers: H('short') })).status, 401, 'too-short ADMIN_KEY is rejected');
+    assert.equal((await s.j('/api/admin/overview', { headers: H('short') })).status, 503, 'too-short ADMIN_KEY is rejected (admin reads as not set up)');
     process.env.ADMIN_KEY = AK;
     process.env.NODE_ENV = 'development';
     for (let i = 0; i < 8; i++) assert.equal((await s.j('/api/admin/overview', { headers: H('wrong' + i) })).status, 401);
@@ -318,7 +318,7 @@ test('cron heartbeat: never -> ok after an authorised hit; an unauthorised hit d
     assert.equal((await s.j('/api/admin/cron-status', { headers: s.A })).body.status, 'never');
     assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer wrong-secret-wrong-secret' } })).status, 401);
     assert.equal((await s.j('/api/admin/cron-status', { headers: s.A })).body.status, 'never', 'a rejected hit leaves no heartbeat');
-    assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer ' + KEY } })).status, 200);
+    assert.equal((await s.j('/api/cron/sweep', { headers: { Authorization: 'Bearer ' + CRON } })).status, 200);
     const ok = (await s.j('/api/admin/cron-status', { headers: s.A })).body;
     assert.equal(ok.status, 'ok'); assert.ok(ok.last_ok_at && ok.last_run_at && ok.age_seconds < 60 && !ok.last_error);
     await s.db.query('UPDATE platform_settings SET cron_last_run_at=$1 WHERE id=1', [new Date(Date.parse(NOW) - 4 * 60000).toISOString()]);

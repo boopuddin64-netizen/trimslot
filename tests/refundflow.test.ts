@@ -13,7 +13,7 @@ import { inQuietHours } from '../src/adminNotify';
 const KEY = 'test-admin-key-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); let body: any = null; try { body = await r.json(); } catch { /* no body */ } return { status: r.status, body }; };
