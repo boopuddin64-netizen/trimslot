@@ -28,7 +28,9 @@ export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
   return { ...r, platform_fee_percent: Number(r.platform_fee_percent), commission_factor: Number(r.commission_factor), liability_cap_kobo: Number(r.liability_cap_kobo),
     fee_share_customer_pct: Number(r.fee_share_customer_pct), fee_share_barber_pct: Number(r.fee_share_barber_pct), fee_share_platform_pct: Number(r.fee_share_platform_pct),
-    ps_percent: Number(r.ps_percent), ps_vat_percent: Number(r.ps_vat_percent), charge_percent: Number(r.charge_percent) };
+    ps_percent: Number(r.ps_percent), ps_vat_percent: Number(r.ps_vat_percent), charge_percent: Number(r.charge_percent),
+    // Migration 021 adds this column; until it is applied, the window stays at the old 14 days instead of failing every date check.
+    booking_window_days: Number(r.booking_window_days ?? 14) };
 }
 /** Feature-flag reads on hot paths (every decorated booking): a 3-second per-database cache; any settings update invalidates all of it. */
 let flagGen = 0;
@@ -131,7 +133,7 @@ export async function updateSettings(c: Conn, patch: unknown) {
       next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days, next.catalog_limits_enabled, next.default_service_limit, next.default_plan_limit, next.plan_approval_required]);
   await c.query(`UPDATE platform_settings SET ${FEATS.map((f, i) => `feature_${f}=$${i + 1}`).join(', ')}, loyalty_every_n=$${FEATS.length + 1}, loyalty_credit_kobo=$${FEATS.length + 2} WHERE id=1`,
     [...FEATS.map((f) => next['feature_' + f]), next.loyalty_every_n, Math.round(next.loyalty_credit_naira * 100)]);
-  await c.query('UPDATE platform_settings SET booking_window_days=$1 WHERE id=1', [next.booking_window_days]);
+  if (p.booking_window_days !== undefined) await c.query('UPDATE platform_settings SET booking_window_days=$1 WHERE id=1', [p.booking_window_days]);
   await c.query(`UPDATE platform_settings SET cancel_cutoff_min=$1, payment_hold_min=$2, refund_auto_approve_hours=$3, liability_cap_kobo=$4, retention_events_days=$5, retention_bad_events_days=$6,
       retention_notifications_days=$7, retention_push_stale_days=$8, retention_deleted_days=$9, retention_checkout_days=$10, retention_rate_limit_hours=$11, retention_admin_alerts_days=$12,
       terms_version=$13, privacy_version=$14, barber_agreement_version=$15 WHERE id=1`,
