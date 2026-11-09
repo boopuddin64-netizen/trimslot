@@ -441,7 +441,12 @@ function bookingCard(b) {
 }
 
 /* ---------- customer: booking wizard ---------- */
+/* Settings the booking screens depend on (the booking window, the cut-off, today). Re-read them when a booking screen opens, so an admin change shows at once instead of after the 10-minute refresh. */
+async function freshConfig() {
+  try { state.cfg = await api('/config'); state.cfgAt = Date.now(); } catch { /* keep what we have */ }
+}
 async function bookWizard(barberId) {
+  await freshConfig();
   if (!state.wiz || state.wiz.barberId !== barberId) state.wiz = { barberId, step: 1, service: null, date: null, time: null, pay: 'ON_ARRIVAL', payTouched: false };
   const w = state.wiz;
   if (w.date && w.date < state.cfg.today) { w.date = null; w.time = null; w.step = Math.min(w.step, 2); }   // a wizard left open since yesterday must not book in the past
@@ -940,6 +945,7 @@ async function bookingDetail(id, payResult, quiet) {
 
 /* ---------- customer: change the time of an upcoming booking (same barber and service) ---------- */
 async function moveBooking(id) {
+  await freshConfig();
   const { booking: b } = await api('/bookings/' + id);
   if (!b.can_reschedule) { app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><div class="info notice">${ic('lock', 'sm')}<div>You cannot change the time of this booking any more.</div></div>`; return; }
   const today = state.cfg.today;
