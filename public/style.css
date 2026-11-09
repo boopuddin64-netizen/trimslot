@@ -536,3 +536,12 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
 .theme-anim,.theme-anim *,.theme-anim *::before,.theme-anim *::after{transition:background-color .35s ease,color .35s ease,border-color .35s ease,fill .35s ease,stroke .35s ease !important}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.45s;animation-timing-function:ease-in-out}
 @media (prefers-reduced-motion:reduce){#theme.theme-spin svg{animation:none}}
+
+/* ---- My bookings: history filters and monthly groups ---- */
+.hfilters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px}
+.hf{display:block;min-width:0}
+.hf span{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}
+.hf select{width:100%}
+.hgroup{margin:6px 0}
+.hgroup>summary{cursor:pointer;font-weight:600;padding:10px 2px;list-style-position:inside}
+@media (max-width:360px){.hfilters{grid-template-columns:1fr}}

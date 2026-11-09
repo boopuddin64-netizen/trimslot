@@ -775,11 +775,64 @@ async function wallet(planResult, ppId) {
 }
 
 /* ---------- customer: bookings ---------- */
+/* History filters and sort. The choices are kept in memory, so the 10-second refresh does not reset them or the open months. */
+const HIST = { service: '', recent: 'all', price: 'any', sort: 'new', pref: new Map(), all: [] };
+const HIST_PRICE = { any: () => true, under: (k) => k < 100000, mid: (k) => k >= 100000 && k <= 200000, over: (k) => k > 200000 };
+const HIST_SORT = {
+  new: (a, b) => b.date.localeCompare(a.date) || b.start_time.localeCompare(a.start_time),
+  old: (a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time),
+  high: (a, b) => b.price_kobo - a.price_kobo || b.date.localeCompare(a.date),
+  low: (a, b) => a.price_kobo - b.price_kobo || b.date.localeCompare(a.date),
+};
+function histCutoff(kind) {
+  if (kind === 'all') return '';
+  const d = new Date((state.cfg.today || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
+  if (kind === '30') d.setUTCDate(d.getUTCDate() - 30); else d.setUTCMonth(d.getUTCMonth() - 3);
+  return d.toISOString().slice(0, 10);
+}
+const monthTitle = (key) => { const [y, m] = key.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+function historyControls(past) {
+  const services = [...new Set(past.map((b) => b.service_name))].sort();
+  const sel = (id, label, opts, val) => `<label class="hf"><span>${label}</span><select id="${id}">${opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
+  return `<div class="hfilters">${sel('hf-svc', 'Service', [['', 'All services'], ...services.map((x) => [x, x])], HIST.service)}${sel('hf-rec', 'Recent', [['all', 'All time'], ['30', 'Last 30 days'], ['90', 'Last 3 months']], HIST.recent)}${sel('hf-price', 'Price', [['any', 'Any price'], ['under', 'Under ₦1,000'], ['mid', '₦1,000 to ₦2,000'], ['over', 'Over ₦2,000']], HIST.price)}${sel('hf-sort', 'Sort', [['new', 'Newest first'], ['old', 'Oldest first'], ['high', 'Highest price'], ['low', 'Lowest price']], HIST.sort)}</div>`;
+}
+/* Past bookings after the filters, grouped by month (one drop-down per month). The newest month opens by default. */
+function historyBody() {
+  const cut = histCutoff(HIST.recent);
+  const rows = HIST.all.filter((b) => (!HIST.service || b.service_name === HIST.service) && (!cut || b.date >= cut) && HIST_PRICE[HIST.price](b.price_kobo));
+  if (!rows.length) return `<p class="muted">No bookings match these filters.</p><button class="btn sm sec" type="button" id="hclear">Clear filters</button>`;
+  const groups = new Map();
+  for (const b of rows) { const k = b.date.slice(0, 7); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(b); }
+  const keys = [...groups.keys()].sort((a, b) => (HIST.sort === 'old' ? a.localeCompare(b) : b.localeCompare(a)));
+  return keys.map((k, i) => {
+    const bs = groups.get(k).sort(HIST_SORT[HIST.sort]);
+    const open = HIST.pref.has(k) ? HIST.pref.get(k) : i === 0;
+    return `<details class="hgroup" data-m="${k}"${open ? ' open' : ''}><summary>${monthTitle(k)} <span class="muted small">· ${bs.length} booking${bs.length === 1 ? '' : 's'}</span></summary>${clist(bs.map(bookingCard))}</details>`;
+  }).join('');
+}
+function drawHistory() {
+  const body = $('#histbody'); if (!body) return;
+  body.innerHTML = historyBody();
+  body.querySelectorAll('details.hgroup').forEach((d) => d.addEventListener('toggle', () => HIST.pref.set(d.dataset.m, d.open)));
+  const clr = $('#hclear'); if (clr) clr.onclick = () => { HIST.service = ''; HIST.recent = 'all'; HIST.price = 'any'; syncHistControls(); drawHistory(); };
+}
+function syncHistControls() {
+  const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+  set('#hf-svc', HIST.service); set('#hf-rec', HIST.recent); set('#hf-price', HIST.price); set('#hf-sort', HIST.sort);
+}
+function wireHistory() {
+  const bind = (id, key) => { const el = $(id); if (el) el.onchange = () => { HIST[key] = el.value; drawHistory(); }; };
+  bind('#hf-svc', 'service'); bind('#hf-rec', 'recent'); bind('#hf-price', 'price'); bind('#hf-sort', 'sort');
+  drawHistory();
+}
 async function myBookings() {
   const r = await api('/bookings');
   const upcoming = r.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status));
   const past = r.bookings.filter((b) => !upcoming.includes(b));
-  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">You have nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? clist(past.map(bookingCard)) : ''}${past.length ? '' : '<p class="muted">No past bookings yet.</p>'}`;
+  HIST.all = past;
+  if (HIST.service && !past.some((b) => b.service_name === HIST.service)) HIST.service = '';
+  app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">You have nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? `${historyControls(past)}<div id="histbody"></div>` : '<p class="muted">No past bookings yet.</p>'}`;
+  if (past.length) wireHistory();
   startPoll(myBookings);
 }
 /* Back from Paystack: the redirect lands here before the webhook may have arrived, so we ask the server to verify by reference (a few tries, a few seconds apart) instead of showing a stale "not confirmed". */
