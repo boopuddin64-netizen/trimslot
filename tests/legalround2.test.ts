@@ -104,7 +104,10 @@ test('public legal pages (generated): no drafting notes, stray list stars, fee f
     for (const [re, what] of BAD) { const m = re.exec(text); assert.ok(!m, `${f}.html shows ${what}: ${m && text.slice(Math.max(0, m.index - 40), m.index + 60)}`); }
     assert.ok(!/(^|\s)\*(\s|$)/.test(text), `${f}.html has a stray *`);
   }
-  assert.match(fs.readFileSync(path.join(dir, 'cookies.html'), 'utf8'), /Turn on alerts/);
+  const cookies = fs.readFileSync(path.join(dir, 'cookies.html'), 'utf8');
+  assert.match(cookies, /Turn on alerts/);
+  assert.match(cookies, /Not now/);
+  assert.match(cookies, /trimslot_prompt_snooze/, 'the alert card snooze key is disclosed');
   assert.match(fs.readFileSync(path.join(dir, 'cookies.html'), 'utf8'), /adm_sf_barbers/);
 });
 
