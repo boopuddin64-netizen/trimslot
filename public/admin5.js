@@ -232,7 +232,9 @@ async function addNumbersCard() {
     ev.preventDefault(); const f = ev.target.elements; const body = {};
     // The form is novalidate (so the save button is never greyed out by a hidden field). Report the first invalid value here instead, and open its section.
     const bad = [...ev.target.elements].find((el) => el.willValidate && !el.checkValidity());
-    if (bad) { const d = bad.closest('details'); if (d) d.open = true; const lab = bad.closest('div')?.querySelector('label')?.textContent || bad.name; bad.scrollIntoView({ block: 'center' }); bad.focus(); toast(`Check "${lab}": ${bad.validationMessage}`, true); return; }
+    if (bad) { const d = bad.closest('details'); if (d) d.open = true; const lab = bad.closest('div')?.querySelector('label')?.textContent || bad.name; bad.scrollIntoView({ block: 'center' }); bad.focus(); const v = bad.validity, step = String(bad.step || '').split('.')[1]?.length || 0;
+      const why = v.valueMissing ? 'Enter a number.' : v.rangeOverflow ? `It must be ${bad.max} or less.` : v.rangeUnderflow ? `It must be ${bad.min} or more.` : v.stepMismatch ? `Use at most ${step} decimal place${step === 1 ? '' : 's'}.` : 'Enter a number.';
+      toast(`Check "${lab}": ${why}`, true); return; }
     for (const [, fs] of NUMS) for (const [k] of fs) { const n = Number(f[k].value); if (!Number.isFinite(n)) { toast('Enter a number for ' + k, true); return; } if (String(n) !== String(v(k))) body[k] = n; }
     if (body.commission_pct !== undefined) { body.commission_factor = Math.round(body.commission_pct * 10) / 1000; delete body.commission_pct; }
     for (const [k] of VERS) if (f[k].value.trim() !== String(s[k])) body[k] = f[k].value.trim();
