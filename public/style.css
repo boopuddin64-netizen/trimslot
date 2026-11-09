@@ -524,3 +524,5 @@ a.crow{text-decoration:none}
 .wallet-chip>span:last-child{flex:none;margin-left:auto;display:flex}
 .next-tag{display:block;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);margin-bottom:2px}
 @media (prefers-reduced-motion: reduce){.mmenu{transition:none}}
+
+a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
