@@ -6,7 +6,7 @@
 'use strict';
 
 /* >>> Bump this ONE value to make every device drop its saved app files and download fresh ones (old caches are deleted on activate). <<< */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_PREFIX = 'trimslot-static-';
 const STATIC_CACHE = CACHE_PREFIX + CACHE_VERSION;
 const SHELL = '/';
