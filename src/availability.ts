@@ -1,5 +1,5 @@
 import { Conn } from './db';
-import { addDays, isoNow, lagosDate, weekdayOf } from './time';
+import { addDays, clock, isoNow, lagosDate, weekdayOf } from './time';
 import { MAX_ADVANCE_DAYS } from './config';
 import { getSettingsCached } from './plans';
 import { audit, fmtTime12, fmtWhen, notify } from './helpers';
@@ -86,7 +86,7 @@ export function scheduleDiff(before: AvailState, after: AvailState): { days: num
 export async function publicNotices(c: Conn, barberId: number) {
   const today = lagosDate();
   const off = await c.many('SELECT date, reason FROM days_off WHERE barber_id=$1 AND date>=$2 AND date<=$3 ORDER BY date', [barberId, today, addDays(today, MAX_ADVANCE_DAYS)]);
-  const since = new Date(Date.now() - 14 * 86400_000).toISOString();
+  const since = new Date(clock.now().getTime() - 14 * 86400_000).toISOString();
   const ch = await c.many('SELECT note, created_at FROM availability_changes WHERE barber_id=$1 AND created_at > $2 ORDER BY id DESC LIMIT 1', [barberId, since]);
   return [
     ...ch.map((r) => ({ type: 'HOURS_UPDATED', title: 'Open times changed', text: r.note as string, at: r.created_at as string })),

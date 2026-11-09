@@ -189,10 +189,10 @@ export function createApp(db: Db) {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://va.vercel-scripts.com'],   // same sources as vercel.json
         styleSrc: ["'self'", "'unsafe-inline'"], // the SPA uses inline style="" attributes
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],    // barber photo URLs are arbitrary https images
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", 'https://vitals.vercel-insights.com', 'https://va.vercel-analytics.com'],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
@@ -826,7 +826,7 @@ export function createApp(db: Db) {
   // A barber's private share link. The page itself is the SPA; the code travels in the URL fragment so it is not sent on to other sites.
   app.get('/b/:code', (req, res) => {
     res.setHeader('Referrer-Policy', 'no-referrer'); res.setHeader('X-Robots-Tag', 'noindex, nofollow'); res.setHeader('Cache-Control', 'no-store');
-    res.redirect(302, /^[a-f0-9]{12,32}$/.test(req.params.code) ? `/#/b/${req.params.code}` : '/');
+    res.redirect(302, /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/.test(req.params.code) ? `/#/b/${req.params.code}` : '/');
   });
 
   // Static frontend: on Vercel the CDN serves /public directly (express.static is ignored there); locally / in Docker Express serves it.

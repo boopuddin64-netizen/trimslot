@@ -76,7 +76,7 @@ test('accrual: only completed pay-on-arrival bookings accrue, once; in-app booki
     assert.equal((await s.db.one('SELECT COUNT(*)::int c FROM commission_ledger')).c, 1);
     // no-show on pay-on-arrival: nothing to owe
     const ns = await createBooking(s.db, s.customerIds[2 % s.customerIds.length], { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '09:00', payment_option: 'ON_ARRIVAL' });
-    setNow(`${WED}T09:30:00+01:00`); await barberAction(s.db, s.uid, s.barberId, ns.id, 'no-show');
+    setNow(`${WED}T12:10:00+01:00`); await barberAction(s.db, s.uid, s.barberId, ns.id, 'no-show');
     assert.equal(await outstandingKobo(s.db, s.barberId), 0, 'no-show accrues nothing');
     // factor + switch
     await s.db.tx((t: any) => updateSettings(t, { commission_factor: 0.2 }));

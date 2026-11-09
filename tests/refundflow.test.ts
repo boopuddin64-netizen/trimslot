@@ -84,7 +84,7 @@ test('no-show of a paid booking gives the CREDIT only (no refund row); not-serve
   try {
     const ns = await paid(s, s.customerIds[0], '10:00'); const nv = await paid(s, s.customerIds[1], '11:00');
     const bUid = (await s.db.one('SELECT user_id FROM barbers WHERE id=$1', [s.barberId])).user_id;
-    setNow(`${WED}T10:20:00+01:00`);
+    setNow(`${WED}T12:10:00+01:00`);
     await barberAction(s.db, bUid, s.barberId, ns.b.id, 'no-show');
     assert.equal((await getBooking(s.db, ns.b.id))!.payment_status, 'CREDITED');
     assert.equal(await credits(s), 1);

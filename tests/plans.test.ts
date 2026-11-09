@@ -187,33 +187,33 @@ test('cancel in time returns the plan session and reopens the slot at once; canc
   } finally { resetNow(); }
 });
 
-test('missed paid session (plan or online): no refund, ONE same-barber credit, expires in 30 days, not for other barbers; credit used on next booking', async () => {
+test('missed plan session goes back into the plan with no credit; a missed credit-paid session goes back as the same credit with its original expiry', async () => {
   const c = await setup();
   try {
     await buy(c, c.customerIds[0]);
     const b = await book(c, c.customerIds[0], '10:00', 'PLAN');
-    setNow(`${WED}T10:10:00+01:00`);
+    setNow(`${WED}T11:30:00+01:00`);
+    await assert.rejects(barberAction(c.db, c.barberUid, c.barberId, b.id, 'no-show'), (e: any) => e.code === 'TOO_EARLY', 'no no-show before 12:00');
+    setNow(`${WED}T12:10:00+01:00`);
     await barberAction(c.db, c.barberUid, c.barberId, b.id, 'no-show');
     const nb = (await getBooking(c.db, b.id))!;
-    assert.equal(nb.status, 'NO_SHOW'); assert.equal(nb.payment_status, 'CREDITED');
-    const cr = await c.db.many('SELECT * FROM session_credits WHERE customer_id=$1', [c.customerIds[0]]);
-    assert.equal(cr.length, 1); assert.equal(cr[0].barber_id, c.barberId); assert.equal(cr[0].reason, 'NO_SHOW'); assert.equal(cr[0].status, 'AVAILABLE');
-    assert.equal(Math.round((new Date(cr[0].expires_at).getTime() - new Date(`${WED}T10:10:00+01:00`).getTime()) / 86400000), 30);
-    assert.equal((await c.db.many('SELECT 1 FROM payments WHERE booking_id=$1', [b.id])).length, 0);
-    const w = await customerWallet(c.db, c.customerIds[0]);
-    assert.equal(w.credits.filter((x: any) => x.live).length, 1);
-    assert.ok((await c.db.many(`SELECT 1 FROM notifications WHERE user_id=$1 AND type='CREDIT_ISSUED'`, [c.customerIds[0]])).length === 1);
-    // another customer cannot use it; another barber's booking cannot use it
-    await assert.rejects(book(c, c.customerIds[1], '14:30', 'CREDIT'), (e: any) => e.code === 'NO_CREDIT');
-    await assert.rejects(book(c, c.customerIds[0], '15:00', 'CREDIT', { credit_id: cr[0].id + 99 }), (e: any) => e.code === 'NO_CREDIT');
-    const next = await book(c, c.customerIds[0], '15:00', 'CREDIT');                     // auto-picks the customer's credit for this barber
-    assert.equal(next.status, 'CONFIRMED'); assert.equal(next.payment_status, 'PAID'); assert.equal(next.paid_via, 'CREDIT'); assert.equal(next.credit_id, cr[0].id);
-    assert.equal((await c.db.one('SELECT status, used_booking_id FROM session_credits WHERE id=$1', [cr[0].id])).used_booking_id, next.id);
-    await assert.rejects(book(c, c.customerIds[0], '16:00', 'CREDIT'), (e: any) => e.code === 'NO_CREDIT', 'credit is single-use');
-    // missing a CREDIT-paid session does not mint another credit (the make-good was already spent)
+    assert.equal(nb.status, 'NO_SHOW'); assert.equal(nb.payment_status, 'VOID');
+    assert.equal((await c.db.one('SELECT sessions_used FROM plan_purchases WHERE id=$1', [b.plan_purchase_id])).sessions_used, 0, 'the session is back in the plan');
+    assert.equal((await c.db.many('SELECT 1 FROM session_credits WHERE customer_id=$1', [c.customerIds[0]])).length, 0, 'no credit for a missed plan session');
+    assert.equal((await c.db.many(`SELECT 1 FROM notifications WHERE user_id=$1 AND type='CREDIT_ISSUED'`, [c.customerIds[0]])).length, 0);
+
+    // a credit this customer already holds with this barber, from an earlier missed paid session
+    const orig = '2026-10-20T10:00:00+01:00';
+    const cr = await c.db.one<any>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at, status)
+      VALUES ($1,$2,NULL,'NO_SHOW',50000000,$3,now(),'AVAILABLE') RETURNING id`, [c.customerIds[0], c.barberId, orig]);
+    const next = await book(c, c.customerIds[0], '15:00', 'CREDIT');
+    assert.equal(next.credit_id, cr.id);
     setNow(`${WED}T15:10:00+01:00`);
     await barberAction(c.db, c.barberUid, c.barberId, next.id, 'no-show');
-    assert.equal((await c.db.many('SELECT 1 FROM session_credits WHERE customer_id=$1', [c.customerIds[0]])).length, 1);
+    const back = await c.db.one<any>('SELECT status, used_booking_id, expires_at FROM session_credits WHERE id=$1', [cr.id]);
+    assert.equal(back.status, 'AVAILABLE'); assert.equal(back.used_booking_id, null);
+    assert.equal(new Date(back.expires_at).toISOString(), new Date(orig).toISOString(), 'same expiry date as at first');
+    assert.equal((await c.db.many('SELECT 1 FROM session_credits WHERE customer_id=$1', [c.customerIds[0]])).length, 1, 'no new credit is issued');
   } finally { resetNow(); }
 });
 
@@ -225,14 +225,14 @@ test('expired credit cannot be used; credit expiry follows the admin setting; a 
     const ini = await initializePayment(c.db, paid.id, null);
     await mockMarkPaid(c.db, ini.reference); await processReference(c.db, ini.reference);
     assert.equal((await getBooking(c.db, paid.id))!.status, 'CONFIRMED');
-    setNow(`${WED}T10:05:00+01:00`);
+    setNow(`${WED}T12:10:00+01:00`);
     await barberAction(c.db, c.barberUid, c.barberId, paid.id, 'no-show');
     const cr = await c.db.one('SELECT * FROM session_credits WHERE source_booking_id=$1', [paid.id]);
-    assert.equal(Math.round((new Date(cr.expires_at).getTime() - new Date(`${WED}T10:05:00+01:00`).getTime()) / 86400000), 7);
+    assert.equal(Math.round((new Date(cr.expires_at).getTime() - new Date(`${WED}T12:10:00+01:00`).getTime()) / 86400000), 7);
     assert.equal(cr.value_kobo, 450000);
     assert.equal((await getBooking(c.db, paid.id))!.payment_status, 'CREDITED');
     const dear = (await c.db.one(`INSERT INTO services (barber_id,name,price_kobo,duration_min) VALUES ($1,'Premium',900000,30) RETURNING id`, [c.barberId])).id;
-    await assert.rejects(createBooking(c.db, c.customerIds[0], { barber_id: c.barberId, service_id: dear, date: WED, time: '12:00', payment_option: 'CREDIT' }), (e: any) => e.code === 'NO_CREDIT', 'service dearer than the credit');
+    await assert.rejects(createBooking(c.db, c.customerIds[0], { barber_id: c.barberId, service_id: dear, date: WED, time: '15:00', payment_option: 'CREDIT' }), (e: any) => e.code === 'NO_CREDIT', 'service dearer than the credit');
     setNow('2026-10-08T09:00:00+01:00');                                                  // 8 days later: expired
     await assert.rejects(book(c, c.customerIds[0], '10:00', 'CREDIT', {}, 0, '2026-10-08'), (e: any) => e.code === 'NO_CREDIT');
     assert.equal((await customerWallet(c.db, c.customerIds[0])).credits[0].live, false);

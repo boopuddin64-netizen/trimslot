@@ -262,6 +262,11 @@ test('legacy paths still work: CLI-style UPDATE verified keeps review_status in 
 test('catalog controls keep safe defaults, gate new plans until approval, and never alter existing data', async () => {
   const s = await boot();
   try {
+    // The public barber profile is open only to customers who can use the barber (a past booking here counts).
+    const cust = (await s.db.one("SELECT id FROM users WHERE email='chidi@trimslot.demo'")).id;
+    await createBooking(s.db, cust, { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '10:00', payment_option: 'ON_ARRIVAL' });
+    const login = await fetch(s.base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: 'chidi@trimslot.demo', password: 'Customer123!' }) });
+    const CC = { Cookie: (login.headers.get('set-cookie') || '').split(';')[0] };
     await s.db.query('UPDATE platform_settings SET plan_approval_required=TRUE WHERE id=1');
     const settings = (await s.j('/api/admin/settings', { headers: s.A })).body.settings;
     assert.equal(settings.default_service_limit, 5);
@@ -279,29 +284,29 @@ test('catalog controls keep safe defaults, gate new plans until approval, and ne
     const planId = await s.db.tx((t: any) => savePlan(t, s.barberId, null, planSchema.parse({ name: 'Review plan', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [s.serviceIds[0]] })));
     const pending = (await s.j(`/api/admin/barbers/${s.barberId}`, { headers: s.A })).body.plans.find((p: any) => p.id === planId);
     assert.equal(pending.approval_status, 'PENDING');
-    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'pending plans are not public');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans.length, 0, 'pending plans are not public');
 
     const rejected = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'REJECTED', reason: 'Please clarify the included services.' } });
     assert.equal(rejected.status, 200); assert.equal(rejected.body.approval_status, 'REJECTED');
-    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'rejected plans are not public');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans.length, 0, 'rejected plans are not public');
 
     const approved = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'APPROVED' } });
     assert.equal(approved.status, 200); assert.equal(approved.body.approval_status, 'APPROVED');
-    const publicPlans = (await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans;
+    const publicPlans = (await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans;
     assert.equal(publicPlans.length, 1); assert.equal(publicPlans[0].id, planId);
 
     const rejectedAgain = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'REJECTED', reason: 'Pause this offer while the barber updates the details.' } });
     assert.equal(rejectedAgain.status, 200); assert.equal(rejectedAgain.body.approval_status, 'REJECTED');
-    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'an approved plan can be rejected later and is no longer public');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans.length, 0, 'an approved plan can be rejected later and is no longer public');
 
     const approvedAgain = await s.j(`/api/admin/plans/${planId}/approval`, { method: 'POST', headers: s.A, body: { status: 'APPROVED' } });
     assert.equal(approvedAgain.status, 200); assert.equal(approvedAgain.body.approval_status, 'APPROVED');
     const hidden = await s.j(`/api/admin/plans/${planId}/visibility`, { method: 'POST', headers: s.A, body: { active: false, reason: 'Pause new sales while reviewing demand.' } });
     assert.equal(hidden.status, 200); assert.equal(hidden.body.active, false);
-    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 0, 'hiding stops new sales without changing approval');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans.length, 0, 'hiding stops new sales without changing approval');
     const restored = await s.j(`/api/admin/plans/${planId}/visibility`, { method: 'POST', headers: s.A, body: { active: true, reason: 'Resume sales.' } });
     assert.equal(restored.status, 200); assert.equal(restored.body.active, true);
-    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`)).json() as any).plans.length, 1, 'restoring an approved plan makes it public again');
+    assert.equal((await (await fetch(`${s.base}/api/barbers/${s.barberId}`, { headers: CC })).json() as any).plans.length, 1, 'restoring an approved plan makes it public again');
 
     await s.db.query('UPDATE platform_settings SET catalog_limits_enabled=TRUE, default_plan_limit=1 WHERE id=1');
     await assert.rejects(s.db.tx((t: any) => savePlan(t, s.barberId, null, planSchema.parse({ name: 'Second plan', price_naira: 12000, sessions: 4, validity_days: 30, service_ids: [s.serviceIds[0]] }))), (e: any) => e.code === 'PLAN_LIMIT_REACHED');
@@ -377,7 +382,7 @@ test('feature flags are enforced server-side and public config reports the live 
       barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: option === 'ONLINE' ? '09:30' : option === 'ON_ARRIVAL' ? '10:00' : option === 'PLAN' ? '11:00' : '12:00', payment_option: option,
     });
     await assert.rejects(create('ONLINE'), (e: any) => e.code === 'ONLINE_PAYMENTS_DISABLED' && /Online payments/.test(e.message));
-    await assert.rejects(create('ON_ARRIVAL'), (e: any) => e.code === 'FEATURE_OFF' && /Pay on arrival/.test(e.message));
+    await assert.rejects(create('ON_ARRIVAL'), (e: any) => e.code === 'PAY_ON_ARRIVAL_OFF' && /Pay on arrival/.test(e.message));
     await assert.rejects(create('PLAN'), (e: any) => e.code === 'FEATURE_OFF' && /Plans/.test(e.message));
     await assert.rejects(create('CREDIT'), (e: any) => e.code === 'FEATURE_OFF' && /Session credits/.test(e.message));
     assert.equal((await s.db.one('SELECT COUNT(*)::int AS n FROM bookings')).n, 0, 'disabled options must not create bookings');

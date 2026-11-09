@@ -66,7 +66,7 @@ test('check-in only on the day; no-show only after scheduled time; other people 
     await assert.rejects(barberAction(db, uid, barberId, today.id, 'no-show'), (e: any) => e.code === 'TOO_EARLY');
     await assert.rejects(customerCheckIn(db, customerIds[1], today.id), /could not find/i);
     await assert.rejects(barberAction(db, uid, barberId + 99, today.id, 'mark-present'), /could not find/i);
-    setNow(`${WED}T11:20:00+01:00`);
+    setNow(`${WED}T12:20:00+01:00`);
     await barberAction(db, uid, barberId, today.id, 'no-show');
     assert.equal((await getBooking(db, today.id))!.status, 'NO_SHOW');
   } finally { resetNow(); }
