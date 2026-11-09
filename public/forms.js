@@ -10,7 +10,8 @@
     var oneof = (f.getAttribute('data-oneof') || '').split(',').filter(Boolean);
     var sync = function () { var ok = f.checkValidity() && (!oneof.length || oneof.some(function (n) { var e = f.elements[n]; return e && String(e.value).trim() !== ''; })); btn.classList.toggle('is-invalid', !ok); if (!btn.__busy) btn.disabled = !ok; };
     f.addEventListener('input', sync); f.addEventListener('change', sync);
-    f.addEventListener('submit', function () { btn.__busy = true; setTimeout(function () { btn.__busy = false; sync(); }, 600); }, true);
+    // Stay disabled while the request is in flight (the handler re-enables it on failure). The timer is only a safety net, so a slow network cannot allow a second submit.
+    f.addEventListener('submit', function () { btn.__busy = true; btn.disabled = true; clearTimeout(btn.__t); btn.__t = setTimeout(function () { btn.__busy = false; sync(); }, 15000); }, true);
     sync();
   }
   function scan(root) { if (root.nodeType !== 1) return; if (root.tagName === 'FORM') wire(root); var l = root.querySelectorAll ? root.querySelectorAll('form') : []; for (var i = 0; i < l.length; i++) wire(l[i]); }

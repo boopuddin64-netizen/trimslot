@@ -44,7 +44,7 @@ import { listBankInfo, resolveAccount, savePayout, payoutStatus, acctSchema } fr
 import { bookingsAffectedBy, conflictDetails, loadAvailState, notifyAffected, publicNotices, scheduleDiff, AvailState, Sched, fmtDay } from './availability';
 import { feeSettingsOf, onlineBreakdown } from './fees';
 import { fixedDevCode, barberEmailReadySql, assertEmailVerified, resetEmailVerification, sendEmailOtp, verifyEmailOtp } from './emailOtp';
-import { canReschedule, rescheduleBooking } from './reschedule';
+import { canReschedule, moveSlots, rescheduleBooking } from './reschedule';
 import { helpEligible, helpView, requestHelp } from './help';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
@@ -316,7 +316,7 @@ export function createApp(db: Db) {
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
-    cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, plans: (await getSettings(db)).feature_plans, today: lagosDate(), now: clock.now().toISOString(),
+    cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, booking_window_days: (await getSettings(db)).booking_window_days, plans: (await getSettings(db)).feature_plans, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { online_payments: st.feature_online_payments, plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   }); }));
 
@@ -444,7 +444,8 @@ export function createApp(db: Db) {
   api.get('/barbers/:id/slots', wrap(async (req, res) => {
     const serviceId = Number(req.query.service_id);
     if (!serviceId) throw badRequest('Pick a service.');
-    res.json(await getAvailableSlots(db, Number(req.params.id) || 0, serviceId, String(req.query.date || '')));
+    const st = await getSettingsCached(db);
+    res.json(await getAvailableSlots(db, Number(req.params.id) || 0, serviceId, String(req.query.date || ''), { cutoffMin: st.cancel_cutoff_min, windowDays: st.booking_window_days }));
   }));
 
   /* ---------- customer bookings ---------- */
@@ -501,6 +502,8 @@ export function createApp(db: Db) {
     await requestHelp(db, req.user!.id, b.id, req.body?.note);
     res.status(201).json({ booking: await decorate(db, (await getBooking(db, b.id))!) });
   }));
+  /** The times this booking can be moved to (the same rules the move itself enforces). */
+  api.get('/bookings/:id/move-slots', cust, wrap(async (req, res) => res.json(await moveSlots(db, req.user!.id, (await ownBooking(req)).id, String(req.query.date || '')))));
   /** Move an upcoming booking to another free time (same barber and service). Allowed only while cancelling is still allowed. */
   api.post('/bookings/:id/reschedule', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);

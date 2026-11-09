@@ -132,6 +132,8 @@ const NUMS = [
     ['payment_hold_min', 'Pay-now hold (minutes)', 1, 1, 180, 'How long we hold a time while the customer pays.'],
     ['credit_expiry_days', 'Credit expiry (days)', 1, 1, 3650, 'A credit for a missed booking lasts this long.'],
     ['refund_auto_approve_hours', 'Refund auto-approve after (hours)', 1, 0, 168, 'If nobody decides, we approve the refund after this time. 0 means on the next check.']]],
+  ['Booking', [
+    ['booking_window_days', 'How far ahead customers can book', 1, 14, 30, 'Customers see this many days on the booking and move screens. Choose 14 or 30.']]],
   ['Who pays the card fee (must add up to 100%)', [
     ['fee_share_customer_pct', 'Customer share (%)', 0.01, 0, 100, 'The customer sees this as a small "booking fee".'],
     ['fee_share_barber_pct', 'Barber share (%)', 0.01, 0, 100, 'Taken from the barber\'s payout.'],
@@ -163,7 +165,9 @@ async function addNumbersCard() {
   if ((location.hash.replace(/^#\/?/, '') || '').split('?')[0] !== 'controls') return;
   const { settings: s } = await api('/settings');
   const v = (k) => k === 'commission_pct' ? Math.round(Number(s.commission_factor) * 100000) / 1000 : s[k];
-  const field = ([k, l, step, min, max, help]) => `<div><label>${esc(l)}</label><input type="number" name="${k}" step="${step}" min="${min}" max="${max}" value="${esc(v(k))}">${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`;
+  const field = ([k, l, step, min, max, help]) => k === 'booking_window_days'
+    ? `<div><label>${esc(l)}</label><select name="${k}">${[14, 30].map((n) => `<option value="${n}" ${Number(v(k)) === n ? 'selected' : ''}>${n} days</option>`).join('')}</select>${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`
+    : `<div><label>${esc(l)}</label><input type="number" name="${k}" step="${step}" min="${min}" max="${max}" value="${esc(v(k))}">${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`;
   const html = `<div class="card" id="numcard"><form id="nf"><h2 style="margin-top:0">Published numbers</h2><p class="muted small">The cancel window, payment hold, credit expiry, plan limits, data-keeping periods, liability cap and document versions are quoted on the public pages, which read them live. The fee, charge, fee-split and commission numbers are private: they are used for the sums and shown only to the barber on their own earnings screen and to you here. Every change is saved in the audit log.</p>
     ${NUMS.map(([g, fs]) => `<h2>${esc(g)}</h2><div class="formgrid">${fs.map(field).join('')}</div>`).join('')}
     <div id="feeprev" class="small"></div>

@@ -475,7 +475,7 @@ async function bookWizard(barberId) {
       $('#next').onclick = () => setStep(2);
     } else if (w.step === 2) {
       const today = state.cfg.today;
-      const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
+      const days = Array.from({ length: state.cfg.booking_window_days || 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
       if (!w.date) w.date = today;
       app.innerHTML = head + `<h2>Pick a date &amp; time</h2><div class="days">${days.map((d) => { const x = new Date(d + 'T00:00:00Z'); return `<button class="chip ${w.date === d ? 'on' : ''} ${closedDates.has(d) || offWeekdays.has(x.getUTCDay()) ? 'closed' : ''}" data-d="${d}">${DAYN[x.getUTCDay()]}<b>${x.getUTCDate()}</b>${MON[x.getUTCMonth()]}</button>`; }).join('')}</div>
         <div id="slots" class="card muted">Loading times…</div><div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="next" ${w.time ? '' : 'disabled'}>Continue</button></div>`;
@@ -828,6 +828,7 @@ const helpHtml = (b) => {
 };
 const contactBtns = (c) => c && c.tel_url ? `<div class="btns contact-btns" style="margin-top:8px"><a class="btn sm" href="${esc(c.tel_url)}">${ic('phone', 'sm')} Call</a><a class="btn sm sec" href="${esc(c.whatsapp_url)}" target="_blank" rel="noopener noreferrer">${ic('chat', 'sm')} WhatsApp</a></div>` : '';
 async function bookingDetail(id, payResult, quiet) {
+  const typed = $('#helpnote'), keepHelp = typed ? typed.value : '', helpFocus = !!typed && document.activeElement === typed;   // the 10-second refresh redraws this page: keep the help note the customer is writing
   const { booking: b } = await api('/bookings/' + id);
   if (payResult && !quiet && b.status === 'PENDING_PAYMENT' && !['slot_taken', 'refund_due', 'late_refund', 'duplicate_refund', 'amount_mismatch'].includes(payResult)) {   // back from Paystack (or Paystack was slow to answer): ask again before showing anything
     const r = await confirmReturn('booking', id, 'Checking your payment…');
@@ -872,6 +873,7 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.payment_status === 'REFUNDED' ? `<div class="ok small">${ic('check', 'sm')} <b>Refund approved.</b> Your money is on its way back to the way you paid. Your bank may take a few working days to show it.</div>` : ''}
     ${b.payment_status === 'REFUND_DECLINED' ? `<div class="info small notice">${ic('warn', 'sm')}<div><b>Refund not approved.</b> Open your notifications to see why. If you do not agree, use Report a problem.</div></div>` : ''}
     ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">We are deciding if you get a credit or a refund for this payment. We will tell you.</div>` : ''}`;
+  if (quiet && keepHelp) { const hn = $('#helpnote'); if (hn) { hn.value = keepHelp; if (helpFocus) hn.focus(); } }
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
@@ -888,7 +890,7 @@ async function moveBooking(id) {
   const { booking: b } = await api('/bookings/' + id);
   if (!b.can_reschedule) { app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><div class="info notice">${ic('lock', 'sm')}<div>You cannot change the time of this booking any more.</div></div>`; return; }
   const today = state.cfg.today;
-  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
+  const days = Array.from({ length: state.cfg.booking_window_days || 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
   let date = b.date < today ? today : b.date, time = null;
   const draw = async () => {
     app.innerHTML = `<a href="#/booking/${id}" class="back">${ic('back', 'sm')} Booking</a><h1>Change time</h1>
@@ -898,7 +900,7 @@ async function moveBooking(id) {
       <div class="btns cta"><a class="btn sec" href="#/booking/${id}">Keep my time</a><button class="btn" id="save" disabled>Move my booking</button></div>`;
     document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { date = el.dataset.d; time = null; draw(); });
     try {
-      const r = await api(`/barbers/${b.barber_id}/slots?service_id=${b.service_id}&date=${date}`);
+      const r = await api(`/bookings/${id}/move-slots?date=${date}`);
       $('#slots').className = 'card';
       $('#slots').innerHTML = r.slots.length ? `<div class="small muted" style="margin-bottom:8px">${dateLabel(date)} · ${b.duration_min} min</div><div class="chips">${r.slots.map((s) => `<button class="chip ${time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>` : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>`;
       document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#save').disabled = false; });
