@@ -136,11 +136,22 @@ function payBadge(b) {
 const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
 function toggleTheme() {
   const d = !isDark();
-  if (d) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
-  try { localStorage.setItem('trimslot_theme', d ? 'dark' : 'light'); } catch { /* ignore */ }
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#0b1220' : '#f6f7fb';
-  chrome();
-  const sw = $('#themesw'); if (sw) sw.setAttribute('aria-checked', String(d));
+  const apply = () => {
+    if (d) document.documentElement.setAttribute('data-theme', 'dark'); else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('trimslot_theme', d ? 'dark' : 'light'); } catch { /* ignore */ }
+    const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = d ? '#0b1220' : '#f6f7fb';
+    window.themeSpin = true; // the top-bar icon turns once, after the redraw
+    chrome();
+    const sw = $('#themesw'); if (sw) sw.setAttribute('aria-checked', String(d));
+  };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Smooth switch: a soft cross-fade of the whole page where supported; otherwise a short colour transition.
+  if (document.startViewTransition && !reduce) document.startViewTransition(apply);
+  else {
+    document.documentElement.classList.add('theme-anim');
+    apply();
+    setTimeout(() => document.documentElement.classList.remove('theme-anim'), 400);
+  }
 }
 async function signOut() { try { await Notify.detach(); } catch { /* ignore */ } await api('/auth/logout', { method: 'POST' }); state.user = null; state.setup = null; state.open = new Set(); location.hash = '#/'; route(); }
 function chrome() {
@@ -149,9 +160,11 @@ function chrome() {
   if (state.cfg?.mock) $('#mockbar').textContent = 'TEST MODE: no real money moves here.';
   let mb = $('#maintbar'); if (!mb) { mb = document.createElement('div'); mb.id = 'maintbar'; mb.className = 'maintbar hidden'; $('#mockbar').after(mb); }
   mb.classList.toggle('hidden', !(state.cfg && state.cfg.maintenance)); if (state.cfg && state.cfg.maintenance) mb.textContent = state.cfg.maintenance;
+  const spin = window.themeSpin ? ' spin' : ''; window.themeSpin = false;
+  const themeBtn = `<button id="theme" class="${spin.trim()}" type="button" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" aria-pressed="${isDark()}">${ic(isDark() ? 'sun' : 'moon')}</button>`;
   $('#topright').innerHTML = u
-    ? `<a class="bell" href="#/notifications" aria-label="${state.unread ? `Notifications, ${state.unread} unread` : 'Notifications'}">${ic('bell')}${state.unread ? `<span class="dot">${state.unread > 99 ? '99+' : state.unread}</span>` : ''}</a>`
-    : `<button id="theme" aria-label="Toggle dark mode">${ic(isDark() ? 'sun' : 'moon')}</button><a class="txt" href="#/login">Log in</a>`;
+    ? `${themeBtn}<a class="bell" href="#/notifications" aria-label="${state.unread ? `Notifications, ${state.unread} unread` : 'Notifications'}">${ic('bell')}${state.unread ? `<span class="dot">${state.unread > 99 ? '99+' : state.unread}</span>` : ''}</a>`
+    : `${themeBtn}<a class="txt" href="#/login">Log in</a>`;
   const th = $('#theme'); if (th) th.onclick = toggleTheme;
   if (window.Notify) Notify.paintUnread();
   const tabs = $('#tabs');
