@@ -168,7 +168,7 @@ async function addNumbersCard() {
   const field = ([k, l, step, min, max, help]) => k === 'booking_window_days'
     ? `<div><label>${esc(l)}</label><select name="${k}">${[14, 30].map((n) => `<option value="${n}" ${Number(v(k)) === n ? 'selected' : ''}>${n} days</option>`).join('')}</select>${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`
     : `<div><label>${esc(l)}</label><input type="number" name="${k}" step="${step}" min="${min}" max="${max}" value="${esc(v(k))}">${help ? `<small class="muted">${esc(help)}</small>` : ''}</div>`;
-  const html = `<div class="card" id="numcard"><form id="nf"><h2 style="margin-top:0">Published numbers</h2><p class="muted small">The cancel window, payment hold, credit expiry, plan limits, data-keeping periods, liability cap and document versions are quoted on the public pages, which read them live. The fee, charge, fee-split and commission numbers are private: they are used for the sums and shown only to the barber on their own earnings screen and to you here. Every change is saved in the audit log.</p>
+  const html = `<div class="card" id="numcard"><form id="nf" novalidate><h2 style="margin-top:0">Published numbers</h2><p class="muted small">The cancel window, payment hold, credit expiry, plan limits, data-keeping periods, liability cap and document versions are quoted on the public pages, which read them live. The fee, charge, fee-split and commission numbers are private: they are used for the sums and shown only to the barber on their own earnings screen and to you here. Every change is saved in the audit log.</p>
     ${NUMS.map(([g, fs]) => `<h2>${esc(g)}</h2><div class="formgrid">${fs.map(field).join('')}</div>`).join('')}
     <div id="feeprev" class="small"></div>
     <h2>Document versions</h2><p class="muted small">Raise a version when that document changes in a way people must agree to again. Everyone is asked to accept it at their next visit.</p>
@@ -230,6 +230,9 @@ async function addNumbersCard() {
   $('#nf').elements.commission_pct.addEventListener('input', (e) => { if (fac) fac.value = String(Math.round(Number(e.target.value) * 10) / 1000); });
   $('#nf').onsubmit = async (ev) => {
     ev.preventDefault(); const f = ev.target.elements; const body = {};
+    // The form is novalidate (so the save button is never greyed out by a hidden field). Report the first invalid value here instead, and open its section.
+    const bad = [...ev.target.elements].find((el) => el.willValidate && !el.checkValidity());
+    if (bad) { const d = bad.closest('details'); if (d) d.open = true; const lab = bad.closest('div')?.querySelector('label')?.textContent || bad.name; bad.scrollIntoView({ block: 'center' }); bad.focus(); toast(`Check "${lab}": ${bad.validationMessage}`, true); return; }
     for (const [, fs] of NUMS) for (const [k] of fs) { const n = Number(f[k].value); if (!Number.isFinite(n)) { toast('Enter a number for ' + k, true); return; } if (String(n) !== String(v(k))) body[k] = n; }
     if (body.commission_pct !== undefined) { body.commission_factor = Math.round(body.commission_pct * 10) / 1000; delete body.commission_pct; }
     for (const [k] of VERS) if (f[k].value.trim() !== String(s[k])) body[k] = f[k].value.trim();
