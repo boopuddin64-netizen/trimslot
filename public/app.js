@@ -443,7 +443,8 @@ function bookingCard(b) {
 /* ---------- customer: booking wizard ---------- */
 /* Settings the booking screens depend on (the booking window, the cut-off, today). Re-read them when a booking screen opens, so an admin change shows at once instead of after the 10-minute refresh. */
 async function freshConfig() {
-  try { state.cfg = await api('/config'); state.cfgAt = Date.now(); } catch { /* keep what we have */ }
+  // apiNet, not api: the saved offline copy of /config must not answer here, or an old window could still show.
+  try { state.cfg = await apiNet('/config'); state.cfgAt = Date.now(); } catch { /* keep what we have */ }
 }
 async function bookWizard(barberId) {
   await freshConfig();
