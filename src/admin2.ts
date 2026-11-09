@@ -161,7 +161,7 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   post('/bookings/:id/reschedule', async (req, res) => {
     const id = idOf(req.params.id);
     const d = parseB(z.object({ reason: reasonZ.shape.reason, date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), time: z.string().regex(/^\d{2}:\d{2}$/), force: z.boolean().optional() }), req.body);
-    validateBookableDate(d.date);
+    validateBookableDate(d.date, (await getSettings(db)).booking_window_days);
     res.json(await db.tx(async (t) => {
       const b = await lockBooking(t, id);
       if (b.status !== 'CONFIRMED') throw conflict('ILLEGAL_TRANSITION', `You can only move confirmed bookings. This one is ${b.status}.`);

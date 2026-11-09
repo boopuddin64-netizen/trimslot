@@ -162,7 +162,8 @@ export async function joinWaitlist(db: Db, customerId: number, body: unknown) {
   await need(db, 'feature_waitlist', 'Waitlist');
   const p = waitSchema.safeParse(body); if (!p.success) throw badRequest('Pick a barber, a service and a date.');
   const d = p.data; const today = lagosDate();
-  if (d.date < today || d.date > addDays(today, MAX_ADVANCE_DAYS)) throw badRequest('You cannot book that date.');
+  const windowDays = (await getSettingsCached(db)).booking_window_days;
+  if (d.date < today || d.date > addDays(today, windowDays)) throw badRequest('You cannot book that date.');
   const svc = await db.maybeOne<any>('SELECT duration_min FROM services WHERE id=$1 AND barber_id=$2 AND active', [d.service_id, d.barber_id]);
   if (!svc || !(await db.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified', [d.barber_id]))) throw notFound('We could not find that barber or service.');
   const { schedule, dayOff } = await loadSchedule(db, d.barber_id, d.date);

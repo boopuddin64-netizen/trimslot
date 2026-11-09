@@ -3,7 +3,7 @@ import { config, CANCEL_CUTOFF_MIN } from './config';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { assertTransition, QUEUE_ACTIVE, Status } from './stateMachine';
 import { Actor, audit, fmtWhen, naira, notify } from './helpers';
-import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
+import { generateSlots, loadSchedule, busyIntervals, validateBookableDate, earliestStartMin } from './slots';
 import { claimEntitlement, getSettings, issueCredit, restoreEntitlement } from './plans';
 import { openRefundRequest } from './refundFlow';
 import { accrueCommission, assertBookable } from './ledger';
@@ -137,7 +137,6 @@ export function assertPayoutReady(b: { paystack_subaccount?: string | null }) {
 }
 
 export async function createBooking(db: Db, customerId: number, input: CreateInput): Promise<BookingRow> {
-  validateBookableDate(input.date);
   if (!/^\d{2}:\d{2}$/.test(input.time)) throw badRequest('Write the time like 09:30.');
   const startMin = hhmmToMin(input.time);
   return db.tx(async (t) => {
@@ -151,6 +150,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     if (!(await t.maybeOne(`SELECT 1 FROM barbers b WHERE b.id=$1 AND ${barberEmailReadySql('b')}`, [input.barber_id]))) throw new AppError(409, 'BARBER_NOT_READY', 'This barber is not ready for bookings yet. Please try again later.');
     await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
     const featureSettings = await getSettings(t);
+    validateBookableDate(input.date, featureSettings.booking_window_days);
     if (input.payment_option === 'ON_ARRIVAL' && !featureSettings.feature_pay_on_arrival) throw new AppError(409, 'FEATURE_OFF', 'Pay on arrival is unavailable right now. Choose another payment option.');
     if (input.payment_option === 'PLAN' && !featureSettings.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are unavailable right now.');
     if (input.payment_option === 'CREDIT' && !featureSettings.feature_credits) throw new AppError(409, 'FEATURE_OFF', 'Session credits are unavailable right now.');
@@ -161,8 +161,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     const svc = await t.maybeOne('SELECT * FROM services WHERE id=$1 AND barber_id=$2 AND active', [input.service_id, input.barber_id]);
     if (!svc) throw notFound('This barber does not offer that service.');
     const { schedule, dayOff } = await loadSchedule(t, input.barber_id, input.date);
-    const isToday = input.date === lagosDate(clock.now());
-    const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: svc.duration_min, busy: await busyIntervals(t, input.barber_id, input.date), nowMin: isToday ? lagosMinutes(clock.now()) : null });
+    const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: svc.duration_min, busy: await busyIntervals(t, input.barber_id, input.date), nowMin: earliestStartMin(input.date, clock.now(), featureSettings.cancel_cutoff_min) });
     if (!free.some((s) => s.start === startMin)) throw conflict('SLOT_UNAVAILABLE', 'That time is not free any more. Pick another time.');
     const endMin = startMin + svc.duration_min;
     // A customer cannot hold two overlapping appointments
@@ -212,6 +211,11 @@ async function announceConfirmed(c: Conn, b: BookingRow) {
 
 /* ---------------- payment confirmation (called only after SERVER-SIDE verification, inside the caller's transaction) ---------------- */
 /** Is this booking's time still bookable right now (working hours, not a day off, not started, and no COMPLETE booking overlapping)? */
+/** Does this customer already hold a confirmed booking that overlaps this one (any barber)? Checked again at payment time: an unpaid attempt does not block when it is made. */
+async function overlapsOwnBooking(t: Conn, b: BookingRow): Promise<boolean> {
+  return !!(await t.maybeOne(`SELECT 1 FROM bookings WHERE customer_id=$1 AND date=$2 AND id<>$3 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND start_min < $4 AND $5 < end_min LIMIT 1`, [b.customer_id, b.date, b.id, b.end_min, b.start_min]));
+}
+
 async function slotStillFree(t: Conn, b: BookingRow): Promise<boolean> {
   const { schedule, dayOff } = await loadSchedule(t, b.barber_id, b.date);
   const isToday = b.date === lagosDate(clock.now());
@@ -235,12 +239,12 @@ export async function applyVerifiedPayment(t: Conn, bookingId: number, via: stri
   const now = isoNow();
   if (b.status === 'PENDING_PAYMENT') {
     // The attempt reserved nothing, so the slot must be RE-CHECKED now, under the barber lock. If someone else took it: do not confirm.
-    if (!(await slotStillFree(t, b))) {
+    if (!(await slotStillFree(t, b)) || (await overlapsOwnBooking(t, b))) {
       assertTransition('PENDING_PAYMENT', 'CANCELLED');
       await t.query(`UPDATE bookings SET status='CANCELLED', payment_status='VOID', cancelled_at=$1, cancelled_by='system', hold_expires_at=NULL WHERE id=$2`, [now, b.id]);
       await flagRefund(t, b, reference, 'Slot was taken before payment completed');
       await audit(t, b.id, { id: null, role: 'system' }, 'PAYMENT_SLOT_TAKEN', { via, amount_kobo: b.price_kobo, note: 'slot no longer free at payment time - booking NOT confirmed; payment flagged NEEDS_REFUND' });
-      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} came in after someone else booked that time. Your booking is not confirmed. We are refunding ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} to your card. Please book another time.`, b.id);
+      await notify(t, b.customer_id, 'BOOKING_INCOMPLETE', 'Slot no longer available', `Your payment for ${b.service_name} on ${fmtWhen(b.date, b.start_min)} came in, but that time is no longer free (it was taken, or it overlaps another booking of yours). Your booking is not confirmed. We are refunding ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} to your card. Please book another time.`, b.id);
       return 'slot_taken';
     }
     assertTransition('PENDING_PAYMENT', 'CONFIRMED');

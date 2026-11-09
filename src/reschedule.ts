@@ -4,19 +4,28 @@ import { Db, isExclusionViolation, isUniqueViolation } from './db';
 import { RESCHEDULE_MAX } from './config';
 import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, notify } from './helpers';
-import { generateSlots, loadSchedule, validateBookableDate } from './slots';
-import { getSettings } from './plans';
+import { generateSlots, getAvailableSlots, loadSchedule, earliestStartMin, validateBookableDate } from './slots';
+import { getSettings, getSettingsCached } from './plans';
 import { assertBookable } from './ledger';
 import { barberEmailReadySql } from './emailOtp';
 import { closeWaitlistFor } from './smart';
 import { canCustomerCancel, getBooking, getBookingForUpdate, refreshQueueNotifications } from './bookingService';
-import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant } from './time';
+import { clock, hhmmToMin, isoNow, scheduledInstant } from './time';
 
 export const canReschedule = (b: { status: string; scheduled_at: string; reschedule_count?: number }, cutoffMin: number) =>
   b.status === 'CONFIRMED' && canCustomerCancel(b.scheduled_at, clock.now(), cutoffMin) && (b.reschedule_count ?? 0) < RESCHEDULE_MAX;
 
+/** The times a customer may move this booking to. Same rules the move itself enforces: the booking's own time does not block it, the cut-off, the booking window, and the customer's other bookings. */
+export async function moveSlots(db: Db, customerId: number, bookingId: number, date: string) {
+  const b = await getBooking(db, bookingId);
+  if (!b || b.customer_id !== customerId) throw notFound('We could not find that booking.');
+  const set = await getSettingsCached(db);
+  if (b.status !== 'CONFIRMED' || !canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min) || b.reschedule_count >= RESCHEDULE_MAX)
+    throw new AppError(409, 'RESCHEDULE_NOT_ALLOWED', 'You cannot change the time of this booking.');
+  return getAvailableSlots(db, b.barber_id, b.service_id, date, { cutoffMin: set.cancel_cutoff_min, windowDays: set.booking_window_days, excludeBookingId: b.id, customerId });
+}
+
 export async function rescheduleBooking(db: Db, customerId: number, bookingId: number, input: { date: string; time: string }) {
-  validateBookableDate(input.date);
   if (!/^\d{2}:\d{2}$/.test(input.time)) throw badRequest('Write the time like 09:30.');
   const startMin = hhmmToMin(input.time);
   return db.tx(async (t) => {
@@ -27,6 +36,7 @@ export async function rescheduleBooking(db: Db, customerId: number, bookingId: n
     const b = await getBookingForUpdate(t, bookingId);
     if (!b || b.customer_id !== customerId) throw notFound('We could not find that booking.');
     const set = await getSettings(t);
+    validateBookableDate(input.date, set.booking_window_days);
     if (b.status !== 'CONFIRMED') throw new AppError(409, 'RESCHEDULE_NOT_ALLOWED', 'You can only change the time of a booking that is confirmed and still coming up.');
     if (!canCustomerCancel(b.scheduled_at, clock.now(), set.cancel_cutoff_min)) throw new AppError(403, 'RESCHEDULE_LOCKED', `You can no longer change this booking. The cut-off was ${set.cancel_cutoff_min} minutes before your visit. If something urgent came up, call your barber.`);
     if (b.reschedule_count >= RESCHEDULE_MAX) throw new AppError(409, 'RESCHEDULE_LIMIT', `You already changed this booking ${RESCHEDULE_MAX} times. Please keep this time, or cancel it.`);
@@ -46,8 +56,7 @@ export async function rescheduleBooking(db: Db, customerId: number, bookingId: n
     // Free-slot check: this booking's own old time does not count as busy (it is being moved).
     const { schedule, dayOff } = await loadSchedule(t, b.barber_id, input.date);
     const busyRows = await t.many<{ start_min: number; end_min: number }>(`SELECT start_min, end_min FROM bookings WHERE barber_id=$1 AND date=$2 AND id<>$3 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE','COMPLETED')`, [b.barber_id, input.date, b.id]);
-    const isToday = input.date === lagosDate(clock.now());
-    const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: b.duration_min, busy: busyRows.map((r) => ({ start: r.start_min, end: r.end_min })), nowMin: isToday ? lagosMinutes(clock.now()) : null });
+    const free = generateSlots({ schedule, isDayOff: !!dayOff, durationMin: b.duration_min, busy: busyRows.map((r) => ({ start: r.start_min, end: r.end_min })), nowMin: earliestStartMin(input.date, clock.now(), set.cancel_cutoff_min) });
     if (!free.some((s) => s.start === startMin)) throw conflict('SLOT_UNAVAILABLE', 'That time is not free any more. Pick another time.');
     const endMin = startMin + b.duration_min;
     const mine = await t.many<{ start_min: number; end_min: number }>(`SELECT start_min, end_min FROM bookings WHERE customer_id=$1 AND date=$2 AND id<>$3 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE')`, [customerId, input.date, b.id]);

@@ -1,6 +1,6 @@
 import { Conn } from './db';
-import { SLOT_STEP_MIN, MAX_ADVANCE_DAYS } from './config';
-import { addDays, hhmmToMin, isValidDate, lagosDate, lagosMinutes, minToHhmm, weekdayOf, clock } from './time';
+import { CANCEL_CUTOFF_MIN, MAX_ADVANCE_DAYS, SLOT_STEP_MIN } from './config';
+import { addDays, hhmmToMin, isValidDate, lagosDate, minToHhmm, weekdayOf, clock, scheduledInstant } from './time';
 import { badRequest, notFound } from './errors';
 
 export interface DaySchedule {
@@ -61,32 +61,56 @@ export async function loadSchedule(c: Conn, barberId: number, date: string): Pro
 /**
  * Time ranges that block new bookings for a barber on a Lagos calendar date: COMPLETE bookings only (confirmed, arrived, in service, completed).
  * An unpaid Pay-now attempt (PENDING_PAYMENT) never blocks anything. A cancelled booking frees its slot immediately.
+ * `excludeBookingId` leaves one booking out (used when that booking is being moved).
  */
-export async function busyIntervals(c: Conn, barberId: number, date: string): Promise<Interval[]> {
+export async function busyIntervals(c: Conn, barberId: number, date: string, excludeBookingId?: number): Promise<Interval[]> {
   const rows = await c.many(
-    `SELECT start_min, end_min FROM bookings WHERE barber_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE','COMPLETED')`,
-    [barberId, date]);
+    `SELECT start_min, end_min FROM bookings WHERE barber_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE','COMPLETED') AND ($3::int IS NULL OR id<>$3)`,
+    [barberId, date, excludeBookingId ?? null]);
   return rows.map((r) => ({ start: r.start_min, end: r.end_min }));
 }
 
-export function validateBookableDate(date: string) {
+/** A customer's own active bookings on a date (any barber): a new time must not overlap them. */
+export async function customerIntervals(c: Conn, customerId: number, date: string, excludeBookingId?: number): Promise<Interval[]> {
+  const rows = await c.many(
+    `SELECT start_min, end_min FROM bookings WHERE customer_id=$1 AND date=$2 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND ($3::int IS NULL OR id<>$3)`,
+    [customerId, date, excludeBookingId ?? null]);
+  return rows.map((r) => ({ start: r.start_min, end: r.end_min }));
+}
+
+/**
+ * The first start a NEW booking may use on `date`, in minutes from that day's midnight (Lagos): at least the cancel cut-off from now.
+ * This is the same rule as the cancel lock and the move check, so the list a customer sees, the booking and the move all agree.
+ */
+export function earliestStartMin(date: string, now: Date, cutoffMin: number): number {
+  const dayStart = scheduledInstant(date, 0).getTime();
+  const threshold = now.getTime() + cutoffMin * 60000;
+  return Math.ceil((threshold - dayStart) / 60000);
+}
+
+/** Dates a customer may book: today up to `windowDays` ahead (an admin setting: 14 or 30). */
+export function validateBookableDate(date: string, windowDays: number) {
   if (!isValidDate(date)) throw badRequest('Write the date as YYYY-MM-DD.');
   const today = lagosDate(clock.now());
   if (date < today) throw badRequest('You cannot book a date in the past.');
-  if (date > addDays(today, MAX_ADVANCE_DAYS)) throw badRequest(`You can book up to ${MAX_ADVANCE_DAYS} days ahead.`);
+  if (date > addDays(today, windowDays)) throw badRequest(`You can book up to ${windowDays} days ahead.`);
 }
 
 /** Free slots for a barber/service/date (verified barbers only). Unpaid attempts never block (see busyIntervals). */
-export async function getAvailableSlots(c: Conn, barberId: number, serviceId: number, date: string) {
-  validateBookableDate(date);
+export async function getAvailableSlots(
+  c: Conn, barberId: number, serviceId: number, date: string,
+  o: { cutoffMin: number; windowDays: number; excludeBookingId?: number; customerId?: number } = { cutoffMin: CANCEL_CUTOFF_MIN, windowDays: MAX_ADVANCE_DAYS },
+) {
+  validateBookableDate(date, o.windowDays);
   if (!(await c.maybeOne('SELECT 1 FROM barbers WHERE id=$1 AND verified', [barberId]))) throw notFound('We could not find that barber.');
   const svc = await c.maybeOne('SELECT * FROM services WHERE id=$1 AND barber_id=$2 AND active', [serviceId, barberId]);
   if (!svc) throw notFound('This barber does not offer that service.');
   const { schedule, dayOff } = await loadSchedule(c, barberId, date);
-  const isToday = date === lagosDate(clock.now());
+  const busy = await busyIntervals(c, barberId, date, o.excludeBookingId);
+  if (o.customerId) busy.push(...(await customerIntervals(c, o.customerId, date, o.excludeBookingId)));
   const slots = generateSlots({
     schedule, isDayOff: !!dayOff, durationMin: svc.duration_min,
-    busy: await busyIntervals(c, barberId, date), nowMin: isToday ? lagosMinutes(clock.now()) : null,
+    busy, nowMin: earliestStartMin(date, clock.now(), o.cutoffMin),
   });
   let closed_reason: string | null = null;
   if (dayOff) closed_reason = dayOff.reason ? `Day off: ${dayOff.reason}` : 'The barber is off on this day.';

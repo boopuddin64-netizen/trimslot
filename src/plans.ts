@@ -22,6 +22,7 @@ export interface Settings {
   ps_percent: number; ps_flat_kobo: number; ps_flat_waived_below_kobo: number; ps_cap_kobo: number; ps_vat_percent: number;
   charge_percent: number; charge_flat_kobo: number; charge_min_kobo: number;
   catalog_limits_enabled: boolean; default_service_limit: number; default_plan_limit: number; plan_approval_required: boolean;
+  booking_window_days: number;
 }
 export async function getSettings(c: Conn): Promise<Settings> {
   const r = await c.one('SELECT * FROM platform_settings WHERE id=1');
@@ -58,6 +59,7 @@ export const settingsView = (s: Settings) => ({
   ps_percent: s.ps_percent, ps_flat_naira: s.ps_flat_kobo / 100, ps_flat_waived_below_naira: s.ps_flat_waived_below_kobo / 100, ps_cap_naira: s.ps_cap_kobo / 100, ps_vat_percent: s.ps_vat_percent,
   charge_percent: s.charge_percent, charge_flat_naira: s.charge_flat_kobo / 100, charge_min_naira: s.charge_min_kobo / 100,
   catalog_limits_enabled: s.catalog_limits_enabled, default_service_limit: s.default_service_limit, default_plan_limit: s.default_plan_limit, plan_approval_required: s.plan_approval_required,
+  booking_window_days: s.booking_window_days,
 });
 export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'max_plan_validity_days', 'max_plan_sessions',
   'credit_expiry_days', 'credit_on_missed_session', 'plan_refund_policy',
@@ -66,7 +68,7 @@ export const SETTING_KEYS = ['min_plan_price_naira', 'max_plan_price_naira', 'ma
   'cancel_cutoff_min', 'payment_hold_min', 'refund_auto_approve_hours', 'liability_cap_naira', 'retention_events_days', 'retention_bad_events_days', 'retention_notifications_days', 'retention_push_stale_days',
   'retention_deleted_days', 'retention_checkout_days', 'retention_rate_limit_hours', 'retention_admin_alerts_days', 'terms_version', 'privacy_version', 'barber_agreement_version',
   'fee_share_customer_pct', 'fee_share_barber_pct', 'fee_share_platform_pct', 'ps_percent', 'ps_flat_naira', 'ps_flat_waived_below_naira', 'ps_cap_naira', 'ps_vat_percent', 'charge_percent', 'charge_flat_naira', 'charge_min_naira',
-  'catalog_limits_enabled', 'default_service_limit', 'default_plan_limit', 'plan_approval_required'] as const;
+  'catalog_limits_enabled', 'default_service_limit', 'default_plan_limit', 'plan_approval_required', 'booking_window_days'] as const;
 export const settingsPatchSchema = z.object({
   min_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
   max_plan_price_naira: z.coerce.number().min(0).max(100_000_000),
@@ -93,6 +95,7 @@ export const settingsPatchSchema = z.object({
   ps_percent: z.coerce.number().min(0).max(20), ps_flat_naira: z.coerce.number().min(0).max(100_000), ps_flat_waived_below_naira: z.coerce.number().min(0).max(10_000_000), ps_cap_naira: z.coerce.number().min(0).max(10_000_000), ps_vat_percent: z.coerce.number().min(0).max(50),
   charge_percent: z.coerce.number().min(0).max(50), charge_flat_naira: z.coerce.number().min(0).max(1_000_000), charge_min_naira: z.coerce.number().min(0).max(1_000_000),
   catalog_limits_enabled: z.boolean(), default_service_limit: z.coerce.number().int().min(1).max(100), default_plan_limit: z.coerce.number().int().min(1).max(100), plan_approval_required: z.boolean(),
+  booking_window_days: z.coerce.number().int().refine((v) => v === 14 || v === 30, 'Choose 14 or 30 days.'),
 }).partial().strict();
 
 const FEATS = ['push', 'favourites', 'rebook', 'reminders', 'waitlist', 'reviews', 'barber_notes', 'quick_actions', 'reliability', 'daily_summary', 'booking_note', 'loyalty'] as const;
@@ -128,6 +131,7 @@ export async function updateSettings(c: Conn, patch: unknown) {
       next.min_barber_payout_percent, Math.round(next.ledger_max_debt_naira * 100), next.ledger_max_age_days, next.catalog_limits_enabled, next.default_service_limit, next.default_plan_limit, next.plan_approval_required]);
   await c.query(`UPDATE platform_settings SET ${FEATS.map((f, i) => `feature_${f}=$${i + 1}`).join(', ')}, loyalty_every_n=$${FEATS.length + 1}, loyalty_credit_kobo=$${FEATS.length + 2} WHERE id=1`,
     [...FEATS.map((f) => next['feature_' + f]), next.loyalty_every_n, Math.round(next.loyalty_credit_naira * 100)]);
+  await c.query('UPDATE platform_settings SET booking_window_days=$1 WHERE id=1', [next.booking_window_days]);
   await c.query(`UPDATE platform_settings SET cancel_cutoff_min=$1, payment_hold_min=$2, refund_auto_approve_hours=$3, liability_cap_kobo=$4, retention_events_days=$5, retention_bad_events_days=$6,
       retention_notifications_days=$7, retention_push_stale_days=$8, retention_deleted_days=$9, retention_checkout_days=$10, retention_rate_limit_hours=$11, retention_admin_alerts_days=$12,
       terms_version=$13, privacy_version=$14, barber_agreement_version=$15 WHERE id=1`,
