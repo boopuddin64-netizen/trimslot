@@ -483,8 +483,12 @@ async function bookWizard(barberId) {
       const today = state.cfg.today;
       const days = Array.from({ length: state.cfg.booking_window_days || 14 }, (_, i) => { const d = new Date(today + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + i); return d.toISOString().slice(0, 10); });
       if (!w.date) w.date = today;
+      if (!days.includes(w.date)) { w.date = today; w.time = null; }   // the picked day is outside the window now: fall back to today, never a day the strip does not show
+      const keepScroll = document.querySelector('.days')?.scrollLeft || 0;   // redrawing after a tap must not jump the date strip back to the first day
       app.innerHTML = head + `<h2>Pick a date &amp; time</h2><div class="days">${days.map((d) => { const x = new Date(d + 'T00:00:00Z'); return `<button class="chip ${w.date === d ? 'on' : ''} ${closedDates.has(d) || offWeekdays.has(x.getUTCDay()) ? 'closed' : ''}" data-d="${d}">${DAYN[x.getUTCDay()]}<b>${x.getUTCDate()}</b>${MON[x.getUTCMonth()]}</button>`; }).join('')}</div>
         <div id="slots" class="card muted">Loading times…</div><div class="btns cta"><button class="btn sec" id="back">Back</button><button class="btn" id="next" ${w.time ? '' : 'disabled'}>Continue</button></div>`;
+      const strip = document.querySelector('.days');
+      if (strip) { if (keepScroll) strip.scrollLeft = keepScroll; else strip.querySelector('.chip.on')?.scrollIntoView({ inline: 'center', block: 'nearest' }); }   // keep the strip where the customer left it, with the chosen day in view
       document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { w.date = el.dataset.d; w.time = null; draw(); });
       $('#back').onclick = () => stepBack(1);
       $('#next').onclick = () => setStep(3);
@@ -496,7 +500,11 @@ async function bookWizard(barberId) {
           : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>${!r.closed_reason && (state.cfg.features || {}).waitlist ? `<div class="btns center"><button class="btn sm" id="joinwait">${ic('bell', 'sm')} Tell me when a time is free</button></div>` : ''}`;
         const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You are on the waitlist. We will tell you as soon as a time is free.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
-      } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      } catch (e) {
+        // The window changed on the server: take the new window and redraw the strip, rather than showing the error for a day that is no longer offered.
+        if (/^You can book up to /.test(e.message)) { const before = state.cfg.booking_window_days; await freshConfig(); if (state.cfg.booking_window_days !== before) return draw(); }
+        $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+      }
     } else {
       const cr = creditFor(), pls = plansFor(), pl = planFor();
       const onlineOk = bk.online_payments !== false;
