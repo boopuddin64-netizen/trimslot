@@ -160,7 +160,7 @@ function chrome() {
   if (state.cfg?.mock) $('#mockbar').textContent = 'TEST MODE: no real money moves here.';
   let mb = $('#maintbar'); if (!mb) { mb = document.createElement('div'); mb.id = 'maintbar'; mb.className = 'maintbar hidden'; $('#mockbar').after(mb); }
   mb.classList.toggle('hidden', !(state.cfg && state.cfg.maintenance)); if (state.cfg && state.cfg.maintenance) mb.textContent = state.cfg.maintenance;
-  const spin = window.themeSpin ? ' spin' : ''; window.themeSpin = false;
+  const spin = window.themeSpin ? ' theme-spin' : ''; window.themeSpin = false;
   const themeBtn = `<button id="theme" class="${spin.trim()}" type="button" aria-label="${isDark() ? 'Switch to light mode' : 'Switch to dark mode'}" aria-pressed="${isDark()}">${ic(isDark() ? 'sun' : 'moon')}</button>`;
   $('#topright').innerHTML = u
     ? `${themeBtn}<a class="bell" href="#/notifications" aria-label="${state.unread ? `Notifications, ${state.unread} unread` : 'Notifications'}">${ic('bell')}${state.unread ? `<span class="dot">${state.unread > 99 ? '99+' : state.unread}</span>` : ''}</a>`

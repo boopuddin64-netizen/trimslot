@@ -531,8 +531,8 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
 #topright{display:flex;align-items:center;gap:6px}
 #theme{transition:transform .2s ease}
 #theme:active{transform:scale(.88)}
-#theme.spin svg{animation:themeSpin .55s cubic-bezier(.2,.8,.2,1)}
+#theme.theme-spin svg{animation:themeSpin .55s cubic-bezier(.2,.8,.2,1)}
 @keyframes themeSpin{from{transform:rotate(-120deg) scale(.5);opacity:0}to{transform:none;opacity:1}}
 .theme-anim,.theme-anim *,.theme-anim *::before,.theme-anim *::after{transition:background-color .35s ease,color .35s ease,border-color .35s ease,fill .35s ease,stroke .35s ease !important}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.45s;animation-timing-function:ease-in-out}
-@media (prefers-reduced-motion:reduce){#theme.spin svg{animation:none}}
+@media (prefers-reduced-motion:reduce){#theme.theme-spin svg{animation:none}}
