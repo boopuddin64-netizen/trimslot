@@ -276,13 +276,20 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
         await audit(t, id, ADMIN, 'ADMIN_RESOLVED_CREDIT', { credit_id: credit?.id ?? null });
       } else {
         const pay = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE booking_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [id]);
-        if (pay && !pay.refund_status) {
-          await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [pay.reference, 'admin decision: refund cancelled booking']);
-          refRef = pay.reference;
+        if (!pay) {
+          // Paid in cash or on arrival: there is no online payment to send back, so the customer is not told a refund is coming.
+          await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
+          await audit(t, id, ADMIN, 'ADMIN_RESOLVED_NO_REFUND', { payment_option: b.payment_option });
+          await notify(t, b.customer_id, 'BOOKING_CANCELLED', 'No refund', `Your ${b.service_name} booking was paid in cash at the shop, so there is no refund to send.`, id);
+        } else {
+          if (!pay.refund_status) {
+            await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [pay.reference, 'admin decision: refund cancelled booking']);
+            refRef = pay.reference;
+          }
+          await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
+          await audit(t, id, ADMIN, 'ADMIN_RESOLVED_REFUND', { reference: pay.reference });
+          await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is on its way back to the way you paid.`, id);
         }
-        await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [id]);
-        await audit(t, id, ADMIN, 'ADMIN_RESOLVED_REFUND', { reference: pay?.reference ?? null });
-        await notify(t, b.customer_id, 'REFUND_APPROVED', 'Refund approved', `Your ${b.service_name} payment of ${naira(b.price_kobo + (b.booking_fee_kobo || 0))} is on its way back to the way you paid.`, id);
       }
     });
     let refund: string | null = null;
