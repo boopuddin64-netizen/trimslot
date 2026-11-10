@@ -404,8 +404,6 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   get('/reports', async (req, res) => {
     const st = String(req.query.status || 'OPEN').toUpperCase();
     const rows = await db.many(`SELECT r.id, r.category, r.message, r.status, r.admin_note, r.created_at, r.resolved_at, r.booking_id, r.reporter_id, r.target_user_id,
-        (SELECT bk.plan_purchase_id FROM bookings bk WHERE bk.id = r.booking_id) AS plan_purchase_id,
-        (SELECT pp.status FROM bookings bk JOIN plan_purchases pp ON pp.id = bk.plan_purchase_id WHERE bk.id = r.booking_id) AS plan_status,
         ru.name AS reporter_name, ru.role AS reporter_role, tu.name AS target_name, tu.role AS target_role, EXISTS (SELECT 1 FROM help_requests hr WHERE hr.report_id=r.id) AS staff_alert
       FROM reports r JOIN users ru ON ru.id=r.reporter_id LEFT JOIN users tu ON tu.id=r.target_user_id ${['OPEN', 'RESOLVED', 'DISMISSED'].includes(st) ? `WHERE r.status='${st}'` : ''} ORDER BY r.id DESC LIMIT 200`);
     const c = await db.one<any>(`SELECT COUNT(*) FILTER (WHERE status='OPEN')::int open, COUNT(*) FILTER (WHERE status='RESOLVED')::int resolved, COUNT(*) FILTER (WHERE status='DISMISSED')::int dismissed FROM reports`);
