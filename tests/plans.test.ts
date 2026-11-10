@@ -5,7 +5,7 @@ import { DEMO_SHARE_CODE } from '../src/seed';
 import { ensureShareCode } from '../src/shareLinks';
 import { freshDb, setNow, resetNow, WED } from './helpers';
 import { createApp } from '../src/app';
-import { barberAction, createBooking, customerCancel, getBooking } from '../src/bookingService';
+import { barberAction, createBooking, customerCancel, getBooking, settleMissedBookings } from '../src/bookingService';
 import { initializePlanPurchase, mockMarkPaid, processReference, initializePayment } from '../src/paystack';
 import { barberPlanOverview, customerWallet, planSchema, savePlan, updateSettings, getSettings } from '../src/plans';
 import { getAvailableSlots } from '../src/slots';
@@ -192,8 +192,8 @@ test('missed plan session goes back into the plan with no credit; a missed credi
   try {
     await buy(c, c.customerIds[0]);
     const b = await book(c, c.customerIds[0], '10:00', 'PLAN');
-    setNow(`${WED}T11:30:00+01:00`);
-    await assert.rejects(barberAction(c.db, c.barberUid, c.barberId, b.id, 'no-show'), (e: any) => e.code === 'TOO_EARLY', 'no no-show before 12:00');
+    setNow(`${WED}T09:30:00+01:00`);
+    await assert.rejects(barberAction(c.db, c.barberUid, c.barberId, b.id, 'no-show'), (e: any) => e.code === 'TOO_EARLY', 'no no-show before the booked time');
     setNow(`${WED}T12:10:00+01:00`);
     await barberAction(c.db, c.barberUid, c.barberId, b.id, 'no-show');
     const nb = (await getBooking(c.db, b.id))!;
@@ -201,6 +201,14 @@ test('missed plan session goes back into the plan with no credit; a missed credi
     assert.equal((await c.db.one('SELECT sessions_used FROM plan_purchases WHERE id=$1', [b.plan_purchase_id])).sessions_used, 0, 'the session is back in the plan');
     assert.equal((await c.db.many('SELECT 1 FROM session_credits WHERE customer_id=$1', [c.customerIds[0]])).length, 0, 'no credit for a missed plan session');
     assert.equal((await c.db.many(`SELECT 1 FROM notifications WHERE user_id=$1 AND type='CREDIT_ISSUED'`, [c.customerIds[0]])).length, 0);
+
+    // a booking nobody checks in for is settled once its day is over (the sweep does this for everyone)
+    const late = await createBooking(c.db, c.customerIds[1], { barber_id: c.barberId, service_id: c.serviceIds[0], date: WED, time: '16:00', payment_option: 'ON_ARRIVAL' });
+    setNow('2026-10-01T00:05:00+01:00');
+    await assert.rejects(barberAction(c.db, c.barberUid, c.barberId, late.id, 'no-show'), (e: any) => e.code === 'NOT_TODAY', 'no-show is refused after the day');
+    await settleMissedBookings(c.db);
+    assert.equal((await getBooking(c.db, late.id))!.status, 'NO_SHOW');
+    setNow(`${WED}T12:10:00+01:00`);
 
     // a credit this customer already holds with this barber, from an earlier missed paid session
     const orig = '2026-10-20T10:00:00+01:00';

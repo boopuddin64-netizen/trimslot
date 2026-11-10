@@ -1100,8 +1100,9 @@ async function barberToday(keepScroll) {
   });
   startPoll(() => location.hash.startsWith('#/today') ? barberToday() : Promise.resolve());
 }
-// A barber can mark a no-show from 12:00 on the booking's day, if the customer has not arrived (the server checks the same rule).
-const canNoShow = (b) => b.status === 'CONFIRMED' && !!b.date && Date.now() >= new Date(`${b.date}T12:00:00+01:00`).getTime();
+// A barber can mark a no-show only on the booking's day, from the booked time until midnight, if the customer has not arrived (the server checks the same rule).
+const lagosToday = () => new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+const canNoShow = (b) => b.status === 'CONFIRMED' && b.date === lagosToday() && !!b.scheduled_time && Date.now() >= new Date(b.scheduled_time).getTime();
 function personRow(b, canStartNow) {
   const arrived = b.status === 'ARRIVED';
   return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosWhen(b.arrival_time, b.scheduled_time)}` : ''}</div></a>

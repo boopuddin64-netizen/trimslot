@@ -173,8 +173,8 @@ test('G: an unanswered help request becomes a staff alert: no target barber, lab
 test('H: legal "In plain words" boxes say the credit comes when the barber marks a no-show; refunds box says no no-show = no refund and no credit; no business numbers', async () => {
   const fs = await import('node:fs');
   const terms = fs.readFileSync('public/terms.html', 'utf8'), plan = fs.readFileSync('public/plan-terms.html', 'utf8'), ref = fs.readFileSync('public/refunds.html', 'utf8');
-  assert.match(plan, /If your barber marks it a no-show from 12:00 on the appointment day, a prepaid plan session goes back into your plan with no credit/);
-  assert.match(ref, /can mark the booking as a no-show from 12:00 on the appointment day/);
+  assert.match(plan, /If your barber marks it a no-show from the booked time until midnight on the appointment day, or it is not checked in by midnight, a prepaid plan session goes back into your plan with no credit/);
+  assert.match(ref, /can mark the booking as a no-show from the booked time until midnight on the appointment day/);
   assert.match(ref, /A session paid with a credit goes back as that same credit, with the expiry date it had at first/);
   assert.match(ref, /A paid online booking gets no refund\. You get one session credit with the same barber/);
 });

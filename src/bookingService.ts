@@ -437,9 +437,10 @@ export async function applyMissedMoney(t: Conn, b: BookingRow, reason: 'NO_SHOW'
 }
 
 /** Customer's bookings whose day has ended while still CONFIRMED become missed. Runs on read (no cron needed). Arrived bookings are NOT touched. */
-export async function settleMissedBookings(db: Db, customerId: number) {
+/** Bookings whose day has ended without a check-in become missed (and their session or credit is sorted out). Run by the sweep for everyone, and on a customer's read for their own bookings. */
+export async function settleMissedBookings(db: Db, customerId?: number) {
   const today = lagosDate();
-  const due = await db.many<{ id: number }>(`SELECT id FROM bookings WHERE customer_id=$1 AND status='CONFIRMED' AND date < $2`, [customerId, today]);
+  const due = await db.many<{ id: number }>(`SELECT id FROM bookings WHERE status='CONFIRMED' AND date < $1 AND ($2::int IS NULL OR customer_id=$2) ORDER BY date, id LIMIT 500`, [today, customerId ?? null]);
   for (const { id } of due) {
     await db.tx(async (t) => {
       const b = await t.maybeOne<BookingRow>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id]);
@@ -449,9 +450,6 @@ export async function settleMissedBookings(db: Db, customerId: number) {
     });
   }
 }
-
-/** A barber can mark a no-show from this time (minutes from midnight, Lagos) on the booking's day, if the customer has not arrived. */
-export const NO_SHOW_FROM_MIN = 12 * 60;
 
 export type BarberAction = 'mark-present' | 'start' | 'complete' | 'record-payment' | 'no-show' | 'skip' | 'wait' | 'not-served';
 
@@ -504,7 +502,8 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
       }
       case 'no-show': {
         if (b.status !== 'CONFIRMED') throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
-        if (new Date(now) < scheduledInstant(b.date, NO_SHOW_FROM_MIN)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show from 12:00 on the day, if the customer has not arrived.');
+        if (lagosDate() !== b.date) throw new AppError(409, 'NOT_TODAY', 'You can mark a no-show only on the booking day, until midnight.');
+        if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the booked time.');
         await setStatus(t, b, 'NO_SHOW');
         await applyMissedMoney(t, b, 'NO_SHOW', actor);
         break;
