@@ -398,7 +398,7 @@ test('a cash booking cancelled with a refund decision gets no refund and is not 
     const r = await s.j(`/api/admin/bookings/${b.id}/resolve`, { method: 'POST', headers: s.A, body: { action: 'refund' } });
     assert.equal(r.status, 200); assert.equal(r.body.refund, null, 'nothing is sent to a card');
     assert.equal((await getBooking(s.db, b.id))!.payment_status, 'VOID');
-    const msgs = await s.db.many<any>(`SELECT type, title FROM notifications WHERE user_id=$1`, [s.customerIds[0]]);
+    const msgs: { type: string; title: string }[] = await s.db.many(`SELECT type, title FROM notifications WHERE user_id=$1`, [s.customerIds[0]]);
     assert.ok(msgs.some((m) => m.type === 'BOOKING_CANCELLED' && m.title === 'No refund'));
     assert.ok(!msgs.some((m) => m.type === 'REFUND_APPROVED'), 'the customer is not told a refund is on its way');
   } finally { s.server.close(); resetNow(); }

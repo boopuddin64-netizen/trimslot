@@ -213,7 +213,7 @@ test('missed plan session goes back into the plan with no credit; a missed credi
     // a credit this customer already holds with this barber, from an earlier missed paid session
     const orig = '2026-10-20T10:00:00+01:00';
     const cr = await c.db.one<any>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at, status)
-      VALUES ($1,$2,NULL,'NO_SHOW',50000000,$3,now(),'AVAILABLE') RETURNING id`, [c.customerIds[0], c.barberId, orig]);
+      VALUES ($1,$2,NULL,'NO_SHOW',(SELECT price_kobo FROM services WHERE id=${c.serviceIds[0]}),$3,now(),'AVAILABLE') RETURNING id`, [c.customerIds[0], c.barberId, orig]);
     const next = await book(c, c.customerIds[0], '15:00', 'CREDIT');
     assert.equal(next.credit_id, cr.id);
     setNow(`${WED}T15:10:00+01:00`);
@@ -225,7 +225,7 @@ test('missed plan session goes back into the plan with no credit; a missed credi
   } finally { resetNow(); }
 });
 
-test('expired credit cannot be used; credit expiry follows the admin setting; a credit only covers services up to its value', async () => {
+test('expired credit cannot be used; credit expiry follows the admin setting; a credit does not cover a dearer service at another price', async () => {
   const c = await setup();
   try {
     await c.db.tx((t) => updateSettings(t, { credit_expiry_days: 7 }));
@@ -244,6 +244,32 @@ test('expired credit cannot be used; credit expiry follows the admin setting; a 
     setNow('2026-10-08T09:00:00+01:00');                                                  // 8 days later: expired
     await assert.rejects(book(c, c.customerIds[0], '10:00', 'CREDIT', {}, 0, '2026-10-08'), (e: any) => e.code === 'NO_CREDIT');
     assert.equal((await customerWallet(c.db, c.customerIds[0])).credits[0].live, false);
+  } finally { resetNow(); }
+});
+
+test('a session credit covers the SAME service or a service with the SAME price; the same service is used first; a changed price keeps the service match', async () => {
+  const c = await setup();
+  try {
+    const p0 = (await c.db.one<any>('SELECT price_kobo FROM services WHERE id=$1', [c.serviceIds[0]])).price_kobo;
+    const paid = await book(c, c.customerIds[0], '10:00', 'ONLINE', {}, 0);
+    const ini = await initializePayment(c.db, paid.id, null);
+    await mockMarkPaid(c.db, ini.reference); await processReference(c.db, ini.reference);
+    setNow(`${WED}T12:10:00+01:00`);
+    await barberAction(c.db, c.barberUid, c.barberId, paid.id, 'no-show');
+    const sameService = await c.db.one<any>('SELECT id FROM session_credits WHERE source_booking_id=$1', [paid.id]);
+    // a second credit of the same value, not tied to a service, that ends SOONER than the first
+    const samePrice = await c.db.one<any>(`INSERT INTO session_credits (customer_id, barber_id, source_booking_id, reason, value_kobo, expires_at, created_at, status)
+      VALUES ($1,$2,NULL,'NO_SHOW',$3,'2026-10-05T10:00:00+01:00',now(),'AVAILABLE') RETURNING id`, [c.customerIds[0], c.barberId, p0]);
+    const twin = (await c.db.one<any>(`INSERT INTO services (barber_id,name,price_kobo,duration_min) VALUES ($1,'Twin',$2,30) RETURNING id`, [c.barberId, p0])).id;
+    const other = (await c.db.one<any>(`INSERT INTO services (barber_id,name,price_kobo,duration_min) VALUES ($1,'Other',$2,30) RETURNING id`, [c.barberId, p0 + 100000])).id;
+    await assert.rejects(createBooking(c.db, c.customerIds[0], { barber_id: c.barberId, service_id: other, date: WED, time: '15:00', payment_option: 'CREDIT' }), (e: any) => e.code === 'NO_CREDIT', 'another service at another price is refused');
+    // the same service still matches after its price went up: the match is by service, not by price
+    await c.db.query('UPDATE services SET price_kobo=$2 WHERE id=$1', [c.serviceIds[0], p0 + 100000]);
+    const first = await book(c, c.customerIds[0], '15:00', 'CREDIT', {}, 0);
+    assert.equal(first.credit_id, sameService.id, 'the same service uses its own credit first, even though the other credit ends sooner');
+    const second = await createBooking(c.db, c.customerIds[0], { barber_id: c.barberId, service_id: twin, date: WED, time: '16:00', payment_option: 'CREDIT' });
+    assert.equal(second.credit_id, samePrice.id, 'another service at the same price uses the same-price credit');
+    assert.equal((await customerWallet(c.db, c.customerIds[0])).credits.filter((x: any) => x.live).length, 0);
   } finally { resetNow(); }
 });
 
