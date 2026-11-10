@@ -175,6 +175,11 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
       ? await claimEntitlement(t, { customerId, barberId: input.barber_id, serviceId: svc.id, priceKobo: svc.price_kobo, startAt: start, option: input.payment_option, id: input.payment_option === 'PLAN' ? input.plan_purchase_id : input.credit_id })
       : null;
     const now = isoNow();
+    // A retry of an unpaid Pay-now attempt for the same barber, service and time reuses that attempt: no second booking.
+    if (online) {
+      const again = await t.maybeOne<BookingRow>(`SELECT * FROM bookings WHERE customer_id=$1 AND barber_id=$2 AND service_id=$3 AND scheduled_at=$4 AND status='PENDING_PAYMENT' AND payment_option='ONLINE' AND paid_at IS NULL AND hold_expires_at > $5 ORDER BY id DESC LIMIT 1`, [customerId, input.barber_id, svc.id, start.toISOString(), now]);
+      if (again) return again;
+    }
     // Money snapshot (frozen now; later setting changes never rewrite it): pay-now carries the booking fee + payout split, pay-on-arrival only the platform charge, plan/credit sessions nothing.
     const fs = feeSettingsOf(await getSettings(t));
     const bd = ent ? null : online ? onlineBreakdown(svc.price_kobo, fs, barber) : offAppBreakdown(svc.price_kobo, fs, barber);

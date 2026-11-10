@@ -130,3 +130,14 @@ test('sweep: stale unpaid plan checkouts are dropped, but one with a signed gate
   assert.ok(left.includes(b.purchase_id), 'purchase with a signed charge kept');
   assert.equal((await s.db.one<any>('SELECT COUNT(*)::int c FROM payments WHERE reference=$1', [b.reference])).c, 1, 'its payment row kept too');
 });
+
+test('a retry of an unpaid Pay-now attempt reuses that attempt instead of creating a second booking', async () => {
+  const { db, barberId, customerIds, serviceIds } = await freshDb();
+  setNow(`${WED}T08:00:00+01:00`);
+  try {
+    const first = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[1], date: WED, time: '10:00', payment_option: 'ONLINE' });
+    const again = await createBooking(db, customerIds[0], { barber_id: barberId, service_id: serviceIds[1], date: WED, time: '10:00', payment_option: 'ONLINE' });
+    assert.equal(again.id, first.id, 'the same attempt is reused');
+    assert.equal((await db.many('SELECT 1 FROM bookings WHERE customer_id=$1', [customerIds[0]])).length, 1);
+  } finally { resetNow(); }
+});

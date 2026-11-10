@@ -492,8 +492,10 @@ async function bookWizard(barberId) {
       document.querySelectorAll('[data-d]').forEach((el) => el.onclick = () => { w.date = el.dataset.d; w.time = null; draw(); });
       $('#back').onclick = () => stepBack(1);
       $('#next').onclick = () => setStep(3);
+      const seq = w.slotSeq = (w.slotSeq || 0) + 1;   // only the newest slot request may draw the list
       try {
         const r = await api(`/barbers/${barberId}/slots?service_id=${w.service.id}&date=${w.date}`);
+        if (seq !== w.slotSeq) return;
         $('#slots').className = 'card';
         $('#slots').innerHTML = r.slots.length
           ? `<div class="small muted" style="margin-bottom:8px">${esc(w.service.name)} · ${w.service.duration_min} min · ${dateLabel(w.date)}</div><div class="chips">${r.slots.map((s) => `<button class="chip ${w.time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>`
@@ -501,6 +503,7 @@ async function bookWizard(barberId) {
         const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You are on the waitlist. We will tell you as soon as a time is free.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
       } catch (e) {
+        if (seq !== w.slotSeq) return;
         // The window changed on the server: take the new window and redraw the strip, rather than showing the error for a day that is no longer offered.
         if (/^You can book up to /.test(e.message)) { const before = state.cfg.booking_window_days; await freshConfig(); if (state.cfg.booking_window_days !== before) return draw(); }
         $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`;
@@ -839,10 +842,13 @@ function wireHistory() {
   bind('#hf-svc', 'service'); bind('#hf-rec', 'recent'); bind('#hf-price', 'price'); bind('#hf-sort', 'sort');
   drawHistory();
 }
+// An unpaid Pay-now attempt is not a booking: it holds no time, so it is not listed here (the home screen still offers to finish it).
+const isUnpaidAttempt = (b) => b.payment_option === 'ONLINE' && (b.status === 'PENDING_PAYMENT' || !!b.incomplete);
 async function myBookings() {
   const r = await api('/bookings');
-  const upcoming = r.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status));
-  const past = r.bookings.filter((b) => !upcoming.includes(b));
+  const bookings = r.bookings.filter((b) => !isUnpaidAttempt(b));
+  const upcoming = bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status));
+  const past = bookings.filter((b) => !upcoming.includes(b));
   HIST.all = past;
   if (HIST.service && !past.some((b) => b.service_name === HIST.service)) HIST.service = '';
   app.innerHTML = `<h1>My bookings</h1><h2>Upcoming</h2>${upcoming.length ? clist(upcoming.map(bookingCard)) : ''}${upcoming.length ? '' : '<p class="muted">You have nothing booked. <a href="#/">Book a cut</a></p>'}<h2>History</h2>${past.length ? `${historyControls(past)}<div id="histbody"></div>` : '<p class="muted">No past bookings yet.</p>'}`;
