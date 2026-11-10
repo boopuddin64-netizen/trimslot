@@ -6,6 +6,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const SRC = fs.readFileSync(path.join(__dirname, '../public/sw.js'), 'utf8');
+const CUR = 'trimslot-static-' + /const CACHE_VERSION = '(v\d+)'/.exec(SRC)![1];   // the cache the current sw.js writes
 type H = (e: any) => void;
 function boot(opts: { active?: boolean; netFail?: boolean; wins?: any[] } = {}) {
   const handlers: Record<string, H> = {}; const stores = new Map<string, Map<string, any>>(); const log = { fetched: [] as string[], skip: 0, shown: [] as any[], opened: [] as string[], posted: [] as any[] };
@@ -36,7 +37,7 @@ test('one constant controls the cache version, and it is a versioned name', () =
 
 test('install saves the page shell + app files; first install takes over, an update waits', async () => {
   const a = boot({ active: false }); await install(a);
-  const c = a.stores.get('trimslot-static-v1')!;
+  const c = a.stores.get(CUR)!;
   for (const u of ['/', '/app.js', '/style.css', '/offline-cache.js', '/net-banner.js', '/manifest.webmanifest']) assert.ok(c.has(u), u);
   assert.equal(a.log.skip, 1, 'first install: skipWaiting');
   const b = boot({ active: true }); await install(b);
@@ -45,9 +46,9 @@ test('install saves the page shell + app files; first install takes over, an upd
 });
 
 test('activate deletes old versioned caches (only ours) and claims clients', async () => {
-  const sw = boot(); sw.stores.set('trimslot-static-v0', new Map()); sw.stores.set('trimslot-static-v1', new Map()); sw.stores.set('someone-else', new Map());
+  const sw = boot(); sw.stores.set('trimslot-static-v0', new Map()); sw.stores.set('trimslot-static-v1', new Map()); sw.stores.set(CUR, new Map()); sw.stores.set('someone-else', new Map());
   const w: Promise<any>[] = []; sw.handlers.activate({ waitUntil: (p: any) => w.push(p) }); await Promise.all(w);
-  assert.deepEqual([...sw.stores.keys()].sort(), ['someone-else', 'trimslot-static-v1']);
+  assert.deepEqual([...sw.stores.keys()].sort(), ['someone-else', CUR].sort());
 });
 
 test('NEVER touches api, admin, payment pages, health, share redirect, sw.js, non-GET, other sites, Authorization, no-store', () => {
@@ -66,7 +67,7 @@ test('app files: saved copy at once, refreshed in the background; page shell wor
   const f = sw.fetchEv('/app.js'); assert.equal(f.handled, true);
   assert.equal((await f.resp).body, 'net:https://app.test/app.js'); await f.done();     // saved by install earlier -> served from cache, then revalidated
   assert.ok(sw.log.fetched.filter((u) => u === '/app.js').length >= 2, 'revalidated');
-  const off = boot({ netFail: true }); off.stores.set('trimslot-static-v1', new Map([['/', { status: 200, body: 'SHELL' }], ['/app.js', { body: 'APP' }]]));
+  const off = boot({ netFail: true }); off.stores.set(CUR, new Map([['/', { status: 200, body: 'SHELL' }], ['/app.js', { body: 'APP' }]]));
   assert.equal((await off.fetchEv('/', { mode: 'navigate' }).resp).body, 'SHELL');
   assert.equal((await off.fetchEv('/?x=1', { mode: 'navigate' }).resp).body, 'SHELL');
   assert.equal((await off.fetchEv('/app.js').resp).body, 'APP');
@@ -75,11 +76,11 @@ test('app files: saved copy at once, refreshed in the background; page shell wor
 });
 
 test('responses that must not be saved are not saved (errors, redirects, no-store, wrong type)', async () => {
-  const sw = boot(); await sw.ctx.caches.open('trimslot-static-v1');
+  const sw = boot(); await sw.ctx.caches.open(CUR);
   sw.ctx.fetch = async () => ({ status: 500, type: 'basic', redirected: false, headers: { get: () => null }, clone() { return this; } });
-  const r = sw.fetchEv('/new.js'); await r.resp; await r.done(); assert.equal(sw.stores.get('trimslot-static-v1')!.has('/new.js'), false);
+  const r = sw.fetchEv('/new.js'); await r.resp; await r.done(); assert.equal(sw.stores.get(CUR)!.has('/new.js'), false);
   sw.ctx.fetch = async () => ({ status: 200, type: 'basic', redirected: false, headers: { get: (k: string) => (k === 'cache-control' ? 'no-store' : null) }, clone() { return this; } });
-  const r2 = sw.fetchEv('/nostore.js'); await r2.resp; await r2.done(); assert.equal(sw.stores.get('trimslot-static-v1')!.has('/nostore.js'), false);
+  const r2 = sw.fetchEv('/nostore.js'); await r2.resp; await r2.done(); assert.equal(sw.stores.get(CUR)!.has('/nostore.js'), false);
 });
 
 test('push + notification-click code is intact', async () => {

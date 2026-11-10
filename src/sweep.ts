@@ -1,5 +1,5 @@
 import { Db } from './db';
-import { expireHolds } from './bookingService';
+import { expireHolds, settleMissedBookings } from './bookingService';
 import { requestRefund, processReference, reconcileRecentPayments } from './paystack';
 import { config } from './config';
 import { sendLedgerReminders } from './ledger';
@@ -14,6 +14,8 @@ import { escalateUnansweredHelp } from './help';
 /** Periodic housekeeping, safe to run at any frequency and from several callers at once (all statements are idempotent). */
 export async function runSweep(db: Db): Promise<{ payments_reconciled: { checked: number; confirmed: number; refunds: number }; smart: { reminders: number; waitlist: number }; push: { claimed: number; sent: number; removed: number }; ledger_reminders: number; holds_released: number; help_escalated: number; rate_limit_rows_purged: number; expired_events_purged: number; refunds_retried: number; refunds_auto_approved: number; admin_push: { claimed: number; sent: number; removed: number; held: boolean }; retention: unknown }> {
   const holds_released = await expireHolds(db, {}, { budgetMs: 25000 });
+  // Bookings whose day has ended without a check-in are marked missed and sorted out (plan session back, credit back, or one credit for a paid online booking).
+  await settleMissedBookings(db).catch((e) => console.error('settleMissedBookings', e));
   // A payment whose webhook never reached us (and whose browser was closed) is found here, within 24 hours: confirmed if the time is still free, otherwise refunded.
   const reconciled = await reconcileRecentPayments(db).catch(() => ({ checked: 0, confirmed: 0, refunds: 0 }));
   // Prepaid refunds nobody decided within the admin's hold time are approved here and sent to Paystack.

@@ -84,8 +84,9 @@ export async function customerIntervals(c: Conn, customerId: number, date: strin
  */
 export function earliestStartMin(date: string, now: Date, cutoffMin: number): number {
   const dayStart = scheduledInstant(date, 0).getTime();
-  const threshold = now.getTime() + cutoffMin * 60000;
-  return Math.ceil((threshold - dayStart) / 60000);
+  // Whole minutes: the clock carries milliseconds, and rounding them up would refuse a slot at exactly the cut-off.
+  const nowMinute = Math.floor(now.getTime() / 60000) * 60000;
+  return Math.round((nowMinute + cutoffMin * 60000 - dayStart) / 60000);
 }
 
 /** Dates a customer may book: today up to `windowDays` ahead (an admin setting: 14 or 30). */

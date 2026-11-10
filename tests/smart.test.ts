@@ -90,9 +90,9 @@ test('reminders: 2h, 30 min and leave-now are sent once, only when there was eno
     assert.equal(await notes(db, cid, 'REMINDER_2H'), 1, 'exactly once');
     setNow(at('10:35')); await S.runSmartTick(db, true); await S.runSmartTick(db, true);
     assert.equal(await notes(db, cid, 'REMINDER_30'), 1);
-    // a booking made 20 minutes ahead does not get a "2 hours" reminder
+    // a booking made 110 minutes ahead (clear of the cut-off, but under 2 hours) does not get a "2 hours" reminder
     setNow(at('12:10'));
-    const late = await createBooking(db, customerIds[1], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '12:30', payment_option: 'ON_ARRIVAL' });
+    const late = await createBooking(db, customerIds[1], { barber_id: barberId, service_id: serviceIds[0], date: WED, time: '14:00', payment_option: 'ON_ARRIVAL' });
     await S.runSmartTick(db, true);
     assert.equal(await notes(db, customerIds[1], 'REMINDER_2H'), 0);
     // toggle off
@@ -184,7 +184,7 @@ test('rebook suggests the same barber/service at the usual weekday and time', as
 });
 
 test('loyalty: opt-in, every Nth completed visit earns a same-barber credit once', async () => {
-  setNow(at('09:00'));
+  setNow(at('08:00'));
   try {
     const { db, barberId, customerIds, serviceIds } = await freshDb(); const uid = await userIdOfBarber(db, barberId);
     await on(db, { feature_loyalty: true, loyalty_every_n: 2, loyalty_credit_naira: 500 });

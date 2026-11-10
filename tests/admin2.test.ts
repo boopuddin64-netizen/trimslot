@@ -14,7 +14,7 @@ import { initializePlanPurchase } from '../src/paystack';
 const KEY = 'test-admin-key-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   for (const n of [3, 4]) s.customerIds.push((await s.db.one(`INSERT INTO users (role,name,email,phone,password_hash) VALUES ('customer',$1,$2,$3,'x') RETURNING id`, ['Extra ' + n, `extra${n}@trimslot.demo`, '0806000000' + n])).id);
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

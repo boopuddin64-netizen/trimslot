@@ -87,7 +87,7 @@ test('payouts: online payment is blocked until the barber sets up a payout accou
 });
 
 test('callback return URL: fee-inclusive payment redirects into the hash route as processed; verify-by-reference works when the webhook is late; admin re-verify recovers an INITIATED payment', async () => {
-  const s = await boot(); delete process.env.REQUIRE_PAYOUT; process.env.CRON_SECRET = 'test-admin-key-0123456789';
+  const s = await boot(); delete process.env.REQUIRE_PAYOUT; process.env.CRON_SECRET = 'test-admin-key-0123456789'; process.env.ADMIN_KEY = 'test-admin-key-0123456789';
   try {
     const noFollow = (p: string, o: any = {}) => fetch(s.base + p, { redirect: 'manual', ...o });
     const login = await fetch(s.base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: 'chidi@trimslot.demo', password: 'Customer123!' }) });

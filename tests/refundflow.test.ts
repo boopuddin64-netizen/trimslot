@@ -13,7 +13,7 @@ import { inQuietHours } from '../src/adminNotify';
 const KEY = 'test-admin-key-0123456789';
 const NOW = `${WED}T08:00:00+01:00`;
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + p, { ...o, headers: { 'Content-Type': 'application/json', ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); let body: any = null; try { body = await r.json(); } catch { /* no body */ } return { status: r.status, body }; };
@@ -84,7 +84,7 @@ test('no-show of a paid booking gives the CREDIT only (no refund row); not-serve
   try {
     const ns = await paid(s, s.customerIds[0], '10:00'); const nv = await paid(s, s.customerIds[1], '11:00');
     const bUid = (await s.db.one('SELECT user_id FROM barbers WHERE id=$1', [s.barberId])).user_id;
-    setNow(`${WED}T10:20:00+01:00`);
+    setNow(`${WED}T12:10:00+01:00`);
     await barberAction(s.db, bUid, s.barberId, ns.b.id, 'no-show');
     assert.equal((await getBooking(s.db, ns.b.id))!.payment_status, 'CREDITED');
     assert.equal(await credits(s), 1);

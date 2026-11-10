@@ -10,7 +10,7 @@ import { setupPin } from '../src/adminPin';
 
 const KEY = 'test-admin-key-0123456789';
 async function boot() {
-  setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY;
+  setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY;
   const s = await freshDb(); await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -125,7 +125,7 @@ test('barber side: share card data + QR, regenerate revokes link but keeps custo
   try {
     const bc = await c.barberCookie();
     const sh = (await c.call('GET', '/api/barber/share', undefined, bc)).json;
-    assert.equal(sh.code, DEMO_SHARE_CODE); assert.match(sh.url, /\/b\/de30c0de5a1e0001$/); assert.equal(sh.active, true);
+    assert.equal(sh.code, DEMO_SHARE_CODE); assert.match(sh.url, /\/b\/[A-Z0-9]{7}$/); assert.equal(sh.active, true);
     const qr = await c.call('GET', '/api/barber/share/qr.svg', undefined, bc);
     assert.equal(qr.status, 200); assert.match(qr.headers.get('content-type') || '', /image\/svg\+xml/); assert.match(qr.text, /^<svg/);
     assert.equal((await c.call('GET', '/api/barber/share')).status, 401);

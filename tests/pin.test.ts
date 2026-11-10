@@ -8,7 +8,7 @@ import { clock } from '../src/time';
 
 const KEY = 'test-admin-key-0123456789';
 async function boot() {
-  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY;
+  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY;
   const server = createApp(s.db).listen(0); const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => { const r = await fetch(base + '/api/admin' + p, { ...o, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KEY, ...(o.headers || {}) }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
   const post = (p: string, body: any = {}, pin?: string) => j(p, { method: 'POST', body, headers: pin ? { 'X-Admin-Pin': pin } : {} });

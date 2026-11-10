@@ -1100,6 +1100,9 @@ async function barberToday(keepScroll) {
   });
   startPoll(() => location.hash.startsWith('#/today') ? barberToday() : Promise.resolve());
 }
+// A barber can mark a no-show only on the booking's day, from the booked time until midnight, if the customer has not arrived (the server checks the same rule).
+const lagosToday = () => new Date(Date.now() + 3600000).toISOString().slice(0, 10);
+const canNoShow = (b) => b.status === 'CONFIRMED' && b.date === lagosToday() && !!b.scheduled_time && Date.now() >= new Date(b.scheduled_time).getTime();
 function personRow(b, canStartNow) {
   const arrived = b.status === 'ARRIVED';
   return `<div class="row between"><a href="#/b/${b.id}" style="color:inherit;text-decoration:none">${custLine(b)}<div class="small muted">Booked ${esc(b.start_label)}${b.arrival_time ? ` · arrived ${lagosWhen(b.arrival_time, b.scheduled_time)}` : ''}</div></a>
@@ -1110,7 +1113,7 @@ function personRow(b, canStartNow) {
       ${arrived ? `<button class="btn green" data-a="start" data-id="${b.id}">Start</button>` : `<button class="btn blue" data-a="mark-present" data-id="${b.id}">Mark Present</button>`}
       ${arrived ? '' : `<button class="btn sec" data-a="wait" data-id="${b.id}">Wait</button>`}
       <button class="btn sec" data-a="skip" data-id="${b.id}">Skip</button>
-      ${arrived ? '' : `<button class="btn red" data-a="no-show" data-id="${b.id}">No-show</button>`}
+      ${canNoShow(b) ? `<button class="btn red" data-a="no-show" data-id="${b.id}">No-show</button>` : ''}
     </div>`;
 }
 async function barberUpcoming() {
@@ -1138,11 +1141,14 @@ async function barberBooking(id) {
       <hr><div class="small">Scheduled: <b>${lagosTime(b.scheduled_time)}</b> · Arrived: <b>${lagosTime(b.arrival_time)}</b> · Started: <b>${lagosTime(b.service_start)}</b> · Completed: <b>${lagosTime(b.service_complete)}</b></div>
       ${relBadge(b.customer.reliability)}${b.note_to_barber ? `<div class="cnote small" style="margin-top:8px">${ic('pencil', 'sm')} <b>Customer note:</b> ${esc(b.note_to_barber)}</div>` : ''}${b.customer.note ? `<div class="cnote priv small" style="margin-top:8px">${ic('shield', 'sm')} <b>Your private note:</b> ${esc(b.customer.note)}</div>` : ''}${b.customer.usual ? `<div class="small muted" style="margin-top:6px">Usual: ${esc(b.customer.usual.service_name)} (${b.customer.usual.times}×)</div>` : ''}
       <a class="small" href="#/customers/${b.customer.id}">View customer profile ›</a></div>
+    ${canNoShow(b) ? `<div class="btns" style="margin-top:12px"><button class="btn sm red" id="noshow">No-show</button></div><div class="small muted" style="margin-top:6px">Use this if the customer has not come. A plan session or credit goes back to them.</div>` : ''}
     <div class="btns" style="margin-top:12px"><button class="btn sm sec" data-report="${b.id}">${ic('warn', 'sm')} Report a problem</button></div>
     <h2>Timeline</h2><div class="card"><div class="tl">${timeline.map((t) => `<div><b>${esc(ACTION_LABEL[t.action] || t.action)}</b><div class="small muted">${lagosStamp(t.created_at)} · ${esc(t.actor_role)}${t.actor_name ? ' (' + esc(t.actor_name) + ')' : ''}</div>${t.details && t.details.note ? `<div class="small warn-t">${esc(String(t.details.note).replace(/^TODO\(owner\):.*$/, 'Not refunded yet. The shop or admin will give a refund or a session credit.'))}</div>` : ''}</div>`).join('')}</div></div>`;
   const helpAct = (sel, action, ask, done) => { const el = $(sel); if (el) el.onclick = async () => { if (ask && !confirm(ask)) return; el.disabled = true; try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: action === 'not-served' ? { reason: 'Customer asked for help; barber released it' } : {} }); toast(done); route(); } catch (e) { fail(e); el.disabled = false; } }; };
   helpAct('#helprel', 'not-served', 'Release this booking? It will be marked as not served.', 'Booking released');
   helpAct('#helplater', 'wait', null, 'We told the customer you will wait');
+  const nsBtn = $('#noshow');
+  if (nsBtn) nsBtn.onclick = async () => { if (!confirm('Mark as no-show? The customer did not arrive.')) return; nsBtn.disabled = true; try { await api(`/barber/bookings/${id}/no-show`, { method: 'POST', body: {} }); await barberBooking(id); } catch (e) { fail(e); nsBtn.disabled = false; } };
 }
 
 /* ---------- barber: customers ---------- */

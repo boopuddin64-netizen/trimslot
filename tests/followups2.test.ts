@@ -21,8 +21,9 @@ async function paidLocked(c: Awaited<ReturnType<typeof bootApp>>, time = '10:00'
 test('help: an OPEN request on a booking that is no longer live is closed quietly, no false URGENT report; (a live one still escalates: see test G in followups.test.ts)', async () => {
   const c = await bootApp();
   try {
-    setNow(`${WED}T09:58:00+01:00`);
+    setNow(`${WED}T08:00:00+01:00`);
     const a = await paidLocked(c, '10:00');
+    setNow(`${WED}T09:58:00+01:00`);
     { const r1 = await c.call('POST', `/api/bookings/${a.id}/help`, { note: 'Emergency at home' }, a.cc); assert.equal(r1.status, 201, r1.text); }
     await c.db.query(`UPDATE bookings SET status='NO_SHOW' WHERE id=$1`, [a.id]);   // the booking ended some other way before anyone answered
     setNow(`${WED}T10:05:00+01:00`);
@@ -36,8 +37,9 @@ test('help: an OPEN request on a booking that is no longer live is closed quietl
 test('help alert: not counted in the 10-a-day report cap, not on the barber profile, no "report resolved" message', async () => {
   const c = await bootApp();
   try {
-    setNow(`${WED}T09:45:00+01:00`);
+    setNow(`${WED}T08:00:00+01:00`);
     const a = await paidLocked(c);
+    setNow(`${WED}T09:45:00+01:00`);
     await c.call('POST', `/api/bookings/${a.id}/help`, { note: 'Emergency at home' }, a.cc);
     setNow(`${WED}T10:05:00+01:00`);
     assert.equal(await escalateUnansweredHelp(c.db), 1);

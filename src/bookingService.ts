@@ -151,7 +151,7 @@ export async function createBooking(db: Db, customerId: number, input: CreateInp
     await assertCustomerMayBook(t, customerId);   // first booking needs a verified email
     const featureSettings = await getSettings(t);
     validateBookableDate(input.date, featureSettings.booking_window_days);
-    if (input.payment_option === 'ON_ARRIVAL' && !featureSettings.feature_pay_on_arrival) throw new AppError(409, 'FEATURE_OFF', 'Pay on arrival is unavailable right now. Choose another payment option.');
+    if (input.payment_option === 'ON_ARRIVAL' && !featureSettings.feature_pay_on_arrival) throw new AppError(409, 'PAY_ON_ARRIVAL_OFF', 'Pay on arrival is unavailable right now. Choose another payment option.');
     if (input.payment_option === 'PLAN' && !featureSettings.feature_plans) throw new AppError(409, 'FEATURE_OFF', 'Plans are unavailable right now.');
     if (input.payment_option === 'CREDIT' && !featureSettings.feature_credits) throw new AppError(409, 'FEATURE_OFF', 'Session credits are unavailable right now.');
     await assertBookable(t, input.barber_id, input.payment_option);
@@ -418,9 +418,11 @@ export async function applyMissedMoney(t: Conn, b: BookingRow, reason: 'NO_SHOW'
     await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
     message += ' Your plan session was given back, so you can book again.';
   } else if (b.payment_option === 'CREDIT' && b.credit_id) {
+    // The same credit goes back, with the expiry date it had at first. No new credit is issued.
+    await restoreEntitlement(t, b);
+    await t.query(`UPDATE bookings SET payment_status='VOID' WHERE id=$1`, [b.id]);
     const orig = await t.maybeOne<{ expires_at: string }>('SELECT expires_at FROM session_credits WHERE id=$1', [b.credit_id]);
-    credit = s.credit_on_missed_session ? await issueCredit(t, b, reason, s, orig?.expires_at) : null;
-    if (credit) message += ` You get a new session credit with this barber. It keeps its original expiry date, ${credit.expires_at.slice(0, 10)}.`;
+    message += ` Your session credit was given back. It keeps its original expiry date, ${orig?.expires_at.slice(0, 10) ?? 'as before'}.`;
   } else if (b.payment_option === 'ONLINE' && b.payment_status === 'PAID') {
     credit = s.credit_on_missed_session ? await issueCredit(t, b, reason, s) : null;
     if (credit) message += ` You get no refund, but you now have 1 session credit with this barber, valid until ${credit.expires_at.slice(0, 10)}.`;
@@ -435,9 +437,10 @@ export async function applyMissedMoney(t: Conn, b: BookingRow, reason: 'NO_SHOW'
 }
 
 /** Customer's bookings whose day has ended while still CONFIRMED become missed. Runs on read (no cron needed). Arrived bookings are NOT touched. */
-export async function settleMissedBookings(db: Db, customerId: number) {
+/** Bookings whose day has ended without a check-in become missed (and their session or credit is sorted out). Run by the sweep for everyone, and on a customer's read for their own bookings. */
+export async function settleMissedBookings(db: Db, customerId?: number) {
   const today = lagosDate();
-  const due = await db.many<{ id: number }>(`SELECT id FROM bookings WHERE customer_id=$1 AND status='CONFIRMED' AND date < $2`, [customerId, today]);
+  const due = await db.many<{ id: number }>(`SELECT id FROM bookings WHERE status='CONFIRMED' AND date < $1 AND ($2::int IS NULL OR customer_id=$2) ORDER BY date, id LIMIT 500`, [today, customerId ?? null]);
   for (const { id } of due) {
     await db.tx(async (t) => {
       const b = await t.maybeOne<BookingRow>('SELECT * FROM bookings WHERE id=$1 FOR UPDATE', [id]);
@@ -498,8 +501,9 @@ export async function barberAction(db: Db, barberUid: number, barberId: number, 
         break;
       }
       case 'no-show': {
-        if (!['CONFIRMED', 'ARRIVED'].includes(b.status)) throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
-        if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the booked time has passed.');
+        if (b.status !== 'CONFIRMED') throw new AppError(409, 'ILLEGAL_TRANSITION', `You cannot mark a ${b.status} booking as no-show.`);
+        if (lagosDate() !== b.date) throw new AppError(409, 'NOT_TODAY', 'You can mark a no-show only on the booking day, until midnight.');
+        if (new Date(now) < new Date(b.scheduled_at)) throw new AppError(409, 'TOO_EARLY', 'You can mark a no-show only after the booked time.');
         await setStatus(t, b, 'NO_SHOW');
         await applyMissedMoney(t, b, 'NO_SHOW', actor);
         break;

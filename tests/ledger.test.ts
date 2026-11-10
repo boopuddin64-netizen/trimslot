@@ -17,7 +17,7 @@ const NOW = `${WED}T08:00:00+01:00`;
 const S = { charge_flat_kobo: 0, charge_percent: 10, charge_min_kobo: 0, commission_factor: 0.5 };
 
 async function boot() {
-  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  const s = await freshDb(); setNow(NOW); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   const uid = (await s.db.one('SELECT user_id FROM barbers WHERE id=$1', [s.barberId])).user_id;
   await s.db.query(`UPDATE barbers SET paystack_subaccount='ACCT_test' WHERE id=$1`, [s.barberId]);
   await s.db.tx((t) => updateSettings(t, { charge_percent: 10, charge_flat_naira: 0, charge_min_naira: 0 }));
@@ -76,7 +76,7 @@ test('accrual: only completed pay-on-arrival bookings accrue, once; in-app booki
     assert.equal((await s.db.one('SELECT COUNT(*)::int c FROM commission_ledger')).c, 1);
     // no-show on pay-on-arrival: nothing to owe
     const ns = await createBooking(s.db, s.customerIds[2 % s.customerIds.length], { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '09:00', payment_option: 'ON_ARRIVAL' });
-    setNow(`${WED}T09:30:00+01:00`); await barberAction(s.db, s.uid, s.barberId, ns.id, 'no-show');
+    setNow(`${WED}T12:10:00+01:00`); await barberAction(s.db, s.uid, s.barberId, ns.id, 'no-show');
     assert.equal(await outstandingKobo(s.db, s.barberId), 0, 'no-show accrues nothing');
     // factor + switch
     await s.db.tx((t: any) => updateSettings(t, { commission_factor: 0.2 }));

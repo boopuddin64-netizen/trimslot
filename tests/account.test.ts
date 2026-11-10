@@ -11,7 +11,7 @@ import { runSweep } from '../src/sweep';
 
 const KEY = 'test-admin-key-0123456789';
 async function boot() {
-  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY; await setupPin(s.db, '4821');
+  const s = await freshDb(); setNow(`${WED}T08:00:00+01:00`); process.env.CRON_SECRET = KEY; process.env.ADMIN_KEY = KEY; await setupPin(s.db, '4821');
   const server = createApp(s.db).listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const j = async (p: string, o: any = {}) => {
@@ -48,7 +48,7 @@ test('bumping a document version asks everyone to re-accept; accepting logs the 
     const u = await s.signup({ role: 'customer', name: 'Re Accept', email: 'ra@x.com', password: 'Password123', accept_terms: true });
     const H = { Cookie: u.cookie };
     assert.equal((await s.j('/api/auth/me', { headers: H })).body.user.consent_required.length, 0);
-    assert.equal((await s.j('/api/admin/settings', { method: 'PUT', headers: s.A, body: { terms_version: '2' } })).status, 200);
+    assert.equal((await s.j('/api/admin/settings', { method: 'PUT', headers: s.A, body: { cancel_cutoff_min: 45 } })).status, 200);   // a terms-policy change bumps terms_version (it is not set directly)
     const me = (await s.j('/api/auth/me', { headers: H })).body.user;
     assert.deepEqual(me.consent_required.map((c: any) => c.document), ['terms']);
     assert.equal((await s.j('/api/me/consent', { method: 'POST', headers: H, body: { accept: false } })).status, 400);
