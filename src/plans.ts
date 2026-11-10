@@ -240,8 +240,8 @@ export async function customerWallet(c: Conn, customerId: number) {
       COALESCE((SELECT array_agg(sv.name ORDER BY sv.name) FROM services sv WHERE sv.id = ANY(pp.service_ids)), '{}') AS service_names
     FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status='ACTIVE' ORDER BY live DESC, pp.expires_at DESC LIMIT 50`, [customerId, now]);
   const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, b.shop_name,
-      (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live
-    FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id WHERE sc.customer_id=$1 AND sc.status<>'REVOKED' AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
+      (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live, sb.service_id, sv.name AS service_name
+    FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id LEFT JOIN bookings sb ON sb.id = sc.source_booking_id LEFT JOIN services sv ON sv.id = sb.service_id WHERE sc.customer_id=$1 AND sc.status<>'REVOKED' AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
   return { rules: limitsOf(s), plans, credits };
 }
 
@@ -250,7 +250,9 @@ export async function entitlementsFor(c: Conn, customerId: number, barberId: num
   const now = isoNow();
   const plans = await c.many(`SELECT id, plan_id, plan_name, sessions_total, sessions_used, (sessions_total - sessions_used) AS sessions_left, expires_at, service_ids FROM plan_purchases
       WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND expires_at > $3 AND sessions_used < sessions_total ORDER BY expires_at`, [customerId, barberId, now]);
-  const credits = await c.many(`SELECT id, value_kobo, expires_at, reason FROM session_credits WHERE customer_id=$1 AND barber_id=$2 AND status='AVAILABLE' AND expires_at > $3 ORDER BY expires_at`, [customerId, barberId, now]);
+  const credits = await c.many(`SELECT sc.id, sc.value_kobo, sc.expires_at, sc.reason, sb.service_id, sv.name AS service_name FROM session_credits sc
+      LEFT JOIN bookings sb ON sb.id = sc.source_booking_id LEFT JOIN services sv ON sv.id = sb.service_id
+      WHERE sc.customer_id=$1 AND sc.barber_id=$2 AND sc.status='AVAILABLE' AND sc.expires_at > $3 ORDER BY sc.expires_at, sc.id`, [customerId, barberId, now]);
   return { plans, credits };
 }
 
@@ -272,12 +274,16 @@ export async function claimEntitlement(t: Conn, o: { customerId: number; barberI
     if (!r) throw new AppError(409, 'NO_PLAN_SESSION', 'You have no plan session for this service and date. Use plan sessions before the plan ends.');
     return { option: 'PLAN', plan_purchase_id: r.id, credit_id: null, label: r.plan_name };
   }
-  const params: unknown[] = [o.customerId, o.barberId, o.priceKobo, o.startAt.toISOString(), isoNow()];
-  let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND id=$${params.length}`; }
+  // A credit covers the SAME service it was issued for, or any service whose price is exactly the credit's value.
+  // The same service is preferred when both fit. Same rule as the booking wizard (creditsFor in public/app.js).
+  const params: unknown[] = [o.customerId, o.barberId, o.priceKobo, o.startAt.toISOString(), isoNow(), o.serviceId];
+  let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND sc.id=$${params.length}`; }
   const r = await t.maybeOne<{ id: number }>(`UPDATE session_credits SET status='USED', used_at=$5 WHERE id = (
-      SELECT id FROM session_credits WHERE customer_id=$1 AND barber_id=$2 AND status='AVAILABLE' AND value_kobo >= $3 AND expires_at >= $4 AND expires_at > $5${idSql}
-      ORDER BY expires_at, id LIMIT 1 FOR UPDATE) RETURNING id`, params);
-  if (!r) throw new AppError(409, 'NO_CREDIT', 'You have no session credit for this barber, service and date. A credit works only with the barber who gave it. Use it before it ends. The service price must not be more than the credit.');
+      SELECT sc.id FROM session_credits sc LEFT JOIN bookings sb ON sb.id = sc.source_booking_id
+      WHERE sc.customer_id=$1 AND sc.barber_id=$2 AND sc.status='AVAILABLE' AND (sb.service_id=$6 OR sc.value_kobo=$3)
+        AND sc.expires_at >= $4 AND sc.expires_at > $5${idSql}
+      ORDER BY (sb.service_id=$6) DESC, sc.expires_at, sc.id LIMIT 1 FOR UPDATE OF sc) RETURNING id`, params);
+  if (!r) throw new AppError(409, 'NO_CREDIT', 'You have no session credit for this barber that fits this booking. A credit covers the same service it came from, or a service with the same price. Use it before it ends.');
   return { option: 'CREDIT', plan_purchase_id: null, credit_id: r.id, label: 'Session credit' };
 }
 

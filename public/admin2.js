@@ -222,7 +222,8 @@ async function reports() {
     ['Report', (x) => `<b>${x.staff_alert ? 'Staff alert: unanswered help request' : esc(x.category.replace('_', ' '))}</b><span class="sub">${esc(x.message)}</span>${x.admin_note ? `<span class="sub"><i>Resolution:</i> ${esc(x.admin_note)}</span>` : ''}`],
     ['From', (x) => x.staff_alert ? `TrimSlot system<span class="sub">customer ${esc(x.reporter_name)} asked for help</span>` : `${esc(x.reporter_name)}<span class="sub">${esc(x.reporter_role)} #${x.reporter_id}</span>`], ['About', (x) => x.target_name ? `<a href="#" data-u="${x.target_user_id}">${esc(x.target_name)}</a><span class="sub">${esc(x.target_role)} #${x.target_user_id}</span>` : '—'],
     ['Booking', (x) => x.booking_id ? `<a href="#" data-b="${x.booking_id}">#${x.booking_id}</a>` : '—'], ['Filed', (x) => stamp(x.created_at)],
-    ['', (x) => x.status === 'OPEN' ? act('Resolve', '', `data-do="res" data-id="${x.id}"`) + act('Dismiss', 'sec', `data-do="dis" data-id="${x.id}"`) : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status), 'act'],
+    ['', (x) => (x.status === 'OPEN' ? act('Resolve', '', `data-do="res" data-id="${x.id}"`) + act('Dismiss', 'sec', `data-do="dis" data-id="${x.id}"`) : bd(x.status === 'RESOLVED' ? 'b-green' : 'b-gray', x.status))
+      + (x.status === 'OPEN' && x.plan_purchase_id && x.plan_status === 'ACTIVE' ? act('Cancel plan & refund', 'sec', `data-do="pcan" data-pid="${x.plan_purchase_id}" data-id="${x.id}"`) : ''), 'act'],
   ];
   app.innerHTML = head('Reports', 'Complaints from customers and barbers. Close each one with a note. We tell the person who reported it, unless you untick the box.', refreshBtn) +
     `<div class="pills">${['OPEN', 'RESOLVED', 'DISMISSED', 'ALL'].map((k) => `<button data-st="${k}" class="${rstat === k ? 'on' : ''}">${k[0] + k.slice(1).toLowerCase()} <span class="c">${k === 'ALL' ? r.counts.OPEN + r.counts.RESOLVED + r.counts.DISMISSED : r.counts[k]}</span></button>`).join('')}</div>` + table(cols, r.reports, rstat === 'OPEN' ? 'No open reports. 🎉' : 'Nothing here.');
@@ -232,7 +233,11 @@ async function reports() {
   wireReload(reports);
   const close = (status) => (d) => { formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'We save your note. You can also send it to the person who reported.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
     fields: [{ name: 'note', label: 'Resolution note', type: 'textarea', required: true, ph: 'What was done?' }, { name: 'notify_reporter', label: 'Tell the reporter', type: 'checkbox', value: true }], submit: async (v) => { await post(`/reports/${d.id}/resolve`, { status, note: v.note, notify_reporter: v.notify_reporter }); return 'Report ' + status.toLowerCase(); }, after: reports }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); };
-  wireActions(app, { res: close('RESOLVED'), dis: close('DISMISSED') });
+  /* Backup for a dispute: the customer and barber agreed a refund for the plan. Ends the plan, optionally refunds it (PIN asked by the API), then close the report with a note. */
+  const cancelPlan = (d) => formModal({ title: 'Cancel plan and refund', help: 'Use this only when the customer and the barber agreed a refund, or a dispute was decided. The plan ends now. Tick refund to send the money back through Paystack. Then close the report with a note.', go: 'Cancel plan', cls: 'red',
+    fields: [{ name: 'refund', label: 'Also refund the payment', type: 'checkbox' }, REASON('Reason (saved in the audit log)', 'For example: agreed refund after report #' + d.id)],
+    submit: async (v) => { const o = await post(`/plan-purchases/${d.pid}/cancel`, { reason: v.reason, refund: !!v.refund }); return 'Plan cancelled' + (o.refund === 'requested' ? ' · refund requested' : o.refund === 'failed' ? ' · we could not ask for the refund. See Payments.' : ''); }, after: reports });
+  wireActions(app, { res: close('RESOLVED'), dis: close('DISMISSED'), pcan: cancelPlan });
 }
 
 /* ---------- analytics (plain SVG-free bar charts) ---------- */

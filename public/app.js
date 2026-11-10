@@ -459,7 +459,10 @@ async function bookWizard(barberId) {
   const plansFor = () => (my.plans || []).filter((p) => (p.service_ids || []).includes(w.service.id) && p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()));
   const planFor = () => { const l = plansFor(); return l.find((p) => p.id === w.planId) || (l.length === 1 ? l[0] : null); };
   const otherPlans = () => (my.plans || []).filter((p) => p.sessions_left > 0 && new Date(p.expires_at) >= new Date(slotIso()) && !(p.service_ids || []).includes(w.service.id));
-  const creditFor = () => (my.credits || []).find((c) => c.value_kobo >= w.service.price_kobo && new Date(c.expires_at) >= new Date(slotIso()));
+  /* A credit covers the SAME service it came from, or any service with the SAME price. The same service is listed first (same rule as the server). */
+  const creditsFor = () => (my.credits || []).filter((c) => new Date(c.expires_at) >= new Date(slotIso()) && (c.service_id === w.service.id || c.value_kobo === w.service.price_kobo))
+    .sort((a, b) => (b.service_id === w.service.id) - (a.service_id === w.service.id));
+  const creditFor = () => creditsFor()[0];
   const notices = data.notices || [];
   const bk = data.booking || { paused: false, maintenance: false, pay_on_arrival: true };
   const closedDates = new Set(notices.filter((n) => n.type === 'CLOSED').map((n) => n.date));
@@ -522,7 +525,7 @@ async function bookWizard(barberId) {
           <div class="muted small">${w.service.duration_min} min · ${dateLabel(w.date)} at ${t12(w.time)}</div><div class="muted small">${esc(barber.shop_name)}, ${esc(barber.location || '')}</div>
           ${w.pay === 'ONLINE' && pn.booking_fee_kobo ? `<div class="money">${mrow('Price', naira(w.service.price_kobo))}${mrow('Booking fee <small class="muted">· helps cover card payment costs</small>', naira(pn.booking_fee_kobo))}${mrow('Total to pay', naira(pn.total_kobo), 'tot')}</div>` : ''}</div>
         <h3 style="margin-top:16px">How would you like to pay?</h3>
-        ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · works until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber only</div></div></button>` : ''}
+        ${cr ? `<button class="svc ${w.pay === 'CREDIT' ? 'on' : ''}" data-p="CREDIT"><div><b>Use session credit</b><div class="muted small">No payment · works until ${dateLabel(cr.expires_at.slice(0, 10))} · this barber, same service or same price</div></div></button>` : ''}
         ${pls.map((x) => `<button class="svc ${w.pay === 'PLAN' && pl && pl.id === x.id ? 'on' : ''}" data-p="PLAN" data-pid="${x.id}"><div><b>Use plan session</b><div class="muted small">${esc(x.plan_name)} · ${x.sessions_left} left · ends ${dateLabel(x.expires_at.slice(0, 10))}</div></div></button>`).join('')}
         ${!pls.length && otherPlans().length ? `<div class="info small notice" id="plan-nofit">${ic('ticket', 'sm')}<div>${otherPlans().map((x) => `Your plan <b>${esc(x.plan_name)}</b> covers ${esc(svcNames(x.service_ids, services))} only.`).join(' ')} It does not cover ${esc(w.service.name)}. Choose another way to pay.</div></div>` : ''}
         ${onlineOk ? `<button class="svc ${w.pay === 'ONLINE' ? 'on' : ''}" data-p="ONLINE"><div><b>Pay now</b><div class="muted small">Pay safely online with Paystack${state.cfg.mock ? ' (test checkout)' : ''}. We add a small booking fee: ${naira(pn.booking_fee_kobo)}.</div></div></button>` : ''}
@@ -743,8 +746,8 @@ async function barberPage(id, shareCode) {
     ${(my.credits && my.credits.length) || (my.plans && my.plans.some((p) => p.sessions_left > 0)) ? `<div class="ok small notice">${ic('ticket', 'sm')}<div>${my.plans.filter((p) => p.sessions_left > 0).map((p) => `Plan <b>${esc(p.plan_name)}</b>: ${p.sessions_left} session${p.sessions_left === 1 ? '' : 's'} left.`).join(' ')} ${my.credits.length ? `${my.credits.length} session credit${my.credits.length === 1 ? '' : 's'} available.` : ''} We use it when you book.</div></div>` : ''}
     <h2>Services</h2>
     <div class="list">${services.map((s) => `<div><span class="grow"><b>${esc(s.name)}</b><span class="sub">${s.duration_min} min</span></span><b>${naira(s.price_kobo)}</b></div>`).join('') || '<div class="muted">No services yet.</div>'}</div>
-    <div id="plans"><h2>Plans</h2>${plans.length ? `<p class="small muted" style="margin-top:0">Buy a pack and book without paying each time. Unused sessions end when the plan ends.</p>${plans.map((pl) => planCard(pl, services, isCustomer)).join('')}` : '<p class="muted small">This barber has no plans right now.</p>'}</div>
-    ${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
+    <div id="plans"><h2>Plans</h2>${plans.length ? `<p class="small muted" style="margin-top:0">Buy a pack and book without paying each time. Unused sessions end when the plan ends.</p>${plans.map((pl) => planCard(pl, services, isCustomer)).join('')}` : ((state.cfg.features || {}).plans === false ? '<p class="muted small">Plans are turned off by TrimSlot right now, so you cannot buy one.</p>' : '<p class="muted small">This barber has no plans right now.</p>')}</div>
+${rv && rv.reviews.length ? `<h2>Reviews</h2>${rv.reviews.map((x) => `<div class="card review"><div class="row between">${stars(x.rating)}<span class="small muted">${esc(x.customer_name)} · ${dateLabel(x.created_at.slice(0, 10))}</span></div>${x.comment ? `<p style="margin:8px 0 0">${esc(x.comment)}</p>` : ''}${x.reply ? `<div class="reply small"><b>Reply from ${esc(barber.shop_name)}</b><div>${esc(x.reply)}</div></div>` : ''}</div>`).join('')}` : ''}
     <h2>Opening hours</h2>
     <div class="card"><table class="hours">${hoursRows}</table>${brk ? `<div class="small muted" style="margin-top:8px">Break ${t12(brk.break_start)} – ${t12(brk.break_end)}</div>` : ''}</div>
     ${isCustomer && shareInfo ? `<h2>Share this barber</h2>${shareCardHtml({ id: 'bshare', qr: shareInfo.qr_url, name: barber.shop_name, title: 'Send this barber to a friend', hint: 'Anyone with this link can see the shop. Send it only to people you trust.', url: shareInfo.url })}` : ''}
@@ -781,9 +784,12 @@ async function wallet(planResult, ppId) {
   const live = w.credits.filter((c) => c.live), past = w.credits.filter((c) => !c.live);
   app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
     <h2>Session credits</h2>
-    <p class="small muted" style="margin-top:0">If you miss a paid session, we do not refund it. You get 1 credit with the <b>same barber</b>. It works for ${w.rules.credit_expiry_days} days. You cannot cash it out. We use it when you book with that barber.</p>
-    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · any service up to ${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">You have no credits right now.</p>'}
+    ${(state.cfg.features || {}).credits === false ? '<div class="info small notice">Session credits are turned off by TrimSlot right now, so you cannot use one. Your credits are kept, and their end dates do not change.</div>' : ''}
+    <p class="small muted" style="margin-top:0">If you miss a paid session, we do not refund it. You get 1 credit with the <b>same barber</b>. It covers the <b>same service</b>, or a service with the <b>same price</b>. It works for ${w.rules.credit_expiry_days} days. You cannot cash it out. We use it when you book with that barber.</p>
+    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · ${c.service_name ? esc(c.service_name) + ' or any service priced ' : 'any service priced '}${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">You have no credits right now.</p>'}
     <h2>My plans</h2>
+    ${(state.cfg.features || {}).plans === false ? '<div class="info small notice">Plans are turned off by TrimSlot right now, so you cannot buy one or use a plan session. Your plans keep their sessions and end dates.</div>' : ''}
+    <p class="small muted" style="margin-top:0">If you miss a plan session, it goes back to your plan. It does not become a credit, and your plan keeps its end date.</p>
     ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
       <div class="muted small">${esc(p.shop_name)}</div><div class="small">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
       <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
@@ -1257,12 +1263,16 @@ const planForm = (id, pl, services, limits) => `<form class="planf" ${id ? `data
   <div style="flex:1 1 80px"><label>Sessions</label><input name="sessions" type="number" min="1" max="${limits.max_sessions}" value="${pl ? pl.sessions : ''}" required></div>
   <div style="flex:1 1 80px"><label>Valid (days)</label><input name="validity_days" type="number" min="1" max="${limits.max_validity_days}" value="${pl ? pl.validity_days : ''}" required></div></div>
   <label>Included services</label><div class="small muted" style="margin:-2px 0 6px">A plan session can only book the services you tick here.</div>${services.map((s) => `<label class="chk"><input type="checkbox" name="svc" value="${s.id}" ${pl && (pl.service_ids || []).includes(s.id) ? 'checked' : ''}> ${esc(s.name)} <span class="muted small">${naira(s.price_kobo)}</span></label>`).join('') || '<p class="small muted">Add a service first.</p>'}
+  ${pl && pl.active && pl.approval_status === 'APPROVED' && limits.approval_required ? '<div class="warn small" style="margin:8px 0">Saving changes hides this plan from customers until TrimSlot approves the new version. People who already bought it keep their sessions and the old terms.</div>' : ''}
   <div class="btns" style="margin-top:10px"><button class="btn sm ${id ? '' : 'sec'}">${id ? 'Save plan' : ic('plus', 'sm') + ' Create plan'}</button></div></form>`;
 function plansBody(po, services) {
   const L = po.limits;
-  const rules = `<div class="info small" style="margin:10px 0">Rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · lasts up to ${L.max_validity_days} days. If a customer misses a paid session, they get a credit with you. It lasts ${L.credit_expiry_days} days. They cannot cash it out. Existing buyers keep the price, sessions, included services, and expiry they bought.</div>`;
+  const F = state.cfg.features || {};
+  const offNote = (F.plans === false ? '<div class="warn small" style="margin:10px 0">Plans are turned off by TrimSlot right now. Customers cannot buy a plan or use a plan session. Your plans are saved and show again when plans are back on.</div>' : '')
+    + (F.credits === false ? '<div class="warn small" style="margin:10px 0">Session credits are turned off by TrimSlot right now. Customers cannot use a credit. Credits they have are kept and their end dates do not change.</div>' : '');
+  const rules = `<div class="info small" style="margin:10px 0">Rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · lasts up to ${L.max_validity_days} days. If a customer misses a paid session, they get a credit with you. It covers the same service or a service with the same price. It lasts ${L.credit_expiry_days} days. They cannot cash it out. If a customer misses a plan session, it goes back to their plan. Existing buyers keep the price, sessions, included services, and expiry they bought.</div>`;
   const planStatus = (pl) => {
-    if (pl.approval_status === 'PENDING') return ['b-amber', 'PENDING APPROVAL', 'Not live yet — waiting for admin approval.'];
+    if (pl.approval_status === 'PENDING') return ['b-amber', 'PENDING APPROVAL', 'Hidden from customers until TrimSlot approves it. People who already bought it keep using it.'];
     if (pl.approval_status === 'REJECTED') return ['b-red', 'CHANGES NEEDED', 'Not live — update the plan and save it to send it for review again.'];
     if (!pl.active) return ['b-gray', 'HIDDEN', 'Not live — new customers cannot buy it. Existing purchases continue.'];
     return ['b-green', 'LIVE', 'Customers can see and buy this plan.'];
@@ -1272,7 +1282,7 @@ function plansBody(po, services) {
     <div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`; }).join('') || '<p class="muted small">No plans yet.</p>';
   const buyers = po.purchases.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)}</span><span class="${x.live ? '' : 'muted'}">${x.sessions_total - x.sessions_used}/${x.sessions_total} left${x.live ? '' : ' · ended'}</span></div>`).join('');
   const credits = po.credits.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${x.reason === 'NO_SHOW' ? 'no-show' : 'missed session'}</span><span class="${x.live ? '' : 'muted'}">${x.status === 'USED' ? 'used' : x.live ? 'until ' + expTxt(x.expires_at) : 'expired'}</span></div>`).join('');
-  return `${rules}${list}<h3 style="margin-top:14px">Create a plan</h3>${planForm(null, null, services, L)}
+  return `${offNote}${rules}${list}<h3 style="margin-top:14px">Create a plan</h3>${planForm(null, null, services, L)}
     ${buyers ? `<h3 style="margin-top:14px">Plan buyers</h3>${buyers}` : ''}${credits ? `<h3 style="margin-top:14px">Session credits issued</h3>${credits}` : ''}`;
 }
 function wirePlans(po, guard) {
