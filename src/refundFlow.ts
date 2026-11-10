@@ -82,6 +82,8 @@ export async function autoApproveDueRefunds(db: Db, limit = 25): Promise<{ appro
 export function registerRefundAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
   /** The approval queue: pending refunds with their deadline, plus legacy CREDIT_PENDING rows from before this rule (still resolvable). */
   api.get('/admin/refund-queue', guard, wrap(async (_req, res) => {
+    // Refunds whose time is up are sent now, so the queue never shows an expired request. (The daily sweep is the backstop.)
+    await autoApproveDueRefunds(db).catch(() => null);
     const s = await getSettings(db);
     const pending = await db.many(`SELECT k.id, k.date, k.start_min, k.service_name, k.price_kobo, k.status, k.cancelled_at, k.cancelled_by, b.shop_name, u.name AS customer_name, u.email AS customer_email, u.avatar_url AS customer_avatar,
         p.reference, p.refund_reason, p.refund_due_at FROM bookings k JOIN barbers b ON b.id=k.barber_id JOIN users u ON u.id=k.customer_id

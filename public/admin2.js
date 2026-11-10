@@ -216,6 +216,18 @@ async function broadcast() {
 
 /* ---------- reports inbox ---------- */
 let rstat = 'OPEN';
+/* Plan balance refunds that the customer AND the barber agreed to. An admin authorizes each one here (the API asks for the PIN). */
+async function planRefundsCard() {
+  app.insertAdjacentHTML('beforeend', '<div class="card" id="plan-refunds"></div>');
+  const slot = document.getElementById('plan-refunds');
+  const pr = await api('/plan-refunds?status=CONFIRMED').catch(() => ({ requests: [] }));
+  const rows = pr.requests || [];
+  slot.innerHTML = '<h3 style="margin-top:0">Plan refunds to authorize</h3>' + (rows.length
+    ? rows.map((x) => `<div class="row"><div><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)} at ${esc(x.shop_name)}<span class="sub">${x.sessions_left} of ${x.sessions_total} sessions unused · both agreed ${stamp(x.barber_confirmed_at || x.customer_confirmed_at)}</span></div><div><b>${naira(x.amount_kobo)}</b> ${act('Authorize', '', `data-do="pauth" data-id="${x.id}"`)}</div></div>`).join('')
+    : '<p class="muted small">Nothing waiting. The customer and the barber must both agree first.</p>');
+  wireActions(slot, { pauth: (d) => formModal({ title: 'Authorize plan refund', help: 'The plan ends now and the unused sessions are sent back through Paystack. Paystack fees are not refunded. The API asks for your PIN.', go: 'Authorize refund', cls: 'red', fields: [],
+    submit: async () => { const o = await post(`/plan-refunds/${d.id}/authorize`, {}); return o.refund === 'requested' ? 'Refund sent to Paystack' : 'Paystack did not take the refund. It stays in Payments to retry.'; }, after: reports }) });
+}
 async function reports() {
   const r = await api('/reports?status=' + rstat); badges.reports = r.counts.OPEN; drawNav('reports');
   const cols = [
@@ -230,6 +242,7 @@ async function reports() {
   app.querySelectorAll('[data-u]').forEach((a) => a.onclick = (e) => { e.preventDefault(); userSheet(Number(a.dataset.u), reports); });
   app.querySelectorAll('[data-b]').forEach((a) => a.onclick = (e) => { e.preventDefault(); bookingSheet(Number(a.dataset.b), reports); });
   wireReload(reports);
+  planRefundsCard();
   const close = (status) => (d) => { formModal({ title: status === 'RESOLVED' ? 'Resolve report' : 'Dismiss report', help: 'We save your note. You can also send it to the person who reported.', go: status === 'RESOLVED' ? 'Resolve' : 'Dismiss', cls: status === 'RESOLVED' ? '' : 'sec',
     fields: [{ name: 'note', label: 'Resolution note', type: 'textarea', required: true, ph: 'What was done?' }, { name: 'notify_reporter', label: 'Tell the reporter', type: 'checkbox', value: true }], submit: async (v) => { await post(`/reports/${d.id}/resolve`, { status, note: v.note, notify_reporter: v.notify_reporter }); return 'Report ' + status.toLowerCase(); }, after: reports }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); };
   wireActions(app, { res: close('RESOLVED'), dis: close('DISMISSED') });

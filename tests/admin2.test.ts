@@ -108,8 +108,11 @@ test('plan oversight: hide/restore plan, adjust sessions + expiry within bounds,
     assert.equal((await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'too low now', delta: -50 })).status, 400);
     assert.equal((await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'nothing' })).status, 400);
     const ext = await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'compensation', extend_days: 7 }); assert.equal(ext.status, 200);
-    const c = await s.post(`/plan-purchases/${pid}/cancel`, { reason: 'fraud check failed', refund: true }); assert.equal(c.body.changed, true); assert.equal(c.body.refund, 'requested');
-    assert.equal((await s.post(`/plan-purchases/${pid}/cancel`, { reason: 'fraud check failed', refund: true })).body.changed, false);
+    // an admin cannot refund a plan alone: the refund flag is refused and the plan stays active
+    const refused = await s.post(`/plan-purchases/${pid}/cancel`, { reason: 'fraud check failed', refund: true }); assert.equal(refused.status, 400);
+    assert.equal((await s.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid])).status, 'ACTIVE');
+    const c = await s.post(`/plan-purchases/${pid}/cancel`, { reason: 'fraud check failed' }); assert.equal(c.body.changed, true); assert.equal(c.body.refund, undefined);
+    assert.equal((await s.post(`/plan-purchases/${pid}/cancel`, { reason: 'fraud check failed' })).body.changed, false);
     assert.equal((await s.post(`/plan-purchases/${pid}/adjust`, { reason: 'too late now', delta: 1 })).status, 409, 'cancelled purchases cannot be adjusted');
   } finally { s.server.close(); resetNow(); }
 });

@@ -712,6 +712,7 @@ async function barberPlans() {
   const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
   wirePlans(po, guard);
+  wireRefundBox(app, 'BARBER', barberPlans);
 }
 
 /* ---------- barber public page (customers land here first) ---------- */
@@ -765,6 +766,37 @@ const planCard = (pl, services, canBuy) => `<div class="card plan"><div class="r
   <div class="meta"><span>${pl.sessions} session${pl.sessions === 1 ? '' : 's'}</span><span>Valid ${pl.validity_days} days</span><span>${naira(Math.round(pl.price_kobo / pl.sessions))} per session</span></div>
   <div class="small muted">Includes ${esc(svcNames(pl.service_ids, services))}</div>
   ${canBuy ? `<div class="btns end" style="margin-top:12px"><button class="btn sm" data-buy="${pl.id}">Buy plan</button></div>` : ''}</div>`;
+/* Balance refund of a part-used plan. Both the customer and the barber must agree; then TrimSlot authorizes it. */
+function refundBox(p, role) {
+  const other = role === 'CUSTOMER' ? 'barber' : 'customer';
+  const r = p.refund_request;
+  const amt = naira(r ? r.amount_kobo : p.balance_kobo || 0);
+  if (r) {
+    if (r.status === 'REFUNDING') return `<div class="info small notice">Both of you agreed. The plan is cancelled and ${amt} is being sent back.</div>`;
+    if (r.status === 'CONFIRMED') return `<div class="info small notice">Both of you agreed to refund ${amt}. TrimSlot will authorize it and send the money back.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw</button></div>`;
+    if (r.requested_role === role) return `<div class="info small notice">You asked to refund ${amt}. Waiting for the ${other} to agree.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
+    return `<div class="warn small notice">The ${other} asked to cancel this plan and refund ${amt} for the unused sessions. Agree only if you both want this.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Decline</button><button class="btn sm" data-rcf="${r.id}" data-amt="${amt}">Agree to refund ${amt}</button></div>`;
+  }
+  if (!p.live) return '';
+  if (p.refund_upcoming > 0) return `<div class="small muted" style="margin-top:8px">To ask for a refund of the unused sessions, first cancel this plan's ${p.refund_upcoming} upcoming booking${p.refund_upcoming === 1 ? '' : 's'}. Their sessions go back to the plan.</div>`;
+  if (!(p.balance_kobo > 0)) return '';
+  return `<div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rq="${p.id}" data-amt="${amt}">Ask to cancel and refund ${amt}</button></div>`;
+}
+/* Wires the buttons from refundBox. role says who is acting: the customer or the barber (barber routes sit under /barber). */
+function wireRefundBox(root, role, reload) {
+  const base = role === 'CUSTOMER' ? '' : '/barber';
+  const other = role === 'CUSTOMER' ? 'barber' : 'customer';
+  const run = (el, msg, path) => el.onclick = async () => {
+    if (!confirm(msg)) return;
+    el.disabled = true;
+    try { await api(path, { method: 'POST' }); reload(); } catch (e) { fail(e); el.disabled = false; }
+  };
+  root.querySelectorAll('[data-rq]').forEach((el) => run(el, `Ask to cancel this plan and refund ${el.dataset.amt}? The ${other} must agree too. Nothing is sent back until TrimSlot authorizes it. Paystack fees are not refunded.`,
+    role === 'CUSTOMER' ? `/plans/${el.dataset.rq}/refund-request` : `/barber/plan-purchases/${el.dataset.rq}/refund-request`));
+  root.querySelectorAll('[data-rcf]').forEach((el) => run(el, `Agree to cancel this plan and refund ${el.dataset.amt}? The plan ends once TrimSlot authorizes it.`, `${base}/plan-refunds/${el.dataset.rcf}/confirm`));
+  root.querySelectorAll('[data-rwd]').forEach((el) => run(el, 'Withdraw this refund request? The plan stays as it is.', `${base}/plan-refunds/${el.dataset.rwd}/withdraw`));
+}
+
 async function buyPlan(id, el) {
   if (!confirm('Buy this plan? You will go to Paystack to pay. Sessions you do not use end when the plan ends. We do not refund them.')) return;
   el.disabled = true;
@@ -793,8 +825,9 @@ async function wallet(planResult, ppId) {
     ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
       <div class="muted small">${esc(p.shop_name)}</div><div class="small">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
       <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
-      ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}</div>`).join('') || '<p class="muted small">You have no plans yet. Open a barber page to see their plans.</p>'}
+      ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}${refundBox(p, 'CUSTOMER')}</div>`).join('') || '<p class="muted small">You have no plans yet. Open a barber page to see their plans.</p>'}
     ${past.length ? `<h2>Used or ended credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Ended ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
+  wireRefundBox(app, 'CUSTOMER', () => wallet());
 }
 
 /* ---------- customer: bookings ---------- */
@@ -1280,7 +1313,7 @@ function plansBody(po, services) {
   const list = po.plans.map((pl) => { const [statusClass, statusLabel, statusHelp] = planStatus(pl); return `<div class="svcline plnline" data-id="${pl.id}"><div><b>${esc(pl.name)}</b><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div><div class="small muted">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div><div class="small" style="margin-top:6px"><span class="badge ${statusClass}">${statusLabel}</span> <span class="muted">${statusHelp}</span></div>${pl.approval_reason ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Admin note:</b> ${esc(pl.approval_reason)}</div></div>` : ''}${pl.needs_review ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}<div class="small muted">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold</div></div>
     <div class="row" style="gap:6px"><button class="mini ed" aria-label="Edit">${ic('pencil', 'sm')}</button>${pl.active ? `<button class="mini red del" aria-label="Stop selling">${ic('trash', 'sm')}</button>` : '<span class="small muted">Not for sale</span>'}</div>
     <div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`; }).join('') || '<p class="muted small">No plans yet.</p>';
-  const buyers = po.purchases.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)}</span><span class="${x.live ? '' : 'muted'}">${x.sessions_total - x.sessions_used}/${x.sessions_total} left${x.live ? '' : ' · ended'}</span></div>`).join('');
+  const buyers = po.purchases.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)}</span><span class="${x.live ? '' : 'muted'}">${x.sessions_total - x.sessions_used}/${x.sessions_total} left${x.live ? '' : ' · ended'}</span></div>${x.live ? refundBox(x, 'BARBER') : ''}`).join('');
   const credits = po.credits.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${x.reason === 'NO_SHOW' ? 'no-show' : 'missed session'}</span><span class="${x.live ? '' : 'muted'}">${x.status === 'USED' ? 'used' : x.live ? 'until ' + expTxt(x.expires_at) : 'expired'}</span></div>`).join('');
   return `${offNote}${rules}${list}<h3 style="margin-top:14px">Create a plan</h3>${planForm(null, null, services, L)}
     ${buyers ? `<h3 style="margin-top:14px">Plan buyers</h3>${buyers}` : ''}${credits ? `<h3 style="margin-top:14px">Session credits issued</h3>${credits}` : ''}`;
