@@ -21,8 +21,8 @@ import { barberPlanOverview, customerWallet, entitlementsFor, getSettings, limit
 import { acceptPlanBalanceRefund, closeUnconfirmedTransfers, confirmPlanRefundReceived, declinePlanBalanceRefund, recordPlanRefundTransfer, refundStatesFor, requestPlanBalanceRefund, sendTransferReminders, withdrawPlanBalanceRefund } from './planRefunds';
 
 /** The wallet/plan list fields for one plan: what is left to refund, what blocks it, and the live request (if any). */
-const refundView = (s: { balance_kobo: number; upcoming: number; refund_request: any | null } | undefined) => ({
-  balance_kobo: s?.balance_kobo ?? 0, refund_upcoming: s?.upcoming ?? 0, refund_request: s?.refund_request ?? null,
+const refundView = (s: { balance_kobo: number; upcoming: number; refund_request: any | null; refund_last?: any | null } | undefined) => ({
+  balance_kobo: s?.balance_kobo ?? 0, refund_upcoming: s?.upcoming ?? 0, refund_request: s?.refund_request ?? null, refund_last: s?.refund_last ?? null,
 });
 import { clock, hhmmToMin, isValidDate, isoNow, lagosDate, minToHhmm } from './time';
 import { TRANSITIONS } from './stateMachine';

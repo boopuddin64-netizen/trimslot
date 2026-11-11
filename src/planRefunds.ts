@@ -355,16 +355,19 @@ export async function listPlanBalanceRefunds(db: Db, status: string) {
 
 /** For the customer's wallet and the barber's plan list: the balance, the blocking bookings and the live request of each plan. */
 export async function refundStatesFor(c: Conn, purchaseIds: number[]) {
-  const out = new Map<number, { balance_kobo: number; upcoming: number; refund_request: any | null }>();
+  const out = new Map<number, { balance_kobo: number; upcoming: number; refund_request: any | null; refund_last: any | null }>();
   if (!purchaseIds.length) return out;
   const purchases = await c.many<Purchase>(`SELECT id, customer_id, barber_id, plan_name, price_kobo, sessions_total, sessions_used, status, expires_at FROM plan_purchases WHERE id = ANY($1)`, [purchaseIds]);
   const counts = await c.many<{ plan_purchase_id: number; c: number }>(`SELECT plan_purchase_id, COUNT(*)::int c FROM bookings WHERE plan_purchase_id = ANY($1) AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') GROUP BY plan_purchase_id`, [purchaseIds]);
-  const reqs = await c.many<any>(`SELECT id, plan_purchase_id, status, requested_role, amount_kobo, customer_confirmed_at, barber_confirmed_at, decline_reason, refund_method, transfer_reference FROM plan_refund_requests WHERE plan_purchase_id = ANY($1) AND status = ANY($2)`, [purchaseIds, LIVE]);
+  const reqs = await c.many<any>(`SELECT id, plan_purchase_id, status, requested_role, amount_kobo, customer_confirmed_at, barber_confirmed_at, decline_reason, close_reason, refund_method, transfer_reference, transfer_recorded_at, refund_error FROM plan_refund_requests WHERE plan_purchase_id = ANY($1) AND status = ANY($2)`, [purchaseIds, LIVE]);
+  // The latest request that was closed without a refund, so the customer can see why and what to do next.
+  const closed = await c.many<any>(`SELECT DISTINCT ON (plan_purchase_id) plan_purchase_id, status, requested_role, decline_reason, close_reason FROM plan_refund_requests WHERE plan_purchase_id = ANY($1) AND status IN ('DECLINED_ADMIN','DECLINED_OTHER') ORDER BY plan_purchase_id, id DESC`, [purchaseIds]);
   for (const p of purchases) {
     out.set(p.id, {
       balance_kobo: balanceOf(p).amount_kobo,
       upcoming: counts.find((x) => x.plan_purchase_id === p.id)?.c ?? 0,
       refund_request: reqs.find((x) => x.plan_purchase_id === p.id) ?? null,
+      refund_last: closed.find((x) => x.plan_purchase_id === p.id) ?? null,
     });
   }
   return out;

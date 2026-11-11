@@ -220,20 +220,34 @@ let rstat = 'OPEN';
 async function planRefundsCard() {
   app.insertAdjacentHTML('beforeend', '<div class="card" id="plan-refunds"></div>');
   const slot = document.getElementById('plan-refunds');
-  const [open, agreed] = await Promise.all([api('/plan-refunds?status=OPEN').catch(() => ({ requests: [] })), api('/plan-refunds?status=CONFIRMED').catch(() => ({ requests: [] }))]);
+  const get = (s) => api(`/plan-refunds?status=${s}`).then((r) => r.requests || []).catch(() => []);
+  const [review, declined, agreed, transferDue, transferSent, sending] = await Promise.all(
+    ['OPEN', 'OTHER_DECLINED', 'CONFIRMED', 'TRANSFER_DUE', 'TRANSFER_SENT', 'REFUNDING'].map(get));
   const planLine = (x) => `<b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)} at ${esc(x.shop_name)}<span class="sub">${x.sessions_left} of ${x.sessions_total} sessions unused · asked by the ${x.requested_role === 'CUSTOMER' ? 'customer' : 'barber'}</span>`;
-  const reviewRows = (open.requests || []).map((x) => `<div class="row"><div>${planLine(x)}</div><div><b>${naira(x.amount_kobo)}</b> ${act('Forward', '', `data-do="pfwd" data-id="${x.id}"`)} ${act('Decline', 'sec', `data-do="pdec" data-id="${x.id}"`)}</div></div>`).join('');
-  const agreedRows = (agreed.requests || []).map((x) => `<div class="row"><div>${planLine(x)}<span class="sub">both agreed ${stamp(x.barber_confirmed_at || x.customer_confirmed_at)}</span></div><div><b>${naira(x.amount_kobo)}</b> ${act('Authorize', '', `data-do="pauth" data-id="${x.id}"`)}</div></div>`).join('');
+  const reviewRows = review.map((x) => `<div class="row"><div>${planLine(x)}</div><div><b>${naira(x.amount_kobo)}</b> ${act('Forward', '', `data-do="pfwd" data-id="${x.id}"`)} ${act('Decline', 'sec', `data-do="pdec" data-id="${x.id}"`)}</div></div>`).join('');
+  const declinedRows = declined.map((x) => `<div class="row"><div>${planLine(x)}<span class="sub">The ${x.requested_role === 'CUSTOMER' ? 'barber' : 'customer'} did not agree. Reason: ${esc(x.decline_reason || 'none given')}</span></div><div>${act('Send feedback', '', `data-do="pclose" data-id="${x.id}"`)}</div></div>`).join('');
+  const agreedRows = agreed.map((x) => `<div class="row"><div>${planLine(x)}<span class="sub">both agreed ${stamp(x.barber_confirmed_at || x.customer_confirmed_at)}</span></div><div><b>${naira(x.amount_kobo)}</b> ${act('Pay by Paystack', '', `data-do="pauth" data-id="${x.id}"`)} ${act('Barber sends transfer', 'sec', `data-do="ptrf" data-id="${x.id}"`)}</div></div>`).join('');
+  const progressRows = [
+    ...sending.map((x) => `<div class="row"><div>${planLine(x)}</div><div class="sub">Sent to Paystack. Closes when Paystack confirms${x.refund_error ? ` · <b>${esc(x.refund_error)}</b>` : ''}</div></div>`),
+    ...transferDue.map((x) => `<div class="row"><div>${planLine(x)}</div><div class="sub">Waiting for the barber to send ${naira(x.amount_kobo)} and record it</div></div>`),
+    ...transferSent.map((x) => `<div class="row"><div>${planLine(x)}</div><div class="sub">Sent by transfer (ref ${esc(x.transfer_reference || '')}). Waiting for the customer to confirm. Closes by itself after 7 days.</div></div>`),
+  ].join('');
   slot.innerHTML = '<h3 style="margin-top:0">Plan refunds to review</h3>' + (reviewRows || '<p class="muted small">No new requests.</p>')
-    + '<h3>Plan refunds to authorize</h3>' + (agreedRows || '<p class="muted small">Nothing waiting. The customer and the barber must both agree first.</p>');
+    + '<h3>Declined, waiting for feedback</h3>' + (declinedRows || '<p class="muted small">Nothing to close.</p>')
+    + '<h3>Agreed, waiting for you</h3>' + (agreedRows || '<p class="muted small">Nothing waiting. The customer and the barber must both agree first.</p>')
+    + '<h3>In progress</h3>' + (progressRows || '<p class="muted small">Nothing in progress.</p>');
   wireActions(slot, {
     pfwd: (d) => formModal({ title: 'Forward to the other party', help: 'The other party is asked to agree. Nothing is refunded yet.', go: 'Forward', fields: [],
       submit: async () => { await post(`/plan-refunds/${d.id}/forward`, {}); return 'Sent to the other party'; }, after: reports }),
-    pdec: (d) => formModal({ title: 'Decline refund request', help: 'The person who asked is told. The plan is unchanged.', go: 'Decline', cls: 'red',
-      fields: [{ name: 'reason', label: 'Reason (optional)', type: 'textarea', ph: 'For example: the plan is still in use' }],
+    pdec: (d) => formModal({ title: 'Decline refund request', help: 'The person who asked is told the reason and what to do next. The plan is unchanged.', go: 'Decline', cls: 'red',
+      fields: [{ name: 'reason', label: 'Reason', type: 'textarea', required: true, ph: 'For example: the plan still has a booking. Cancel it first, then ask again.' }],
       submit: async (v) => { await post(`/plan-refunds/${d.id}/decline`, { reason: v.reason || '' }); return 'Request declined'; }, after: reports }),
-    pauth: (d) => formModal({ title: 'Authorize plan refund', help: 'The plan ends now and the unused sessions are sent back through Paystack. Paystack fees are not refunded. The API asks for your PIN.', go: 'Authorize refund', cls: 'red', fields: [],
-      submit: async () => { const o = await post(`/plan-refunds/${d.id}/authorize`, {}); return o.refund === 'requested' ? 'Refund sent to Paystack' : 'Paystack did not take the refund. It stays in Payments to retry.'; }, after: reports }),
+    pclose: (d) => formModal({ title: 'Send feedback to the customer', help: 'The barber did not agree. Tell the customer why it did not go ahead and what to sort out before they ask again.', go: 'Send and close', fields: [{ name: 'feedback', label: 'Feedback', type: 'textarea', required: true, ph: 'What should the customer fix first?' }],
+      submit: async (v) => { await post(`/plan-refunds/${d.id}/close-decline`, { feedback: v.feedback || '' }); return 'Feedback sent and the case is closed'; }, after: reports }),
+    pauth: (d) => formModal({ title: 'Refund through Paystack', help: 'The plan ends now. Paystack sends the unused sessions back to the customer. The barber owes the same amount, taken from their payouts. Paystack fees are not refunded. The API asks for your PIN.', go: 'Refund through Paystack', cls: 'red', fields: [],
+      submit: async () => { const o = await post(`/plan-refunds/${d.id}/authorize`, { method: 'PAYSTACK' }); return o.refund === 'requested' ? 'Refund sent to Paystack' : 'Paystack did not take the refund. It stays in Payments to retry.'; }, after: reports }),
+    ptrf: (d) => formModal({ title: 'Refund by bank transfer', help: 'The plan ends now. The barber sends the unused sessions to the customer by bank transfer and records it. The customer confirms when it arrives. If they never confirm, it closes by itself after 7 days. The API asks for your PIN.', go: 'Refund by transfer', cls: 'red', fields: [],
+      submit: async () => { await post(`/plan-refunds/${d.id}/authorize`, { method: 'TRANSFER' }); return 'The barber has been asked to send the transfer'; }, after: reports }),
   });
 }
 async function reports() {

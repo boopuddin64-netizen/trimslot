@@ -6,7 +6,7 @@ import {
   balanceOf, requestPlanBalanceRefund, forwardPlanBalanceRefund, declinePlanBalanceRefundByAdmin,
   acceptPlanBalanceRefund, declinePlanBalanceRefund, closeDeclinedPlanBalanceRefund, withdrawPlanBalanceRefund,
   authorizePlanBalanceRefund, recordPlanRefundTransfer, confirmPlanRefundReceived, sendTransferReminders,
-  closeUnconfirmedTransfers, paystackRefundProcessed,
+  closeUnconfirmedTransfers, paystackRefundProcessed, refundStatesFor,
 } from '../src/planRefunds';
 
 /** A plan the customer paid online: 10,000 naira, 5 sessions, 2 used. */
@@ -76,6 +76,10 @@ test('a barber decline goes to the admin first; the admin sends the feedback and
   const closed = await closeDeclinedPlanBalanceRefund(c.db, first.id, null, 'Cancel the booking first, then ask again.');
   assert.equal(closed.status, 'DECLINED_OTHER');
   assert.equal((await c.db.one('SELECT close_reason FROM plan_refund_requests WHERE id=$1', [first.id])).close_reason, 'Cancel the booking first, then ask again.');
+
+  const why = (await refundStatesFor(c.db, [pid])).get(pid)!.refund_last;
+  assert.equal(why.status, 'DECLINED_OTHER', 'the customer can see the last request that did not go ahead');
+  assert.equal(why.close_reason, 'Cancel the booking first, then ask again.', 'and the feedback the admin sent');
 
   const second = await requestPlanBalanceRefund(c.db, pid, cust);
   assert.equal(second.status, 'OPEN', 'a new request is allowed once the old one is closed');
