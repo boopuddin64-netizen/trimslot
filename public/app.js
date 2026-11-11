@@ -291,7 +291,7 @@ function authPage(mode, roleQ) {
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Making your account…' : 'Logging in…';
       try {
         if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } });
-        else await api('/auth/login', { method: 'POST', body: fd });
+        else { const lr = await api('/auth/login', { method: 'POST', body: fd }); if (lr && lr.restored) toast('Welcome back. Your account is kept.'); }
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
         if (signup && fd.email && emailCheckOn()) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)

@@ -41,7 +41,7 @@ import { getSettingsCached } from './plans';
 import { runSweep } from './sweep';
 import { registerRefundAdmin } from './refundFlow';
 import { registerAdminAlerts } from './adminNotify';
-import { registerAccountData, recordConsent, consentRequired, consentHistory, docsFor } from './accountData';
+import { registerAccountData, recordConsent, consentRequired, consentHistory, docsFor, GRACE_DAYS } from './accountData';
 import { registerAvatars, avatarUploadHandler, MAX_AVATAR_BYTES } from './avatars';
 import { loadPublicSettings } from './publicSettings';
 import { runRetention } from './retention';
@@ -365,9 +365,17 @@ export function createApp(db: Db) {
       await recordFailedLogin(db, id);
       throw new AppError(401, 'BAD_CREDENTIALS', 'Your email, phone or password is wrong. Try again.');
     }
+    let restored = false;
+    if (u.account_status === 'PENDING_DELETION') {
+      // Frozen after a deletion request: logging in within the grace period keeps the account. After that the sweep removes it.
+      const back = await db.maybeOne<{ id: number }>(`UPDATE users SET account_status='ACTIVE', deletion_requested_at=NULL, status_at=now() WHERE id=$1 AND account_status='PENDING_DELETION' AND deletion_requested_at > now() - make_interval(days => ${GRACE_DAYS}) RETURNING id`, [u.id]);
+      if (!back) throw new AppError(403, 'ACCOUNT_RESTRICTED', 'This account was removed. If that is a mistake, contact TrimSlot support.');
+      await audit(db, null, { id: u.id, role: u.role }, 'ACCOUNT_RECOVERED', {});
+      u.account_status = 'ACTIVE'; restored = true;
+    }
     if (u.account_status !== 'ACTIVE') throw new AppError(403, 'ACCOUNT_RESTRICTED', u.account_status === 'DELETED' ? 'This account was removed. If that is a mistake, contact TrimSlot support.' : `Your account is ${u.account_status === 'BANNED' ? 'banned' : 'suspended'}${u.status_reason ? ': ' + u.status_reason : ''}. If that is a mistake, contact support.`);
     setAuthCookie(res, signToken(u));
-    res.json({ user: await publicUser(db, u) });
+    res.json({ user: await publicUser(db, u), ...(restored ? { restored: true } : {}) });
   }));
 
   api.post('/auth/logout', (_req, res) => { res.clearCookie('trimslot_token', { path: '/' }); res.json({ ok: true }); });
