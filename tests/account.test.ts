@@ -115,6 +115,25 @@ test('barber deletion: immediate when nothing is pending; otherwise a request th
   } finally { s.server.close(); resetNow(); }
 });
 
+test('customer deletion waits while a plan balance refund is open; once it is withdrawn the account can go', async () => {
+  const s = await boot();
+  try {
+    const u = await s.signup({ role: 'customer', name: 'Refund Me', email: 'refund@x.com', phone: '08031113333', password: 'Password123', accept_terms: true });
+    const H = { Cookie: u.cookie }; const id = u.body.user.id;
+    const plan = (await s.db.one(`INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days) VALUES ($1,'Ten',1000000,5,60) RETURNING id`, [s.barberId])).id;
+    const pp = (await s.db.one(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, sessions_used, validity_days, service_ids, status, created_at, expires_at)
+      VALUES ($1,$2,$3,'Ten',1000000,5,2,60,$4,'ACTIVE',now(),now() + interval '30 days') RETURNING id`, [plan, id, s.barberId, [s.serviceIds[0]]])).id;
+    const rq = (await s.db.one(`INSERT INTO plan_refund_requests (plan_purchase_id, requested_by, requested_role, amount_kobo, sessions_left, status) VALUES ($1,$2,'CUSTOMER',600000,3,'OPEN') RETURNING id`, [pp, id])).id;
+    const del = (body: any) => s.j('/api/me/delete', { method: 'POST', headers: H, body });
+    const blocked = await del({ password: 'Password123', confirm: 'DELETE', acknowledge_forfeit: true });
+    assert.equal(blocked.status, 409); assert.equal(blocked.body.error?.code ?? blocked.body.code, 'CANNOT_DELETE_YET');
+    assert.match(JSON.stringify(blocked.body), /refund/);
+    await s.db.query(`UPDATE plan_refund_requests SET status='WITHDRAWN' WHERE id=$1`, [rq]);
+    const done = await del({ password: 'Password123', confirm: 'DELETE', acknowledge_forfeit: true });
+    assert.equal(done.status, 200); assert.equal(done.body.deleted, true);
+  } finally { s.server.close(); resetNow(); }
+});
+
 test('retention: expired rows are purged on the admin-set periods, soft-deleted accounts past the window are anonymised when money exists, and the run is throttled to once an hour', async () => {
   const s = await boot();
   try {

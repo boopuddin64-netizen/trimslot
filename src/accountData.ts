@@ -121,6 +121,9 @@ async function blockers(c: Conn, u: { id: number; role: string }) {
   if (u.role === 'customer') {
     const n = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM bookings WHERE customer_id=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND date >= $2`, [u.id, lagosDate()])).n;
     if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `You have ${n} upcoming booking${n === 1 ? '' : 's'}. Cancel ${n === 1 ? 'it' : 'them'} first. The usual refund and credit rules apply. Then delete your account.` });
+    // A plan balance refund that is still open (waiting for review, the other party, or the money to be sent) must finish first.
+    const rf = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM plan_refund_requests rr JOIN plan_purchases pp ON pp.id = rr.plan_purchase_id WHERE pp.customer_id=$1 AND rr.status IN ('OPEN','FORWARDED','CONFIRMED','REFUNDING')`, [u.id])).n;
+    if (rf) out.push({ code: 'PLAN_REFUND_OPEN', count: rf, message: 'You have a plan refund that is still open. Withdraw it, or wait until it has been sent. Then delete your account.' });
   } else {
     const b = await c.maybeOne<{ id: number }>('SELECT id FROM barbers WHERE user_id=$1', [u.id]);
     if (b) {
