@@ -769,21 +769,40 @@ const planCard = (pl, services, canBuy) => `<div class="card plan"><div class="r
 /* Balance refund of a part-used plan. TrimSlot reviews the request first, then the other party must agree; then TrimSlot authorizes it. */
 function refundBox(p, role) {
   const other = role === 'CUSTOMER' ? 'barber' : 'customer';
+  const isBarber = role === 'BARBER';
   const r = p.refund_request;
+  const last = p.refund_last;
   const amt = naira(r ? r.amount_kobo : p.balance_kobo || 0);
+  const note = (t, cls) => `<div class="${cls || 'info'} small notice">${t}</div>`;
+  const btns = (h) => `<div class="btns end" style="margin-top:8px">${h}</div>`;
   if (r) {
     const mine = r.requested_role === role;
-    if (r.status === 'REFUNDING') return `<div class="info small notice">Both of you agreed. The plan is cancelled and ${amt} is being sent back.</div>`;
-    if (r.status === 'CONFIRMED') return `<div class="info small notice">Both of you agreed to refund ${amt}. TrimSlot will authorize it and send the money back.</div>${mine ? `<div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw</button></div>` : ''}`;
-    if (mine && r.status === 'OPEN') return `<div class="info small notice">You asked to refund ${amt}. TrimSlot checks it first, then sends it to the ${other}.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
-    if (mine) return `<div class="info small notice">You asked to refund ${amt}. TrimSlot sent it to the ${other}, who has to agree.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
-    if (r.status === 'FORWARDED') return `<div class="warn small notice">TrimSlot asks you to agree to cancel this plan and refund ${amt} for the unused sessions. Agree only if you both want this.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rdc="${r.id}">Decline</button><button class="btn sm" data-rac="${r.id}" data-amt="${amt}">Agree to refund ${amt}</button></div>`;
+    if (r.status === 'REFUNDING') return note(`Both of you agreed. The plan is cancelled and ${amt} is being sent back to the customer.`);
+    if (r.status === 'CONFIRMED') return note(`Both of you agreed to refund ${amt}. The request is locked now. TrimSlot is confirming it.`);
+    if (r.status === 'TRANSFER_DUE') {
+      if (isBarber) return note(`Send ${amt} to the customer by bank transfer, then record the transfer here with its reference.`)
+        + `<form class="row" data-rtr-form="${r.id}" style="gap:8px;margin-top:8px;flex-wrap:wrap"><input name="reference" placeholder="Transfer reference" required style="flex:1;min-width:160px"><button class="btn sm" type="submit">Record transfer</button></form>`;
+      return note(`The barber is sending ${amt} to you by bank transfer. We will ask you to confirm when it arrives.`);
+    }
+    if (r.status === 'TRANSFER_SENT') {
+      if (isBarber) return note(`You recorded the transfer of ${amt} (reference ${esc(r.transfer_reference || '')}). We are waiting for the customer to confirm it arrived.`);
+      return note(`The barber says they sent ${amt} (reference ${esc(r.transfer_reference || '')}). Did it arrive?`, 'warn') + btns(`<button class="btn sm" data-rcv="${r.id}">Yes, I received it</button>`);
+    }
+    if (r.status === 'OTHER_DECLINED') return note(mine
+      ? `The ${other} did not agree yet. Reason: ${esc(r.decline_reason || '')}. TrimSlot is reviewing it and will tell you what to do next.`
+      : `You did not agree. TrimSlot is reviewing your reason and will tell the ${other} what happens next.`);
+    if (mine && r.status === 'OPEN') return note(`You asked to refund ${amt}. TrimSlot checks it first, then sends it to the ${other}.`) + btns(`<button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button>`);
+    if (mine && r.status === 'FORWARDED') return note(`You asked to refund ${amt}. TrimSlot sent it to the ${other}, who has to agree.`) + btns(`<button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button>`);
+    if (r.status === 'FORWARDED') return note(`TrimSlot asks you to agree to cancel this plan and refund ${amt} for the unused sessions. Agree only if you both want this.`, 'warn') + btns(`<button class="btn sm sec" data-rdc="${r.id}">Decline</button><button class="btn sm" data-rac="${r.id}" data-amt="${amt}">Agree to refund ${amt}</button>`);
     return '';
   }
-  if (!p.live) return '';
-  if (p.refund_upcoming > 0) return `<div class="small muted" style="margin-top:8px">To ask for a refund of the unused sessions, first cancel this plan's ${p.refund_upcoming} upcoming booking${p.refund_upcoming === 1 ? '' : 's'}. Their sessions go back to the plan.</div>`;
-  if (!(p.balance_kobo > 0)) return '';
-  return `<div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rq="${p.id}" data-amt="${amt}">Ask to cancel and refund ${amt}</button></div>`;
+  // Nothing live: say why the last request did not go ahead, and what to do next.
+  const prefix = last && (last.status === 'DECLINED_ADMIN' || last.status === 'DECLINED_OTHER')
+    ? note(`Your refund request did not go ahead. Reason: ${esc(last.status === 'DECLINED_ADMIN' ? last.decline_reason || '' : last.close_reason || last.decline_reason || '')}. Sort this out, then you can ask again.`, 'warn') : '';
+  if (!p.live) return prefix;
+  if (p.refund_upcoming > 0) return prefix + `<div class="small muted" style="margin-top:8px">To ask for a refund of the unused sessions, first cancel this plan's ${p.refund_upcoming} upcoming booking${p.refund_upcoming === 1 ? '' : 's'}. Their sessions go back to the plan.</div>`;
+  if (!(p.balance_kobo > 0)) return prefix;
+  return prefix + btns(`<button class="btn sm sec" data-rq="${p.id}" data-amt="${amt}">Ask to cancel and refund ${amt}</button>`);
 }
 /* Wires the buttons from refundBox. role says who is acting: the customer or the barber (barber routes sit under /barber). */
 function wireRefundBox(root, role, reload) {
@@ -798,10 +817,19 @@ function wireRefundBox(root, role, reload) {
     role === 'CUSTOMER' ? `/plans/${el.dataset.rq}/refund-request` : `/barber/plan-purchases/${el.dataset.rq}/refund-request`));
   root.querySelectorAll('[data-rac]').forEach((el) => run(el, `Agree to cancel this plan and refund ${el.dataset.amt}? The plan ends once TrimSlot authorizes it.`, `${base}/plan-refunds/${el.dataset.rac}/accept`));
   root.querySelectorAll('[data-rdc]').forEach((el) => el.onclick = async () => {
-    const reason = prompt('Why are you declining? (optional)');
+    const reason = prompt('Why are you not agreeing? Say what is wrong, so TrimSlot can tell the other side.');
     if (reason === null) return;
+    if (!reason.trim()) return toast('Please tell us why.');
     el.disabled = true;
-    try { await api(`${base}/plan-refunds/${el.dataset.rdc}/decline`, { method: 'POST', body: { reason } }); reload(); } catch (e) { fail(e); el.disabled = false; }
+    try { await api(`${base}/plan-refunds/${el.dataset.rdc}/decline`, { method: 'POST', body: { reason: reason.trim() } }); reload(); } catch (e) { fail(e); el.disabled = false; }
+  });
+  root.querySelectorAll('[data-rcv]').forEach((el) => run(el, 'Confirm that the money arrived? This closes the refund.', `/plan-refunds/${el.dataset.rcv}/received`));
+  root.querySelectorAll('[data-rtr-form]').forEach((f) => f.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const ref = f.elements.reference.value.trim();
+    if (!ref) return toast('Enter the transfer reference from your bank.');
+    const b = f.querySelector('button'); b.disabled = true;
+    try { await api(`/barber/plan-refunds/${f.dataset.rtrForm}/transfer`, { method: 'POST', body: { reference: ref } }); reload(); } catch (e) { fail(e); b.disabled = false; }
   });
   root.querySelectorAll('[data-rwd]').forEach((el) => run(el, 'Withdraw this refund request? The plan stays as it is.', `${base}/plan-refunds/${el.dataset.rwd}/withdraw`));
 }
