@@ -188,6 +188,9 @@ export const limitsOf = (s: Settings) => ({
   credit_expiry_days: s.credit_expiry_days, refund_policy: s.plan_refund_policy, approval_required: s.plan_approval_required,
 });
 
+/** A plan with a balance refund waiting (asked, agreed or being sent) cannot be used for new bookings. Refers to plan_purchases as the outer table. */
+const NO_OPEN_REFUND = `AND NOT EXISTS (SELECT 1 FROM plan_refund_requests rr WHERE rr.plan_purchase_id = plan_purchases.id AND rr.status IN ('OPEN','CONFIRMED','REFUNDING'))`;
+
 const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.needs_review, p.approval_status, p.approval_reason, p.approved_at,
   COALESCE((SELECT array_agg(ps.service_id ORDER BY ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id), '{}') AS service_ids FROM plans p`;
 /** Active plans of one barber (one query: included service ids are aggregated). */
@@ -249,7 +252,7 @@ export async function customerWallet(c: Conn, customerId: number) {
 export async function entitlementsFor(c: Conn, customerId: number, barberId: number) {
   const now = isoNow();
   const plans = await c.many(`SELECT id, plan_id, plan_name, sessions_total, sessions_used, (sessions_total - sessions_used) AS sessions_left, expires_at, service_ids FROM plan_purchases
-      WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND expires_at > $3 AND sessions_used < sessions_total ORDER BY expires_at`, [customerId, barberId, now]);
+      WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND expires_at > $3 AND sessions_used < sessions_total ${NO_OPEN_REFUND} ORDER BY expires_at`, [customerId, barberId, now]);
   const credits = await c.many(`SELECT sc.id, sc.value_kobo, sc.expires_at, sc.reason, sb.service_id, sv.name AS service_name FROM session_credits sc
       LEFT JOIN bookings sb ON sb.id = sc.source_booking_id LEFT JOIN services sv ON sv.id = sb.service_id
       WHERE sc.customer_id=$1 AND sc.barber_id=$2 AND sc.status='AVAILABLE' AND sc.expires_at > $3 ORDER BY sc.expires_at, sc.id`, [customerId, barberId, now]);
@@ -269,7 +272,7 @@ export async function claimEntitlement(t: Conn, o: { customerId: number; barberI
     let idSql = ''; if (o.id) { params.push(o.id); idSql = ` AND id=$${params.length}`; }
     const r = await t.maybeOne<{ id: number; plan_name: string }>(`UPDATE plan_purchases SET sessions_used = sessions_used + 1 WHERE id = (
         SELECT id FROM plan_purchases WHERE customer_id=$1 AND barber_id=$2 AND status='ACTIVE' AND $3 = ANY(service_ids) AND sessions_used < sessions_total
-          AND expires_at >= $4 AND expires_at > $5${idSql} ORDER BY expires_at, id LIMIT 1 FOR UPDATE)
+          AND expires_at >= $4 AND expires_at > $5 ${NO_OPEN_REFUND}${idSql} ORDER BY expires_at, id LIMIT 1 FOR UPDATE)
       RETURNING id, plan_name`, params);
     if (!r) throw new AppError(409, 'NO_PLAN_SESSION', 'You have no plan session for this service and date. Use plan sessions before the plan ends.');
     return { option: 'PLAN', plan_purchase_id: r.id, credit_id: null, label: r.plan_name };
