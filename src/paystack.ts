@@ -312,10 +312,12 @@ export async function notifyMismatchRefund(db: Db | import('./db').Conn, pay: { 
 /** Ask the gateway to refund a payment flagged NEEDS_REFUND. Runs OUTSIDE any DB transaction. Never throws: on failure the payment simply stays NEEDS_REFUND with the error noted. */
 export async function requestRefund(db: Db, reference: string): Promise<'requested' | 'failed' | 'not_needed'> {
   // Claim first: two callers (the sweeper and an admin click, or two sweepers) can never both send the refund. Only the one whose UPDATE changes the row goes on.
-  const claim = await db.maybeOne<{ id: number; booking_id: number | null; plan_purchase_id: number | null; refund_reason: string | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, plan_purchase_id, refund_reason`, [reference, isoNow()]);
+  const claim = await db.maybeOne<{ id: number; booking_id: number | null; plan_purchase_id: number | null; refund_reason: string | null; amount_kobo: number; refund_amount_kobo: number | null }>(`UPDATE payments SET refund_status='REFUND_REQUESTED', refund_requested_at=$2, refund_error=NULL WHERE reference=$1 AND refund_status='NEEDS_REFUND' RETURNING id, booking_id, plan_purchase_id, refund_reason, amount_kobo, refund_amount_kobo`, [reference, isoNow()]);
   if (!claim) return 'not_needed';
+  // A balance refund (part of a plan) sends only that amount. Everything else refunds the whole payment, as before.
+  const partial = claim.refund_amount_kobo != null && claim.refund_amount_kobo < claim.amount_kobo;
   try {
-    if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify({ transaction: reference }) });
+    if (!config.mockMode) await paystackFetch('/refund', { method: 'POST', body: JSON.stringify(claim.refund_amount_kobo != null ? { transaction: reference, amount: claim.refund_amount_kobo } : { transaction: reference }) });
   } catch (e: any) {
     // The gateway refused or was unreachable: hand the claim back so the next try (sweeper / admin) can go again.
     await db.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_requested_at=NULL, refund_error=$2 WHERE id=$1 AND refund_status='REFUND_REQUESTED'`, [claim.id, String(e?.message || 'refund failed').slice(0, 300)]).catch(() => {});
@@ -327,6 +329,8 @@ export async function requestRefund(db: Db, reference: string): Promise<'request
   }
   // The money is on its way. Giving back the commission the payment had settled must not undo that, so a failure here is logged, not turned into a second refund.
   if (claim.refund_reason === MISMATCH_REASON && (claim.booking_id || claim.plan_purchase_id)) await notifyMismatchRefund(db, claim, 'asked').catch(() => {});
+  // A partial balance refund keeps the commission on the sessions that were used, so the netting is not reversed for it (open question for the owner).
+  if (partial) { logger.info('plan_balance_refund_sent', { ref: reference, amount_kobo: claim.refund_amount_kobo }); return 'requested'; }
   await db.tx((t) => reverseNettingForPayment(t, claim.id)).catch((e) => logger.warn('refund_netting_reverse_failed', { ref: reference, err: String(e?.message).slice(0, 120) }));
   return 'requested';
 }

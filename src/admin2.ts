@@ -9,6 +9,7 @@ import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund } from './paystack';
+import { authorizePlanBalanceRefund, declinePlanBalanceRefundByAdmin, forwardPlanBalanceRefund, listPlanBalanceRefunds } from './planRefunds';
 import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant, addDays, isValidDate } from './time';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { refreshQueueNotifications, isIncomplete } from './bookingService';
@@ -295,24 +296,39 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
       return { sessions_total: total, expires_at: exp };
     }));
   });
+  // Ends a plan with no money. A refund of the unused sessions only happens through the joint request
+  // (customer and barber both agree, then an admin authorizes it below). An admin cannot refund a plan on their own.
   post('/plan-purchases/:id/cancel', async (req, res) => {
     const id = idOf(req.params.id); const d = parseB(z.object({ reason: reasonZ.shape.reason, refund: z.boolean().optional() }), req.body);
-    if (d.refund) await requirePin(db, req);
-    let ref: string | null = null;
+    if (d.refund) throw badRequest('Plan refunds happen only when the customer and the barber both agree. Ask both to request it in the app, then authorize it under Reports.');
     const out = await db.tx(async (t) => {
       const p = await t.maybeOne<any>('SELECT * FROM plan_purchases WHERE id=$1 FOR UPDATE', [id]); if (!p) throw notFound('We could not find that plan purchase.');
       if (p.status === 'CANCELLED') return { changed: false };
       if (p.status !== 'ACTIVE') throw conflict('NOT_ACTIVE', 'You can only cancel active plan purchases.');
       await t.query(`UPDATE plan_purchases SET status='CANCELLED' WHERE id=$1`, [id]);
-      if (d.refund) { const pay = await t.maybeOne<any>(`SELECT reference, refund_status FROM payments WHERE plan_purchase_id=$1 AND status='SUCCESS' ORDER BY id DESC LIMIT 1 FOR UPDATE`, [id]);
-        if (pay && !pay.refund_status) { await t.query(`UPDATE payments SET refund_status='NEEDS_REFUND', refund_reason=$2 WHERE reference=$1`, [pay.reference, 'plan cancelled by admin: ' + d.reason]); ref = pay.reference; } }
       const upcoming = (await t.one<any>(`SELECT COUNT(*)::int c FROM bookings WHERE plan_purchase_id=$1 AND status IN ('CONFIRMED','ARRIVED') AND date>=$2`, [id, lagosDate()])).c;
-      await audit(t, null, ADMIN, 'ADMIN_PLAN_PURCHASE_CANCELLED', { user_id: p.customer_id, purchase_id: id, refund: !!d.refund, reason: d.reason, upcoming_plan_bookings: upcoming });
-      await notify(t, p.customer_id, 'PLAN_ADJUSTED', 'Plan cancelled', `Your plan "${p.plan_name}" was cancelled by TrimSlot: ${d.reason}.${d.refund ? ' We are sending your money back.' : ''}`);
+      await audit(t, null, ADMIN, 'ADMIN_PLAN_PURCHASE_CANCELLED', { user_id: p.customer_id, purchase_id: id, refund: false, reason: d.reason, upcoming_plan_bookings: upcoming });
+      await notify(t, p.customer_id, 'PLAN_ADJUSTED', 'Plan cancelled', `Your plan "${p.plan_name}" was cancelled by TrimSlot: ${d.reason}.`);
       await notify(t, await barberUid(t, p.barber_id), 'PLAN_ADMIN', 'Plan purchase cancelled', `A customer's "${p.plan_name}" purchase was cancelled by TrimSlot: ${d.reason}.`);
-      return { changed: true, refund_flagged: !!ref, upcoming_plan_bookings: upcoming };
+      return { changed: true, upcoming_plan_bookings: upcoming };
     });
-    res.json({ ...out, refund: ref ? await requestRefund(db, ref) : null });
+    res.json(out);
+  });
+
+  /* Plan balance refunds. Flow: a request comes in (OPEN) -> the admin forwards it to the other party or declines it ->
+     the other party accepts or declines -> an agreed request (CONFIRMED) is authorized here (PIN). */
+  get('/plan-refunds', async (req, res) => {
+    res.json({ requests: await listPlanBalanceRefunds(db, String(req.query.status || 'OPEN')) });
+  });
+  post('/plan-refunds/:id/forward', async (req, res) => {
+    res.json(await forwardPlanBalanceRefund(db, idOf(req.params.id), ADMIN.id));
+  });
+  post('/plan-refunds/:id/decline', async (req, res) => {
+    res.json(await declinePlanBalanceRefundByAdmin(db, idOf(req.params.id), ADMIN.id, String(req.body?.reason || '').trim().slice(0, 300)));
+  });
+  post('/plan-refunds/:id/authorize', async (req, res) => {
+    await requirePin(db, req);
+    res.json(await authorizePlanBalanceRefund(db, idOf(req.params.id), ADMIN.id));
   });
 
   /* ================= money ================= */
