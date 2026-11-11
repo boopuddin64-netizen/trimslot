@@ -216,17 +216,25 @@ async function broadcast() {
 
 /* ---------- reports inbox ---------- */
 let rstat = 'OPEN';
-/* Plan balance refunds that the customer AND the barber agreed to. An admin authorizes each one here (the API asks for the PIN). */
+/* Plan balance refunds. (1) New requests: forward to the other party, or decline. (2) Agreed requests: authorize (the API asks for the PIN). */
 async function planRefundsCard() {
   app.insertAdjacentHTML('beforeend', '<div class="card" id="plan-refunds"></div>');
   const slot = document.getElementById('plan-refunds');
-  const pr = await api('/plan-refunds?status=CONFIRMED').catch(() => ({ requests: [] }));
-  const rows = pr.requests || [];
-  slot.innerHTML = '<h3 style="margin-top:0">Plan refunds to authorize</h3>' + (rows.length
-    ? rows.map((x) => `<div class="row"><div><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)} at ${esc(x.shop_name)}<span class="sub">${x.sessions_left} of ${x.sessions_total} sessions unused · both agreed ${stamp(x.barber_confirmed_at || x.customer_confirmed_at)}</span></div><div><b>${naira(x.amount_kobo)}</b> ${act('Authorize', '', `data-do="pauth" data-id="${x.id}"`)}</div></div>`).join('')
-    : '<p class="muted small">Nothing waiting. The customer and the barber must both agree first.</p>');
-  wireActions(slot, { pauth: (d) => formModal({ title: 'Authorize plan refund', help: 'The plan ends now and the unused sessions are sent back through Paystack. Paystack fees are not refunded. The API asks for your PIN.', go: 'Authorize refund', cls: 'red', fields: [],
-    submit: async () => { const o = await post(`/plan-refunds/${d.id}/authorize`, {}); return o.refund === 'requested' ? 'Refund sent to Paystack' : 'Paystack did not take the refund. It stays in Payments to retry.'; }, after: reports }) });
+  const [open, agreed] = await Promise.all([api('/plan-refunds?status=OPEN').catch(() => ({ requests: [] })), api('/plan-refunds?status=CONFIRMED').catch(() => ({ requests: [] }))]);
+  const planLine = (x) => `<b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)} at ${esc(x.shop_name)}<span class="sub">${x.sessions_left} of ${x.sessions_total} sessions unused · asked by the ${x.requested_role === 'CUSTOMER' ? 'customer' : 'barber'}</span>`;
+  const reviewRows = (open.requests || []).map((x) => `<div class="row"><div>${planLine(x)}</div><div><b>${naira(x.amount_kobo)}</b> ${act('Forward', '', `data-do="pfwd" data-id="${x.id}"`)} ${act('Decline', 'sec', `data-do="pdec" data-id="${x.id}"`)}</div></div>`).join('');
+  const agreedRows = (agreed.requests || []).map((x) => `<div class="row"><div>${planLine(x)}<span class="sub">both agreed ${stamp(x.barber_confirmed_at || x.customer_confirmed_at)}</span></div><div><b>${naira(x.amount_kobo)}</b> ${act('Authorize', '', `data-do="pauth" data-id="${x.id}"`)}</div></div>`).join('');
+  slot.innerHTML = '<h3 style="margin-top:0">Plan refunds to review</h3>' + (reviewRows || '<p class="muted small">No new requests.</p>')
+    + '<h3>Plan refunds to authorize</h3>' + (agreedRows || '<p class="muted small">Nothing waiting. The customer and the barber must both agree first.</p>');
+  wireActions(slot, {
+    pfwd: (d) => formModal({ title: 'Forward to the other party', help: 'The other party is asked to agree. Nothing is refunded yet.', go: 'Forward', fields: [],
+      submit: async () => { await post(`/plan-refunds/${d.id}/forward`, {}); return 'Sent to the other party'; }, after: reports }),
+    pdec: (d) => formModal({ title: 'Decline refund request', help: 'The person who asked is told. The plan is unchanged.', go: 'Decline', cls: 'red',
+      fields: [{ name: 'reason', label: 'Reason (optional)', type: 'textarea', ph: 'For example: the plan is still in use' }],
+      submit: async (v) => { await post(`/plan-refunds/${d.id}/decline`, { reason: v.reason || '' }); return 'Request declined'; }, after: reports }),
+    pauth: (d) => formModal({ title: 'Authorize plan refund', help: 'The plan ends now and the unused sessions are sent back through Paystack. Paystack fees are not refunded. The API asks for your PIN.', go: 'Authorize refund', cls: 'red', fields: [],
+      submit: async () => { const o = await post(`/plan-refunds/${d.id}/authorize`, {}); return o.refund === 'requested' ? 'Refund sent to Paystack' : 'Paystack did not take the refund. It stays in Payments to retry.'; }, after: reports }),
+  });
 }
 async function reports() {
   const r = await api('/reports?status=' + rstat); badges.reports = r.counts.OPEN; drawNav('reports');

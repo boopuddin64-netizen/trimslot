@@ -9,7 +9,7 @@ import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund } from './paystack';
-import { authorizePlanBalanceRefund, listPlanBalanceRefunds } from './planRefunds';
+import { authorizePlanBalanceRefund, declinePlanBalanceRefundByAdmin, forwardPlanBalanceRefund, listPlanBalanceRefunds } from './planRefunds';
 import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant, addDays, isValidDate } from './time';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { refreshQueueNotifications, isIncomplete } from './bookingService';
@@ -315,9 +315,16 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
     res.json(out);
   });
 
-  /* Plan balance refunds that the customer AND the barber agreed to. An admin authorizes each one (PIN). */
+  /* Plan balance refunds. Flow: a request comes in (OPEN) -> the admin forwards it to the other party or declines it ->
+     the other party accepts or declines -> an agreed request (CONFIRMED) is authorized here (PIN). */
   get('/plan-refunds', async (req, res) => {
-    res.json({ requests: await listPlanBalanceRefunds(db, String(req.query.status || 'CONFIRMED')) });
+    res.json({ requests: await listPlanBalanceRefunds(db, String(req.query.status || 'OPEN')) });
+  });
+  post('/plan-refunds/:id/forward', async (req, res) => {
+    res.json(await forwardPlanBalanceRefund(db, idOf(req.params.id), ADMIN.id));
+  });
+  post('/plan-refunds/:id/decline', async (req, res) => {
+    res.json(await declinePlanBalanceRefundByAdmin(db, idOf(req.params.id), ADMIN.id, String(req.body?.reason || '').trim().slice(0, 300)));
   });
   post('/plan-refunds/:id/authorize', async (req, res) => {
     await requirePin(db, req);

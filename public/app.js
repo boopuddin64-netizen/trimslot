@@ -766,16 +766,19 @@ const planCard = (pl, services, canBuy) => `<div class="card plan"><div class="r
   <div class="meta"><span>${pl.sessions} session${pl.sessions === 1 ? '' : 's'}</span><span>Valid ${pl.validity_days} days</span><span>${naira(Math.round(pl.price_kobo / pl.sessions))} per session</span></div>
   <div class="small muted">Includes ${esc(svcNames(pl.service_ids, services))}</div>
   ${canBuy ? `<div class="btns end" style="margin-top:12px"><button class="btn sm" data-buy="${pl.id}">Buy plan</button></div>` : ''}</div>`;
-/* Balance refund of a part-used plan. Both the customer and the barber must agree; then TrimSlot authorizes it. */
+/* Balance refund of a part-used plan. TrimSlot reviews the request first, then the other party must agree; then TrimSlot authorizes it. */
 function refundBox(p, role) {
   const other = role === 'CUSTOMER' ? 'barber' : 'customer';
   const r = p.refund_request;
   const amt = naira(r ? r.amount_kobo : p.balance_kobo || 0);
   if (r) {
+    const mine = r.requested_role === role;
     if (r.status === 'REFUNDING') return `<div class="info small notice">Both of you agreed. The plan is cancelled and ${amt} is being sent back.</div>`;
-    if (r.status === 'CONFIRMED') return `<div class="info small notice">Both of you agreed to refund ${amt}. TrimSlot will authorize it and send the money back.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw</button></div>`;
-    if (r.requested_role === role) return `<div class="info small notice">You asked to refund ${amt}. Waiting for the ${other} to agree.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
-    return `<div class="warn small notice">The ${other} asked to cancel this plan and refund ${amt} for the unused sessions. Agree only if you both want this.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Decline</button><button class="btn sm" data-rcf="${r.id}" data-amt="${amt}">Agree to refund ${amt}</button></div>`;
+    if (r.status === 'CONFIRMED') return `<div class="info small notice">Both of you agreed to refund ${amt}. TrimSlot will authorize it and send the money back.</div>${mine ? `<div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw</button></div>` : ''}`;
+    if (mine && r.status === 'OPEN') return `<div class="info small notice">You asked to refund ${amt}. TrimSlot checks it first, then sends it to the ${other}.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
+    if (mine) return `<div class="info small notice">You asked to refund ${amt}. TrimSlot sent it to the ${other}, who has to agree.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rwd="${r.id}">Withdraw request</button></div>`;
+    if (r.status === 'FORWARDED') return `<div class="warn small notice">TrimSlot asks you to agree to cancel this plan and refund ${amt} for the unused sessions. Agree only if you both want this.</div><div class="btns end" style="margin-top:8px"><button class="btn sm sec" data-rdc="${r.id}">Decline</button><button class="btn sm" data-rac="${r.id}" data-amt="${amt}">Agree to refund ${amt}</button></div>`;
+    return '';
   }
   if (!p.live) return '';
   if (p.refund_upcoming > 0) return `<div class="small muted" style="margin-top:8px">To ask for a refund of the unused sessions, first cancel this plan's ${p.refund_upcoming} upcoming booking${p.refund_upcoming === 1 ? '' : 's'}. Their sessions go back to the plan.</div>`;
@@ -791,9 +794,15 @@ function wireRefundBox(root, role, reload) {
     el.disabled = true;
     try { await api(path, { method: 'POST' }); reload(); } catch (e) { fail(e); el.disabled = false; }
   };
-  root.querySelectorAll('[data-rq]').forEach((el) => run(el, `Ask to cancel this plan and refund ${el.dataset.amt}? The ${other} must agree too. Nothing is sent back until TrimSlot authorizes it. Paystack fees are not refunded.`,
+  root.querySelectorAll('[data-rq]').forEach((el) => run(el, `Ask to cancel this plan and refund ${el.dataset.amt}? TrimSlot checks it first, then the ${other} must agree. Nothing is sent back until TrimSlot authorizes it. Paystack fees are not refunded.`,
     role === 'CUSTOMER' ? `/plans/${el.dataset.rq}/refund-request` : `/barber/plan-purchases/${el.dataset.rq}/refund-request`));
-  root.querySelectorAll('[data-rcf]').forEach((el) => run(el, `Agree to cancel this plan and refund ${el.dataset.amt}? The plan ends once TrimSlot authorizes it.`, `${base}/plan-refunds/${el.dataset.rcf}/confirm`));
+  root.querySelectorAll('[data-rac]').forEach((el) => run(el, `Agree to cancel this plan and refund ${el.dataset.amt}? The plan ends once TrimSlot authorizes it.`, `${base}/plan-refunds/${el.dataset.rac}/accept`));
+  root.querySelectorAll('[data-rdc]').forEach((el) => el.onclick = async () => {
+    const reason = prompt('Why are you declining? (optional)');
+    if (reason === null) return;
+    el.disabled = true;
+    try { await api(`${base}/plan-refunds/${el.dataset.rdc}/decline`, { method: 'POST', body: { reason } }); reload(); } catch (e) { fail(e); el.disabled = false; }
+  });
   root.querySelectorAll('[data-rwd]').forEach((el) => run(el, 'Withdraw this refund request? The plan stays as it is.', `${base}/plan-refunds/${el.dataset.rwd}/withdraw`));
 }
 
