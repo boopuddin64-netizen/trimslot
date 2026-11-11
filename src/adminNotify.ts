@@ -15,6 +15,7 @@ type H = (req: Request, res: Response) => Promise<any>;
 export const ADMIN_EVENTS = {
   REFUND_WAITING: { label: 'A refund needs your decision', defaults: { in_app: true, push: true } },
   REFUND_REVIEW: { label: 'A plan refund request needs review', defaults: { in_app: true, push: true } },
+  PLAN_REFUND_CLOSED: { label: 'A plan refund was closed (confirmed, or closed without confirmation)', defaults: { in_app: true, push: false } },
   REFUND_AUTO_APPROVED: { label: 'A refund was approved by itself (nobody decided in time)', defaults: { in_app: true, push: true } },
   REFUND_FAILED: { label: 'Paystack could not send a refund', defaults: { in_app: true, push: true } },
   PAYMENT_MISMATCH: { label: 'A payment did not match its booking (staff must check)', defaults: { in_app: true, push: true } },

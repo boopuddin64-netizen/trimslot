@@ -9,7 +9,7 @@ import { AppError, badRequest, conflict, notFound } from './errors';
 import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund } from './paystack';
-import { authorizePlanBalanceRefund, declinePlanBalanceRefundByAdmin, forwardPlanBalanceRefund, listPlanBalanceRefunds } from './planRefunds';
+import { authorizePlanBalanceRefund, closeDeclinedPlanBalanceRefund, declinePlanBalanceRefundByAdmin, forwardPlanBalanceRefund, listPlanBalanceRefunds } from './planRefunds';
 import { clock, hhmmToMin, isoNow, lagosDate, lagosMinutes, scheduledInstant, addDays, isValidDate } from './time';
 import { generateSlots, loadSchedule, busyIntervals, validateBookableDate } from './slots';
 import { refreshQueueNotifications, isIncomplete } from './bookingService';
@@ -326,9 +326,17 @@ export function registerAdminPower(api: Router, db: Db, guard: any, wrap: (fn: H
   post('/plan-refunds/:id/decline', async (req, res) => {
     res.json(await declinePlanBalanceRefundByAdmin(db, idOf(req.params.id), ADMIN.id, String(req.body?.reason || '').trim().slice(0, 300)));
   });
+  // The admin confirms an agreed request and picks the route: PAYSTACK (Paystack sends it) or TRANSFER (the barber sends it and records it). Default PAYSTACK.
   post('/plan-refunds/:id/authorize', async (req, res) => {
     await requirePin(db, req);
-    res.json(await authorizePlanBalanceRefund(db, idOf(req.params.id), ADMIN.id));
+    const route = req.body?.method === 'TRANSFER' ? 'TRANSFER' : 'PAYSTACK';
+    res.json(await authorizePlanBalanceRefund(db, idOf(req.params.id), ADMIN.id, route));
+  });
+  // The barber's decline is reviewed here first: the admin sends the feedback to the requester, and the request closes.
+  post('/plan-refunds/:id/close-decline', async (req, res) => {
+    const feedback = String(req.body?.feedback || '').trim().slice(0, 500);
+    if (!feedback) throw badRequest('Write the feedback for the customer first.');
+    res.json(await closeDeclinedPlanBalanceRefund(db, idOf(req.params.id), ADMIN.id, feedback));
   });
 
   /* ================= money ================= */

@@ -189,7 +189,7 @@ export const limitsOf = (s: Settings) => ({
 });
 
 /** A plan with a balance refund waiting (asked, agreed or being sent) cannot be used for new bookings. Refers to plan_purchases as the outer table. */
-const NO_OPEN_REFUND = `AND NOT EXISTS (SELECT 1 FROM plan_refund_requests rr WHERE rr.plan_purchase_id = plan_purchases.id AND rr.status IN ('OPEN','CONFIRMED','REFUNDING'))`;
+const NO_OPEN_REFUND = `AND NOT EXISTS (SELECT 1 FROM plan_refund_requests rr WHERE rr.plan_purchase_id = plan_purchases.id AND rr.status IN ('OPEN','FORWARDED','OTHER_DECLINED','CONFIRMED','REFUNDING','TRANSFER_DUE','TRANSFER_SENT'))`;
 
 const PLAN_SELECT = `SELECT p.id, p.name, p.price_kobo, p.sessions, p.validity_days, p.active, p.needs_review, p.approval_status, p.approval_reason, p.approved_at,
   COALESCE((SELECT array_agg(ps.service_id ORDER BY ps.service_id) FROM plan_services ps WHERE ps.plan_id=p.id), '{}') AS service_ids FROM plans p`;

@@ -18,7 +18,7 @@ import {
 } from './bookingService';
 import { handleWebhook, initializePayment, initializePlanPurchase, mockMarkPaid, processReference, recordPaymentEvent, bookingIdFromReference, planIdFromReference } from './paystack';
 import { barberPlanOverview, customerWallet, entitlementsFor, getSettings, limitsOf, planSchema, publicPlans, savePlan, settingsView, updateSettings } from './plans';
-import { acceptPlanBalanceRefund, declinePlanBalanceRefund, refundStatesFor, requestPlanBalanceRefund, withdrawPlanBalanceRefund } from './planRefunds';
+import { acceptPlanBalanceRefund, closeUnconfirmedTransfers, confirmPlanRefundReceived, declinePlanBalanceRefund, recordPlanRefundTransfer, refundStatesFor, requestPlanBalanceRefund, sendTransferReminders, withdrawPlanBalanceRefund } from './planRefunds';
 
 /** The wallet/plan list fields for one plan: what is left to refund, what blocks it, and the live request (if any). */
 const refundView = (s: { balance_kobo: number; upcoming: number; refund_request: any | null } | undefined) => ({
@@ -529,6 +529,7 @@ export function createApp(db: Db) {
   api.post('/plan-refunds/:id/accept', cust, wrap(async (req, res) => res.json(await acceptPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
   api.post('/plan-refunds/:id/decline', cust, wrap(async (req, res) => res.json(await declinePlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }, String(req.body?.reason || '').trim().slice(0, 300)))));
   api.post('/plan-refunds/:id/withdraw', cust, wrap(async (req, res) => res.json(await withdrawPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
+  api.post('/plan-refunds/:id/received', cust, wrap(async (req, res) => res.json(await confirmPlanRefundReceived(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
   api.post('/plans/:id/buy', limits.payment, cust, wrap(async (req, res) => {
     const settings = await getSettings(db);
     if (!settings.feature_online_payments) throw new AppError(503, 'ONLINE_PAYMENTS_DISABLED', 'Online payments are temporarily disabled. Your plan has not been charged.');
@@ -751,6 +752,7 @@ export function createApp(db: Db) {
   barberR.post('/plan-refunds/:id/accept', wrap(async (req, res) => res.json(await acceptPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'BARBER', barberId: bid(req) }))));
   barberR.post('/plan-refunds/:id/decline', wrap(async (req, res) => res.json(await declinePlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'BARBER', barberId: bid(req) }, String(req.body?.reason || '').trim().slice(0, 300)))));
   barberR.post('/plan-refunds/:id/withdraw', wrap(async (req, res) => res.json(await withdrawPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'BARBER', barberId: bid(req) }))));
+  barberR.post('/plan-refunds/:id/transfer', wrap(async (req, res) => res.json(await recordPlanRefundTransfer(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'BARBER', barberId: bid(req) }, String(req.body?.reference || '')))));
   barberR.post('/plans', wrap(async (req, res) => {
     const id = await db.tx((t) => savePlan(t, bid(req), null, parse(planSchema, req.body)));
     res.status(201).json({ id });
