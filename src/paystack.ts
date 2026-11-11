@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Db } from './db';
 import { config, MOCK_SECRET } from './config';
 import { AppError, notFound } from './errors';
+import { paystackRefundFailed, paystackRefundProcessed } from './planRefunds';
 import { applyVerifiedPayment, assertPayoutReady, getBooking, PaymentOutcome, HoldVerdict } from './bookingService';
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow, clock } from './time';
@@ -359,6 +360,21 @@ export async function handleWebhook(db: Db, rawBody: Buffer, signature: string |
   const log = (result: string) => recordPaymentEvent(db, { source: 'WEBHOOK', eventType: event?.event ?? null, reference, signatureValid: valid, payload: text, result });
   if (!valid) { await log('rejected_bad_signature'); return { status: 401, body: { error: 'Invalid signature' } }; }
   if (!event) { await log('rejected_bad_json'); return { status: 400, body: { error: 'Invalid JSON' } }; }
+  // Refunds: Paystack confirms a refund it sent (refund.processed) or could not send (refund.failed). Only plan refunds use this for now.
+  if (event.event === 'refund.processed' || event.event === 'refund.failed') {
+    const txRef: string | null = typeof event?.data?.transaction_reference === 'string' ? event.data.transaction_reference : null;
+    if (!txRef) { await log('ignored'); return { status: 200, body: { received: true, ignored: true } }; }
+    try {
+      const id = event.event === 'refund.processed'
+        ? await paystackRefundProcessed(db, txRef)
+        : await paystackRefundFailed(db, txRef, String(event?.data?.gateway_response || 'Paystack could not send the refund.'));
+      await log(id ? (event.event === 'refund.processed' ? 'plan_refund_closed' : 'plan_refund_flagged') : 'ignored');
+      return { status: 200, body: { received: true, plan_refund_request: id } };
+    } catch (e: any) {
+      try { await log('error: ' + (e.message || 'unknown')); } catch { /* db down */ }
+      return { status: 500, body: { error: 'That did not work. Please try again.' } };
+    }
+  }
   if (event.event !== 'charge.success' || !reference) { await log('ignored'); return { status: 200, body: { received: true, ignored: true } }; }
   try {
     // Never trust the payload's word: re-verify the reference with the gateway.

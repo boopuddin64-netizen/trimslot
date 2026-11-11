@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { freshDb, userIdOfBarber } from './helpers';
+import { clock } from '../src/time';
 import {
   balanceOf, requestPlanBalanceRefund, forwardPlanBalanceRefund, declinePlanBalanceRefundByAdmin,
-  acceptPlanBalanceRefund, declinePlanBalanceRefund, withdrawPlanBalanceRefund, authorizePlanBalanceRefund,
+  acceptPlanBalanceRefund, declinePlanBalanceRefund, closeDeclinedPlanBalanceRefund, withdrawPlanBalanceRefund,
+  authorizePlanBalanceRefund, recordPlanRefundTransfer, confirmPlanRefundReceived, sendTransferReminders,
+  closeUnconfirmedTransfers, paystackRefundProcessed,
 } from '../src/planRefunds';
 
 /** A plan the customer paid online: 10,000 naira, 5 sessions, 2 used. */
@@ -31,35 +34,55 @@ test('the balance is the unused sessions\' share of the price, rounded down; Pay
   assert.deepEqual(balanceOf({ price_kobo: 1000000, sessions_total: 5, sessions_used: 5 }), { sessions_left: 0, amount_kobo: 0 });
 });
 
-test('the full flow: admin forwards, the other party agrees, admin authorizes; only the balance is sent and the plan ends', async () => {
+test('Paystack route: the request locks once the barber agrees; the admin authorizes; the barber owes the amount; the case closes only when Paystack confirms', async () => {
   const { c, pid, cust, barber } = await setup();
 
   const asked = await requestPlanBalanceRefund(c.db, pid, cust);
-  assert.equal(asked.status, 'OPEN', 'a new request starts with the admin, not the other party');
+  assert.equal(asked.status, 'OPEN', 'a new request starts with the admin, not the other side');
   assert.equal(asked.amount_kobo, 600000);
-  assert.equal(asked.sessions_left, 3);
   await assert.rejects(acceptPlanBalanceRefund(c.db, asked.id, barber), (e: any) => e.code === 'NOT_FORWARDED', 'the barber cannot agree before the admin forwards it');
-  await assert.rejects(authorizePlanBalanceRefund(c.db, asked.id, null), (e: any) => e.code === 'NOT_CONFIRMED', 'an admin cannot authorize before both agree');
+  await assert.rejects(authorizePlanBalanceRefund(c.db, asked.id, null), (e: any) => e.code === 'NOT_CONFIRMED', 'the admin cannot authorize before both agree');
 
-  const fwd = await forwardPlanBalanceRefund(c.db, asked.id, null);
-  assert.equal(fwd.status, 'FORWARDED');
+  await forwardPlanBalanceRefund(c.db, asked.id, null);
   await assert.rejects(acceptPlanBalanceRefund(c.db, asked.id, cust), (e: any) => e.code === 'SAME_PARTY', 'the customer cannot agree to their own request');
-
   const agreed = await acceptPlanBalanceRefund(c.db, asked.id, barber);
   assert.equal(agreed.status, 'CONFIRMED');
+  await assert.rejects(withdrawPlanBalanceRefund(c.db, asked.id, cust), (e: any) => e.code === 'NOT_WITHDRAWABLE', 'once the barber agrees, the request is locked');
 
-  const sent = await authorizePlanBalanceRefund(c.db, asked.id, null);
-  assert.equal(sent.amount_kobo, 600000);
-  const plan = await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid]);
-  assert.equal(plan.status, 'CANCELLED');
-  const pay = await c.db.one('SELECT refund_amount_kobo, refund_status FROM payments WHERE reference=$1', ['TS-PLAN-REFUND-1']);
-  assert.equal(pay.refund_amount_kobo, 600000, 'only the balance is refunded, not the 10,000 paid');
-  assert.ok(pay.refund_status, 'the payment has a refund state');
+  const sent = await authorizePlanBalanceRefund(c.db, asked.id, null, 'PAYSTACK');
+  assert.equal(sent.refund, 'requested', 'Paystack accepted the refund');
+  assert.equal((await c.db.one('SELECT status FROM plan_refund_requests WHERE id=$1', [asked.id])).status, 'REFUNDING', 'still open until Paystack confirms');
+  assert.equal((await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid])).status, 'CANCELLED');
+  const debt = await c.db.one(`SELECT COALESCE(SUM(remaining_kobo),0)::bigint AS s FROM commission_ledger WHERE barber_id=$1 AND status='ACCRUED'`, [c.barberId]);
+  assert.equal(Number(debt.s), 600000, 'the barber owes the full refund on their ledger');
 
-  await assert.rejects(authorizePlanBalanceRefund(c.db, asked.id, null), (e: any) => e.code === 'NOT_CONFIRMED' || e.code === 'REFUND_ALREADY', 'a second authorize does nothing');
+  const closed = await paystackRefundProcessed(c.db, 'TS-PLAN-REFUND-1');
+  assert.equal(closed, asked.id, 'Paystack confirmation closes the request');
+  assert.equal((await c.db.one('SELECT status FROM plan_refund_requests WHERE id=$1', [asked.id])).status, 'REFUNDED');
+  assert.equal((await c.db.one('SELECT refund_status, refund_amount_kobo FROM payments WHERE reference=$1', ['TS-PLAN-REFUND-1'])).refund_amount_kobo, 600000, 'only the balance is refunded');
+  await assert.rejects(authorizePlanBalanceRefund(c.db, asked.id, null, 'PAYSTACK'), (e: any) => e.code === 'NOT_CONFIRMED', 'a closed request cannot be authorized again');
 });
 
-test('the admin can decline a new request before anyone else sees it; the barber can decline a forwarded one; the plan stays as it was', async () => {
+test('a barber decline goes to the admin first; the admin sends the feedback and closes it; the customer can ask again', async () => {
+  const { c, pid, cust, barber } = await setup();
+
+  const first = await requestPlanBalanceRefund(c.db, pid, cust);
+  await forwardPlanBalanceRefund(c.db, first.id, null);
+  const no = await declinePlanBalanceRefund(c.db, first.id, barber, 'We still have a session booked');
+  assert.equal(no.status, 'OTHER_DECLINED', 'the admin reviews the reason before the customer hears back');
+  await assert.rejects(requestPlanBalanceRefund(c.db, pid, cust), (e: any) => e.code === 'ALREADY_REQUESTED', 'it still counts as open until the admin closes it');
+  await assert.rejects(declinePlanBalanceRefund(c.db, first.id, barber, 'again'), (e: any) => e.code === 'NOT_FORWARDED', 'it cannot be declined twice');
+
+  const closed = await closeDeclinedPlanBalanceRefund(c.db, first.id, null, 'Cancel the booking first, then ask again.');
+  assert.equal(closed.status, 'DECLINED_OTHER');
+  assert.equal((await c.db.one('SELECT close_reason FROM plan_refund_requests WHERE id=$1', [first.id])).close_reason, 'Cancel the booking first, then ask again.');
+
+  const second = await requestPlanBalanceRefund(c.db, pid, cust);
+  assert.equal(second.status, 'OPEN', 'a new request is allowed once the old one is closed');
+  assert.equal((await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid])).status, 'ACTIVE', 'a declined refund leaves the plan as it was');
+});
+
+test('admin decline: the reason is kept; only the person who asked can withdraw, and only before the other side agrees', async () => {
   const { c, pid, cust, barber } = await setup();
 
   const first = await requestPlanBalanceRefund(c.db, pid, cust);
@@ -68,31 +91,65 @@ test('the admin can decline a new request before anyone else sees it; the barber
   assert.equal((await c.db.one('SELECT decline_reason FROM plan_refund_requests WHERE id=$1', [first.id])).decline_reason, 'Still in use this month');
   await assert.rejects(acceptPlanBalanceRefund(c.db, first.id, barber), (e: any) => e.code === 'NOT_FORWARDED', 'a declined request cannot be agreed');
 
-  // a new request is allowed once the old one is closed
   const second = await requestPlanBalanceRefund(c.db, pid, cust);
   await forwardPlanBalanceRefund(c.db, second.id, null);
-  const no = await declinePlanBalanceRefund(c.db, second.id, barber, 'We still have a session booked');
-  assert.equal(no.status, 'DECLINED_OTHER');
-  await assert.rejects(declinePlanBalanceRefund(c.db, second.id, barber, ''), (e: any) => e.code === 'NOT_FORWARDED', 'a declined request is closed');
-  const plan = await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid]);
-  assert.equal(plan.status, 'ACTIVE', 'a declined refund leaves the plan as it was');
+  await assert.rejects(withdrawPlanBalanceRefund(c.db, second.id, barber), (e: any) => e.code === 'NOT_REQUESTER', 'the other side cannot take the request back');
+  const w = await withdrawPlanBalanceRefund(c.db, second.id, cust);
+  assert.equal(w.status, 'WITHDRAWN');
+  assert.equal((await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid])).status, 'ACTIVE', 'a withdrawn request leaves the plan as it was');
 });
 
-test('only the person who asked can withdraw; a plan with a booking still on it cannot be refunded', async () => {
-  const { c, pid, cust, barber } = await setup();
+test('a plan with a booking still on it cannot be refunded', async () => {
+  const { c, pid, cust } = await setup();
   const customer = cust.userId;
-
-  // a booking still on the plan blocks the request
   await c.db.query(`INSERT INTO bookings (customer_id, barber_id, service_id, scheduled_at, ends_at, service_name, price_kobo, duration_min, status, payment_option, payment_status, plan_purchase_id)
     VALUES ($1,$2,$3, now() + interval '2 days', now() + interval '2 days 30 minutes','Kids',150000,30,'CONFIRMED','ONLINE','PAID',$4)`, [customer, c.barberId, c.serviceIds[0], pid]);
   await assert.rejects(requestPlanBalanceRefund(c.db, pid, cust), (e: any) => e.code === 'UPCOMING_BOOKINGS');
-  await c.db.query(`UPDATE bookings SET status='CANCELLED' WHERE plan_purchase_id=$1`, [pid]);
+});
 
-  const asked = await requestPlanBalanceRefund(c.db, pid, cust);
-  await assert.rejects(withdrawPlanBalanceRefund(c.db, asked.id, barber), (e: any) => e.code === 'NOT_REQUESTER', 'the other party cannot take the request back');
-  await forwardPlanBalanceRefund(c.db, asked.id, null);
-  const w = await withdrawPlanBalanceRefund(c.db, asked.id, cust);
-  assert.equal(w.status, 'WITHDRAWN');
-  const plan = await c.db.one('SELECT status FROM plan_purchases WHERE id=$1', [pid]);
-  assert.equal(plan.status, 'ACTIVE', 'a withdrawn request leaves the plan as it was');
+test('transfer route: the barber records the transfer; both are reminded every 24 hours; the customer confirms and the case closes', async () => {
+  const { c, pid, cust, barber } = await setup();
+  try {
+    const asked = await requestPlanBalanceRefund(c.db, pid, cust);
+    await forwardPlanBalanceRefund(c.db, asked.id, null);
+    await acceptPlanBalanceRefund(c.db, asked.id, barber);
+    await authorizePlanBalanceRefund(c.db, asked.id, null, 'TRANSFER');
+    assert.equal((await c.db.one('SELECT status FROM plan_refund_requests WHERE id=$1', [asked.id])).status, 'TRANSFER_DUE');
+    await assert.rejects(recordPlanRefundTransfer(c.db, asked.id, cust, 'REF-1'), (e: any) => e.code === 'NOT_BARBER', 'only the barber records the transfer');
+    await assert.rejects(recordPlanRefundTransfer(c.db, asked.id, barber, '   '), (e: any) => e.code === 'VALIDATION_ERROR', 'a reference is needed');
+
+    const t0 = clock.now().getTime();
+    const sentRec = await recordPlanRefundTransfer(c.db, asked.id, barber, 'REF-1');
+    assert.equal(sentRec.status, 'TRANSFER_SENT');
+
+    clock.setExact(new Date(t0 + 25 * 3600000));
+    assert.equal(await sendTransferReminders(c.db), 1, 'after 24 hours both are reminded');
+    clock.setExact(new Date(t0 + 26 * 3600000));
+    assert.equal(await sendTransferReminders(c.db), 0, 'not again within the same day');
+    clock.setExact(new Date(t0 + 50 * 3600000));
+    assert.equal(await sendTransferReminders(c.db), 1, 'and again the next day');
+
+    const done = await confirmPlanRefundReceived(c.db, asked.id, cust);
+    assert.equal(done.status, 'REFUNDED');
+    assert.equal((await c.db.one('SELECT refund_status FROM payments WHERE reference=$1', ['TS-PLAN-REFUND-1'])).refund_status, 'REFUNDED');
+    clock.setExact(new Date(t0 + 60 * 24 * 3600000));
+    assert.equal(await closeUnconfirmedTransfers(c.db), 0, 'a confirmed case is not closed again');
+  } finally { clock.set(null); }
+});
+
+test('transfer route: no confirmation after 7 days closes the case by itself', async () => {
+  const { c, pid, cust, barber } = await setup();
+  try {
+    const asked = await requestPlanBalanceRefund(c.db, pid, cust);
+    await forwardPlanBalanceRefund(c.db, asked.id, null);
+    await acceptPlanBalanceRefund(c.db, asked.id, barber);
+    await authorizePlanBalanceRefund(c.db, asked.id, null, 'TRANSFER');
+    const t0 = clock.now().getTime();
+    await recordPlanRefundTransfer(c.db, asked.id, barber, 'REF-2');
+    clock.setExact(new Date(t0 + 6 * 24 * 3600000));
+    assert.equal(await closeUnconfirmedTransfers(c.db), 0, 'still inside the 7 days');
+    clock.setExact(new Date(t0 + 8 * 24 * 3600000));
+    assert.equal(await closeUnconfirmedTransfers(c.db), 1, 'after 7 days it closes itself');
+    assert.equal((await c.db.one('SELECT status FROM plan_refund_requests WHERE id=$1', [asked.id])).status, 'CLOSED_UNCONFIRMED');
+  } finally { clock.set(null); }
 });
