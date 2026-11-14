@@ -46,7 +46,8 @@ export async function anonymiseUser(t: Conn, userId: number, why: string) {
   if (!u || u.anonymised_at) return false;
   const now = isoNow();
   await t.query(`UPDATE users SET name=$2, email=$3, phone=NULL, password_hash=$4, account_status='DELETED', deleted_at=COALESCE(deleted_at,$5), deleted_prev_status=COALESCE(deleted_prev_status,account_status),
-      delete_reason=COALESCE(delete_reason,$6), anonymised_at=$5, status_at=$5, avatar_url=NULL, deletion_requested_at=NULL WHERE id=$1`,
+      delete_reason=COALESCE(delete_reason,$6), anonymised_at=$5, status_at=$5, avatar_url=NULL, deletion_requested_at=NULL,
+      password_reset_hash=NULL, password_reset_expires_at=NULL, password_reset_attempts=0, session_version=session_version+1 WHERE id=$1`,
     [userId, u.role === 'barber' ? 'Deleted barber' : 'Deleted customer', RM(userId), '!' + crypto.randomBytes(24).toString('hex'), now, why]);
   const q = (sql: string, ...p: unknown[]) => t.query(sql, p);
   await q('DELETE FROM user_avatars WHERE user_id=$1', userId);

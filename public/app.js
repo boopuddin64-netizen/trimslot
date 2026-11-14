@@ -212,8 +212,9 @@ async function route() {
     if (!parts.length) return role === 'barber' ? go('#/today') : role === 'customer' ? customerHome() : landing();
     if (parts[0] === 'login') return authPage('login');
     if (parts[0] === 'signup') return authPage('signup', q.get('role'));
+    if (parts[0] === 'password-reset') return passwordReset(q.get('email') || '');
     if (parts[0] === 'b' && /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
-    if (!state.user) { if (parts.length && !['login', 'signup'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
+    if (!state.user) { if (parts.length && !['login', 'signup', 'password-reset'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
     if (parts[0] === 'verify-email') { if (!emailCheckOn()) { const nx = q.get('next'); return go(nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup|verify-email)/.test(nx) ? nx : '#/'); } return verifyEmail(q.get('next')); }
     if (parts[0] === 'notifications') return notifications();
@@ -223,6 +224,7 @@ async function route() {
       if (parts[0] === 'book') return bookWizard(Number(parts[1]));
       if (parts[0] === 'wallet') return wallet(q.get('plan'), Number(q.get('pp')) || 0);
       if (parts[0] === 'bookings') return myBookings();
+      if (parts[0] === 'receipts') return customerReceipts();
       if (parts[0] === 'booking') return parts[2] === 'move' ? moveBooking(Number(parts[1])) : bookingDetail(Number(parts[1]), q.get('pay'));
     } else {
       if (parts[0] === 'today') return barberToday();
@@ -277,7 +279,7 @@ function authPage(mode, roleQ) {
         ${signup && role === 'barber' ? '<div class="info small">We check every new barber shop before customers can see it. You can add your services and hours now.</div>' : ''}
         <div style="height:24px"></div><button class="btn block" type="submit">${signup ? 'Sign up' : 'Log in'}</button>
       </form>
-      <p class="center small">${signup ? 'Have an account? <a href="#/login">Log in</a>' : 'New here? <a href="#/signup">Sign up</a>'}</p>
+      <p class="center small">${signup ? 'Have an account? <a href="#/login">Log in</a>' : '<a href="#/password-reset">Forgot password?</a> · New here? <a href="#/signup">Sign up</a>'}</p>
       ${!signup && state.cfg.demo ? `<div class="card small"><b>Demo logins (tap to fill)</b><br>
         <a href="#" data-fill="chidi@trimslot.demo|Customer123!">Customer: chidi@trimslot.demo</a><br>
         <a href="#" data-fill="tunde@trimslot.demo|Customer123!">Customer 2: tunde@trimslot.demo</a><br>
@@ -297,6 +299,43 @@ function authPage(mode, roleQ) {
         if (signup && fd.email && emailCheckOn()) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
         go(dest);
       } catch (e) { saved = fd; draw(e.message); }
+    };
+  };
+  draw();
+}
+
+/* ---------- password reset by email code (separate from email verification) ---------- */
+function passwordReset(initialEmail = '') {
+  let email = initialEmail, sent = false, msg = '';
+  const draw = () => {
+    app.innerHTML = `<a class="back" href="#/login">${ic('back', 'sm')} Log in</a><h1>Reset your password</h1>
+      <p class="muted">We will send a 6-digit code to the email on your account. It expires after 10 minutes.</p>
+      ${sent ? `<div class="info small">${esc(msg || 'If an account uses that email address, a reset code has been sent.')}</div>
+        <form id="prf"><label>Email</label><input name="email" type="email" autocomplete="email" required value="${esc(email)}">
+          <label>6-digit code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+          <label>New password</label><input name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+          <label>Confirm new password</label><input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+          ${msg && msg !== 'If an account uses that email address, a reset code has been sent.' ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}
+          <div class="btns cta"><button class="btn" type="submit">Reset password</button></div></form>
+        <p class="center small"><a href="#" id="pr-resend">Send another code</a></p>`
+      : `<form id="prs"><label>Email</label><input name="email" type="email" autocomplete="email" required value="${esc(email)}">
+          ${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send reset code</button></div></form>`}`;
+    const request = async (value) => {
+      email = String(value || '').trim(); if (!email) { msg = 'Enter your email address.'; draw(); return; }
+      const button = document.querySelector('#prs button[type=submit], #pr-resend'); if (button) button.disabled = true;
+      try { const r = await api('/auth/password/reset/send', { method: 'POST', body: { email } }); sent = true; msg = r.message; draw(); }
+      catch (e) { msg = e.message || 'We could not send a reset code.'; draw(); }
+    };
+    const req = $('#prs'); if (req) req.onsubmit = (e) => { e.preventDefault(); request(new FormData(req).get('email')); };
+    const resend = $('#pr-resend'); if (resend) resend.onclick = (e) => { e.preventDefault(); request($('#prf [name=email]').value); };
+    const form = $('#prf'); if (form) form.onsubmit = async (e) => {
+      e.preventDefault(); const f = form.elements;
+      if (f.new_password.value !== f.confirm_password.value) { msg = 'Those new passwords do not match.'; draw(); return; }
+      const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
+      try {
+        await api('/auth/password/reset', { method: 'POST', body: { email: f.email.value, code: f.code.value, new_password: f.new_password.value } });
+        state.user = null; state.unread = 0; Notify.stop(); toast('Password reset. Log in with your new password.'); go('#/login');
+      } catch (e2) { msg = e2.message || 'We could not reset your password.'; draw(); }
     };
   };
   draw();
@@ -580,22 +619,59 @@ async function profile(editing) {
   const [w, bk] = await Promise.all([api('/me/wallet'), api('/bookings')]);
   const u = state.user;
   const livePlans = w.plans.filter((p) => p.live), liveCredits = w.credits.filter((c) => c.live);
-  const recent = bk.bookings.slice(0, 3);
-  app.innerHTML = `${emailBanner()}<div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small ellip">${esc(u.email || '')}</div><div class="muted small ellip">${esc(u.phone || '')}</div></div></div>
-    <h2>Account</h2>
-    <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
-    <div id="editbox" class="${editing ? '' : 'hidden'}"><div class="card">${accountForm(u)}</div></div>
-    <h2>Plans &amp; credits</h2>
-    <div class="list"><a class="lrow" href="#/wallet"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">My plans<span class="sub">${livePlans.length ? livePlans.map((p) => p.sessions_left + ' left · ' + esc(p.shop_name)).join(', ') : 'No active plan'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      <a class="lrow" href="#/wallet"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Session credits<span class="sub">${liveCredits.length ? liveCredits.length + ' available, next expires ' + expTxt(liveCredits[0].expires_at) : 'None right now'}</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
-    <h2>Booking history</h2>
-    ${recent.length ? clist(recent.map(bookingCard)) : '<p class="muted small">No bookings yet.</p>'}
-    ${bk.bookings.length > 3 ? '<div class="btns end"><a class="btn sm sec" href="#/bookings">All bookings</a></div>' : ''}
-    <h2>Preferences</h2>
-    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
-    <div class="list">${signOutRow()}</div>`;
+  const now = Date.parse(state.cfg?.now || new Date().toISOString());
+  const upcoming = bk.bookings.filter((b) => ['CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status) && Date.parse(b.scheduled_time || '') >= now)
+    .sort((a, b) => Date.parse(a.scheduled_time) - Date.parse(b.scheduled_time));
+  const next = upcoming[0];
+  const emailState = !emailCheckOn() ? 'Not required right now' : u.email_verified ? 'Verified' : 'Not verified';
+  const emailBadge = !emailCheckOn() ? 'b-blue' : u.email_verified ? 'b-green' : 'b-amber';
+  app.innerHTML = `<div class="customer-profile">
+    <section class="profile-section" id="profile-contact"><h2>Profile &amp; contact</h2>
+      <div class="prof-head"><div class="avatar">${initials(u.name)}</div><div class="grow"><h1 class="ellip">${esc(u.name)}</h1><div class="muted small">Customer profile</div></div></div>
+      <div id="profile-photo-slot"></div>
+      <div class="card profile-contact"><div><span>Email</span><b>${esc(u.email || 'Not added')}</b><span class="badge ${emailBadge}">${esc(emailState)}</span></div>
+        <div><span>Phone</span><b>${esc(u.phone || 'Not added')}</b></div>
+        <p class="small muted">Email verification is shown above. Phone verification is not currently available.</p></div>
+      <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        ${emailCheckOn() ? `<a class="lrow" href="#/verify-email?next=%23%2Fprofile"><span class="ico">${ic('shield', 'sm')}</span><span class="grow">${u.email_verified ? 'Email verified' : (u.email ? 'Verify or resend code' : 'Add and verify email')}<span class="sub">${u.email_verified ? 'Your email is checked' : 'Send a 6-digit code to your email'}</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
+      <div id="editbox" class="${editing ? '' : 'hidden'}"><div class="card">${accountForm(u)}</div></div>
+    </section>
+    <section class="profile-section" id="profile-security"><h2>Security &amp; sign-in</h2>
+      <div class="list"><button class="lrow" id="password-toggle" aria-expanded="false"><span class="ico">${ic('lock', 'sm')}</span><span class="grow">Change password<span class="sub">Use your current password to choose a new one</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        <a class="lrow" href="#/password-reset"><span class="ico">${ic('refresh', 'sm')}</span><span class="grow">Forgot your password?<span class="sub">Reset it with a code sent by email</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+      <div id="password-box" class="hidden"><form id="password-change" class="card" autocomplete="on"><label>Current password</label><input name="current_password" type="password" autocomplete="current-password" required>
+        <label>New password</label><input name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+        <label>Confirm new password</label><input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+        <div class="err hidden" id="password-error" role="alert"></div><div class="btns cta"><button class="btn" type="submit">Update password</button></div></form></div>
+    </section>
+    <section class="profile-section" id="profile-bookings"><h2>Bookings</h2>
+      ${next ? `<p class="small muted" style="margin:0 0 6px">Nearest upcoming booking</p>${clist([bookingCard(next)])}` : '<p class="muted small">No upcoming bookings.</p>'}
+      <div class="list"><a class="lrow" href="#/bookings"><span class="ico">${ic('cal', 'sm')}</span><span class="grow">All bookings<span class="sub">${bk.bookings.length} booking${bk.bookings.length === 1 ? '' : 's'} and history</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+    </section>
+    <section class="profile-section" id="profile-wallet"><h2>Wallet &amp; receipts</h2>
+      <div class="list"><a class="lrow" href="#/wallet"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${livePlans.length ? livePlans.map((p) => p.sessions_left + ' left · ' + esc(p.shop_name)).join(', ') : 'No active plan'}${liveCredits.length ? ` · ${liveCredits.length} session credit${liveCredits.length === 1 ? '' : 's'}` : ''}</span></span><span class="end">${ic('right', 'sm')}</span></a>
+        <a class="lrow" href="#/receipts"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Receipts<span class="sub">View and save paid booking receipts</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+    </section>
+    <section class="profile-section" id="profile-preferences"><h2>Preferences</h2>
+      <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
+    </section>
+    <section class="profile-section" id="profile-help"><h2>Help, privacy &amp; account actions</h2>
+      <div class="list"><button class="lrow" data-report="0" data-report-category="OTHER"><span class="ico">${ic('warn', 'sm')}</span><span class="grow">Help &amp; Support<span class="sub">Send a question or report a problem to TrimSlot</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        <a class="lrow" href="/terms.html" target="_blank" rel="noopener"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Terms of Service</span><span class="end">${ic('right', 'sm')}</span></a></div>
+      <div id="profile-data-slot"></div><div class="list">${signOutRow()}</div>
+    </section></div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
   wireAccount(() => profile(true)); wireTheme(); Notify.wirePrefs(); wireSignOut();
+  $('#password-toggle').onclick = () => { const box = $('#password-box'), open = box.classList.toggle('hidden') === false; $('#password-toggle').setAttribute('aria-expanded', String(open)); };
+  $('#password-change').onsubmit = async (ev) => {
+    ev.preventDefault(); const f = ev.target.elements, btn = ev.target.querySelector('button[type=submit]'), er = $('#password-error');
+    er.classList.add('hidden');
+    if (f.new_password.value !== f.confirm_password.value) { er.textContent = 'Those new passwords do not match.'; er.classList.remove('hidden'); return; }
+    btn.disabled = true;
+    try { await api('/auth/password/change', { method: 'POST', body: { current_password: f.current_password.value, new_password: f.new_password.value } }); ev.target.reset(); toast('Password changed. Other devices will need to log in again.'); }
+    catch (e) { er.textContent = e.message || 'We could not change your password.'; er.classList.remove('hidden'); }
+    finally { btn.disabled = false; }
+  };
 }
 
 /* ---------- sharing a private barber link (the barber's own, and a customer passing a barber on) ---------- */
@@ -935,6 +1011,38 @@ function saveReceiptFile(r) {
   link.href = url; link.download = `trimslot-receipt-${String(r.reference).replace(/[^a-zA-Z0-9_-]/g, '-')}.txt`;
   document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+async function shareReceipt(r) {
+  const text = receiptText(r);
+  if (navigator.share) {
+    try { await navigator.share({ title: 'TrimSlot payment receipt', text }); }
+    catch (e) { if (e.name !== 'AbortError') throw e; }
+  } else if (navigator.clipboard && navigator.clipboard.writeText) {
+    try { await navigator.clipboard.writeText(text); toast('Receipt details copied'); }
+    catch { saveReceiptFile(r); toast('Receipt saved'); }
+  } else { saveReceiptFile(r); toast('Receipt saved'); }
+}
+async function customerReceipts() {
+  const { receipts } = await api('/me/receipts');
+  app.innerHTML = `<a class="back" href="#/profile">${ic('back', 'sm')} Profile</a><h1>Receipts</h1>
+    <p class="small muted">Payment receipts for successful online bookings. Refund or credit updates appear in the status.</p>
+    ${receipts.length ? receipts.map((r, i) => {
+      const tone = r.status === 'Paid' ? 'b-green' : r.status === 'Refunded' ? 'b-blue' : 'b-amber';
+      return `<section class="card receipt receipt-list-card" aria-label="Receipt for ${esc(r.service)}">
+        <div class="row between receipt-head"><div><div class="small muted">${esc(dateLabel(r.appointment_date))} · ${esc(r.appointment_time)}</div><b>${esc(r.service)}</b></div><span class="badge ${tone}">${esc(r.status)}</span></div>
+        <div class="receipt-lines"><div><span>Barber</span><b>${esc(r.barber)}${r.shop && r.shop !== r.barber ? ` · ${esc(r.shop)}` : ''}</b></div>
+          <div><span>Amount</span><b>${naira(r.amount_kobo)}</b></div><div class="receipt-ref"><span>Payment reference</span><code>${esc(r.reference)}</code></div></div>
+        <div class="btns"><a class="btn sm sec" href="#/booking/${Number(r.booking_id)}">Booking</a><button class="btn sm" type="button" data-receipt-share="${i}">Share receipt</button><button class="btn sm sec" type="button" data-receipt-save="${i}">Save receipt</button></div>
+      </section>`;
+    }).join('') : '<div class="empty"><b>No receipts yet</b><span class="small muted">Receipts for paid online bookings will show here.</span></div>'}`;
+  document.querySelectorAll('[data-receipt-share]').forEach((el) => el.onclick = async () => {
+    const r = receipts[Number(el.dataset.receiptShare)]; if (!r) return;
+    el.disabled = true; try { await shareReceipt(r); } catch (e) { fail(e); } finally { el.disabled = false; }
+  });
+  document.querySelectorAll('[data-receipt-save]').forEach((el) => el.onclick = () => {
+    const r = receipts[Number(el.dataset.receiptSave)]; if (!r) return;
+    saveReceiptFile(r); toast('Receipt saved');
+  });
+}
 async function confirmReturn(kind, id, title) {
   app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please keep this page open. It takes a few seconds.</p></div>`;
   let last = null;
@@ -1015,15 +1123,7 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">We are deciding if you get a credit or a refund for this payment. We will tell you.</div>` : ''}`;
   if (quiet && keepHelp) { const hn = $('#helpnote'); if (hn) { hn.value = keepHelp; if (helpFocus) hn.focus(); } }
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
-  on('#shareReceipt', async () => {
-    const text = receiptText(receipt);
-    if (navigator.share) {
-      try { await navigator.share({ title: 'TrimSlot payment receipt', text }); }
-      catch (e) { if (e.name !== 'AbortError') throw e; }
-    } else if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text); toast('Receipt details copied');
-    } else { saveReceiptFile(receipt); toast('Receipt saved'); }
-  });
+  on('#shareReceipt', async () => shareReceipt(receipt));
   on('#saveReceipt', async () => { saveReceiptFile(receipt); toast('Receipt saved'); });
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
@@ -1066,15 +1166,16 @@ document.addEventListener('click', (ev) => {
   const btn = ev.target.closest && ev.target.closest('[data-report]'); if (!btn) return;
   const id = Number(btn.dataset.report); let box = $('#reportbox');
   if (box) { box.remove(); return; }
+  const category = btn.dataset.reportCategory || 'NO_SHOW';
   box = document.createElement('div'); box.id = 'reportbox'; box.className = 'card'; box.style.marginTop = '12px';
-  box.innerHTML = `<h3 style="margin-top:0">Report a problem</h3><p class="small muted">Tell us what went wrong. The TrimSlot team reads every report and may contact you.</p>
-    <form id="rform"><label>What is this about?</label><select name="category"><option value="NO_SHOW">Someone did not come</option><option value="BEHAVIOUR">How someone acted</option><option value="PAYMENT">Payment</option><option value="QUALITY">How good the service was</option><option value="SAFETY">Safety</option><option value="OTHER">Something else</option></select>
+  box.innerHTML = `<h3 style="margin-top:0">Help &amp; Support</h3><p class="small muted">Tell us what you need help with. The TrimSlot team reads every report; replies appear in your notifications.</p>
+    <form id="rform"><label>What is this about?</label><select name="category"><option value="NO_SHOW"${category === 'NO_SHOW' ? ' selected' : ''}>Someone did not come</option><option value="BEHAVIOUR"${category === 'BEHAVIOUR' ? ' selected' : ''}>How someone acted</option><option value="PAYMENT"${category === 'PAYMENT' ? ' selected' : ''}>Payment</option><option value="QUALITY"${category === 'QUALITY' ? ' selected' : ''}>How good the service was</option><option value="SAFETY"${category === 'SAFETY' ? ' selected' : ''}>Safety</option><option value="OTHER"${category === 'OTHER' ? ' selected' : ''}>Something else</option></select>
     <label>Details</label><textarea name="message" rows="4" maxlength="1000" required placeholder="What happened?"></textarea>
     <div class="btns cta"><button class="btn" type="submit">Send report</button></div></form>`;
-  btn.closest('.btns').after(box); box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const anchor = btn.closest('.btns') || btn.closest('.list') || btn; anchor.after(box); box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('#rform').onsubmit = async (e) => {
     e.preventDefault(); const sb = e.target.querySelector('button'); sb.disabled = true;
-    try { const d = Object.fromEntries(new FormData(e.target)); await api('/reports', { method: 'POST', body: { ...d, booking_id: id } }); box.innerHTML = `<div class="ok">Thank you. The TrimSlot team got your report.</div>`; }
+    try { const d = Object.fromEntries(new FormData(e.target)); const payload = { ...d }; if (id > 0) payload.booking_id = id; await api('/reports', { method: 'POST', body: payload }); box.innerHTML = `<div class="ok">Thank you. The TrimSlot team got your report.</div>`; }
     catch (err) { sb.disabled = false; toast(err.message || 'We could not send it', true); }
   };
 });

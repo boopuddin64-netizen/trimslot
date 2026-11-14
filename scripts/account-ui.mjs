@@ -7,7 +7,7 @@ fs.mkdirSync('screenshots/account', { recursive: true });
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 let fails = 0, total = 0; const errs = [];
 const ok = (c, n, x = '') => { total++; if (!c) { fails++; console.log('FAIL ' + n + (x ? ' :: ' + x : '')); } else if (process.env.VERBOSE) console.log('PASS ' + n); };
-const mk = async (w) => { const ctx = await b.newContext({ viewport: { width: w, height: 800 }, baseURL: BASE }); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/favicon|Failed to load resource/.test(m.text())) errs.push(m.text().slice(0, 140)); }); return { ctx, p }; };
+const mk = async (w) => { const ctx = await b.newContext({ viewport: { width: w, height: 800 }, baseURL: BASE }); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/favicon|Failed to load resource|_vercel\/insights/.test(m.text())) errs.push(m.text().slice(0, 140)); }); return { ctx, p }; };
 const stamp = Date.now();
 for (const w of [390, 1280]) {
   // --- sign-up needs the tick-box
@@ -17,6 +17,13 @@ for (const w of [390, 1280]) {
     ok(await p.locator('button[type=submit]').isDisabled(), w + ' sign-up button stays disabled without the tick-box');
     await p.check('[name=accept_terms]'); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('signup'), null, { timeout: 8000 });
     ok(true, w + ' signup with tick-box'); await p.goto('/#/profile'); await p.waitForSelector('.avatar-edit');
+    const sections = await p.locator('.profile-section h2').allTextContents();
+    ok(JSON.stringify(sections) === JSON.stringify(['Profile & contact', 'Security & sign-in', 'Bookings', 'Wallet & receipts', 'Preferences', 'Help, privacy & account actions']), w + ' customer profile has exactly the six agreed sections', sections.join(' | '));
+    await p.click('#password-toggle'); ok(await p.locator('#password-change:not(.hidden)').count() === 1, w + ' password change form opens');
+    await p.click('#profile-help [data-report]'); await p.waitForSelector('#reportbox'); ok(await p.locator('#rform [name=category]').inputValue() === 'OTHER', w + ' general Help & Support opens with the right category');
+    await p.goto('/#/receipts'); await p.waitForFunction(() => document.querySelector('h1')?.textContent?.includes('Receipts'), null, { timeout: 8000 }); ok(true, w + ' profile receipts shortcut opens a receipts page');
+    await p.goto('/#/password-reset'); await p.waitForSelector('#prs'); ok(true, w + ' password reset screen is reachable');
+    await p.goto('/#/profile'); await p.waitForSelector('.avatar-edit');
     ok(await p.locator('#exp').count() === 1 && await p.locator('#delacct').count() === 1, w + ' profile has export + delete');
     await p.setInputFiles('#av-file', IMG); await p.waitForSelector('.sheet.crop'); await p.click('[data-save]'); await p.waitForSelector('.avatar-edit .av.has', { timeout: 8000 }); ok(true, w + ' avatar uploaded and shown round');
     const r = await p.evaluate(() => { const e = document.querySelector('.avatar-edit .av'); const s = getComputedStyle(e); return [s.borderRadius, e.offsetWidth, e.offsetHeight]; });

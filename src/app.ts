@@ -52,6 +52,7 @@ import { feeSettingsOf, onlineBreakdown } from './fees';
 import { fixedDevCode, barberEmailReadySql, assertEmailVerified, resetEmailVerification, sendEmailOtp, verifyEmailOtp } from './emailOtp';
 import { canReschedule, moveSlots, rescheduleBooking } from './reschedule';
 import { helpEligible, helpView, requestHelp } from './help';
+import { completePasswordReset, requestPasswordReset } from './passwordReset';
 
 const wrap = (fn: (req: Request, res: Response) => any) => (req: Request, res: Response, next: NextFunction) =>
   Promise.resolve(fn(req, res)).catch(next);
@@ -171,6 +172,16 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
 }
 
 /** A receipt is available only for the customer's own booking detail, and only for a successful primary charge. */
+function receiptStatus(paymentStatus: unknown, refundStatus: unknown) {
+  const payment = String(paymentStatus || ''), refund = String(refundStatus || '');
+  if (payment === 'REFUNDED' || refund === 'REFUNDED') return 'Refunded';
+  if (payment === 'REFUND_DECLINED' || refund === 'REJECTED') return 'Refund declined';
+  if (payment === 'REFUND_PENDING' || refund === 'PENDING_APPROVAL') return 'Refund pending review';
+  if (refund === 'NEEDS_REFUND' || refund === 'REFUND_REQUESTED') return 'Refund processing';
+  if (payment === 'CREDITED') return 'Session credit issued';
+  if (payment === 'CREDIT_PENDING') return 'Session credit pending review';
+  return payment === 'PAID' ? 'Paid' : 'Payment received';
+}
 async function customerReceipt(db: Db, b: BookingRow, booking: any) {
   if (b.payment_option !== 'ONLINE') return undefined;
   const p = await db.maybeOne<any>(`SELECT reference, amount_kobo, refund_status
@@ -180,16 +191,7 @@ async function customerReceipt(db: Db, b: BookingRow, booking: any) {
     ORDER BY CASE WHEN amount_kobo=(SELECT price_kobo + COALESCE(booking_fee_kobo,0) FROM bookings WHERE id=$1) THEN 0 ELSE 1 END,
       CASE WHEN refund_status IS NULL THEN 0 ELSE 1 END, id DESC LIMIT 1`, [b.id]);
   if (!p) return undefined;
-  const paymentStatus = String(b.payment_status || '');
-  const refundStatus = String(p.refund_status || '');
-  let status = 'Paid';
-  if (paymentStatus === 'REFUNDED' || refundStatus === 'REFUNDED') status = 'Refunded';
-  else if (paymentStatus === 'REFUND_DECLINED' || refundStatus === 'REJECTED') status = 'Refund declined';
-  else if (paymentStatus === 'REFUND_PENDING' || refundStatus === 'PENDING_APPROVAL') status = 'Refund pending review';
-  else if (refundStatus === 'NEEDS_REFUND' || refundStatus === 'REFUND_REQUESTED') status = 'Refund processing';
-  else if (paymentStatus === 'CREDITED') status = 'Session credit issued';
-  else if (paymentStatus === 'CREDIT_PENDING') status = 'Session credit pending review';
-  else if (paymentStatus !== 'PAID') status = 'Payment received';
+  const status = receiptStatus(b.payment_status, p.refund_status);
   return {
     barber: booking.barber_name || booking.shop_name || 'Barber', shop: booking.shop_name || null,
     service: booking.service_name, appointment_date: booking.date, appointment_time: booking.start_label,
@@ -414,6 +416,26 @@ export function createApp(db: Db) {
     res.json({ user: await publicUser(db, await db.one('SELECT * FROM users WHERE id=$1', [req.user!.id])) });
   }));
 
+  /** Change password with the current password; rotating the session version signs out other devices. */
+  api.post('/auth/password/change', limits.login, requireAuth, wrap(async (req, res) => {
+    const d = parse(z.object({ current_password: z.string().min(1).max(200), new_password: z.string().min(8).max(200) }), req.body);
+    const u = await db.one<any>('SELECT id, role, password_hash FROM users WHERE id=$1', [req.user!.id]);
+    if (!bcrypt.compareSync(d.current_password, u.password_hash)) throw new AppError(403, 'BAD_PASSWORD', 'That current password is wrong.');
+    if (bcrypt.compareSync(d.new_password, u.password_hash)) throw badRequest('Choose a password you have not used for this account.');
+    const hash = bcrypt.hashSync(d.new_password, config.bcryptRounds);
+    const updated = await db.one<any>(`UPDATE users SET password_hash=$1, session_version=session_version+1,
+      password_reset_hash=NULL, password_reset_expires_at=NULL, password_reset_attempts=0 WHERE id=$2 RETURNING id, role, session_version`, [hash, u.id]);
+    await audit(db, null, { id: u.id, role: u.role }, 'PASSWORD_CHANGED', {});
+    setAuthCookie(res, signToken(updated));
+    res.json({ changed: true });
+  }));
+  api.post('/auth/password/reset/send', limits.login, wrap(async (req, res) => res.json(await requestPasswordReset(db, req.body?.email, req.ip || 'unknown'))));
+  api.post('/auth/password/reset', limits.login, wrap(async (req, res) => {
+    await completePasswordReset(db, req.body);
+    res.clearCookie('trimslot_token', { path: '/' });
+    res.json({ reset: true });
+  }));
+
   /** Own account details (both roles). Email/phone are unique; at least one contact must remain. */
   api.patch('/me', requireAuth, wrap(async (req, res) => {
     const d = parse(V.meSchema, req.body);
@@ -424,7 +446,10 @@ export function createApp(db: Db) {
     try {
       await db.tx(async (t) => {
         await t.query('UPDATE users SET name=$1, email=$2, phone=$3 WHERE id=$4', [d.name ?? cur.name, email, phone, cur.id]);
-        if ((email ?? null) !== (cur.email ?? null)) await resetEmailVerification(t, cur.id);   // a new email must be checked again
+        if ((email ?? null) !== (cur.email ?? null)) {
+          await resetEmailVerification(t, cur.id);   // a new email must be checked again
+          await t.query('UPDATE users SET password_reset_hash=NULL, password_reset_expires_at=NULL, password_reset_attempts=0 WHERE id=$1', [cur.id]);
+        }
       });
     } catch (e: any) {
       if (isUniqueViolation(e)) throw conflict('ACCOUNT_EXISTS', 'Another account already uses that email or phone.');
@@ -556,6 +581,22 @@ export function createApp(db: Db) {
     const w = await customerWallet(db, req.user!.id);
     const st = await refundStatesFor(db, w.plans.map((p: any) => p.id));
     res.json({ ...w, plans: w.plans.map((p: any) => ({ ...p, ...refundView(st.get(p.id)) })) });
+  }));
+  api.get('/me/receipts', cust, wrap(async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const rows = await db.many<any>(`SELECT r.* FROM (
+      SELECT DISTINCT ON (k.id) k.id AS booking_id, k.date, k.start_min, k.service_name, k.payment_status,
+        b.shop_name, u.name AS barber_name, p.reference, p.amount_kobo, p.refund_status, p.created_at
+      FROM payments p JOIN bookings k ON k.id=p.booking_id
+        JOIN barbers b ON b.id=k.barber_id JOIN users u ON u.id=b.user_id
+      WHERE k.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
+      ORDER BY k.id,
+        CASE WHEN p.amount_kobo=(k.price_kobo+COALESCE(k.booking_fee_kobo,0)) THEN 0 ELSE 1 END,
+        CASE WHEN p.refund_status IS NULL THEN 0 ELSE 1 END, p.id DESC
+    ) r ORDER BY r.created_at DESC, r.booking_id DESC LIMIT 100`, [req.user!.id]);
+    res.json({ receipts: rows.map((r) => ({ booking_id: Number(r.booking_id), barber: r.barber_name || r.shop_name || 'Barber', shop: r.shop_name,
+      service: r.service_name, appointment_date: r.date, appointment_time: fmtTime12(Number(r.start_min)), amount_kobo: Number(r.amount_kobo),
+      status: receiptStatus(r.payment_status, r.refund_status), reference: r.reference, created_at: r.created_at })) });
   }));
   // Balance refund for a part-used plan: the customer and the barber both have to agree; then an admin authorizes it.
   api.post('/plans/:id/refund-request', cust, wrap(async (req, res) => res.status(201).json(await requestPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
