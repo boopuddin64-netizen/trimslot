@@ -34,8 +34,8 @@ async function hit(db: Conn, key: string, windowMs: number, limit: number): Prom
 const paused = () => new AppError(409, 'EMAIL_VERIFICATION_OFF', 'Email checking is switched off for now. You do not need a code.');
 
 export async function sendEmailOtp(db: Db, userId: number, ip: string) {
-  if (!config.emailVerificationRequired) throw paused();   // paused: nothing is sent
-  const u = await db.one<any>('SELECT id, email, email_verified_at FROM users WHERE id=$1', [userId]);
+  const u = await db.one<any>('SELECT id, role, email, email_verified_at FROM users WHERE id=$1', [userId]);
+  if (!config.emailVerificationRequired && u.role !== 'barber') throw paused();   // optional customer checks are paused; barber pre-launch checks remain active
   if (!u.email) throw new AppError(400, 'EMAIL_REQUIRED', 'Add your email first. Then we can send you a code.');
   if (u.email_verified_at) return { already_verified: true };
   if (!(await hit(db, `otp_send:email:${u.email.toLowerCase()}`, HOUR, OTP_SENDS_PER_HOUR))) throw new AppError(429, 'RATE_LIMITED', 'You asked for too many codes. Try again in an hour.');
@@ -49,7 +49,8 @@ export async function sendEmailOtp(db: Db, userId: number, ip: string) {
 }
 
 export async function verifyEmailOtp(db: Db, userId: number, codeRaw: unknown) {
-  if (!config.emailVerificationRequired) throw paused();
+  const who = await db.maybeOne<{ role: string }>('SELECT role FROM users WHERE id=$1', [userId]);
+  if (!config.emailVerificationRequired && who?.role !== 'barber') throw paused();
   const code = typeof codeRaw === 'string' ? codeRaw.trim() : '';
   if (!/^\d{6}$/.test(code)) throw badRequest('Type the 6 numbers from the email.');
   const out = await db.tx(async (t) => {
@@ -91,5 +92,11 @@ export async function assertEmailVerified(c: Conn, userId: number, what: string)
   if (!u || u.email_verified_at) return;
   throw new AppError(403, 'EMAIL_NOT_VERIFIED', needMsg(!!u.email, what), { needs_email: !u.email });
 }
+/** A new barber must verify an email before staff can put the shop live. Existing pre-rule barbers keep their exemption. */
+export async function assertBarberEmailVerifiedForGoLive(c: Conn, userId: number) {
+  const u = await c.maybeOne<any>('SELECT email, email_verified_at, email_verify_exempt FROM users WHERE id=$1', [userId]);
+  if (!u || u.email_verified_at || u.email_verify_exempt) return;
+  throw new AppError(403, 'EMAIL_NOT_VERIFIED', needMsg(!!u.email, 'before your shop can go live'), { needs_email: !u.email });
+}
 /** A barber shop is bookable once the barber's email is verified (barbers who joined before this rule are exempt). */
-export const barberEmailReadySql = (barberAlias = 'b') => !config.emailVerificationRequired ? 'TRUE' : `EXISTS (SELECT 1 FROM users bu WHERE bu.id = ${barberAlias}.user_id AND (bu.email_verified_at IS NOT NULL OR bu.email_verify_exempt))`;
+export const barberEmailReadySql = (barberAlias = 'b') => `EXISTS (SELECT 1 FROM users bu WHERE bu.id = ${barberAlias}.user_id AND (bu.email_verified_at IS NOT NULL OR bu.email_verify_exempt))`;

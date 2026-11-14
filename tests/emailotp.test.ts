@@ -153,6 +153,35 @@ test('email code: new barbers must give an email and verify it before the shop i
   } finally { done(); }
 });
 
+test('email code: a new barber can password-login but cannot be approved or go live until the email is checked, even when customer checks are off', async () => {
+  const oldAdmin = process.env.ADMIN_KEY, adminKey = 'test-email-approval-admin-key';
+  process.env.ADMIN_KEY = adminKey;
+  const { c, signup, done } = await boot('off');
+  try {
+    assert.equal((await c.call('GET', '/api/config')).json.email_verification, false);
+    const b = await signup({ role: 'barber', shop_name: 'Approval Gate Cuts', email: 'approval-gate@example.com', accept_barber_agreement: true });
+    assert.equal(b.r.status, 201); assert.equal(b.r.json.user.email_verified, false);
+    const login = await c.call('POST', '/api/auth/login', { identifier: 'approval-gate@example.com', password: 'Password123' });
+    assert.equal(login.status, 200, 'password sign-in does not require an email code');
+    const bid = (await c.db.one('SELECT id, share_code FROM barbers WHERE user_id=$1', [b.id]));
+    const approve = async () => {
+      const r = await fetch(`${c.base}/api/admin/barbers/${bid.id}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminKey}` }, body: '{}' });
+      return { status: r.status, json: await r.json() };
+    };
+    const blocked = await approve();
+    assert.equal(blocked.status, 403); assert.equal(blocked.json.error.code, 'EMAIL_NOT_VERIFIED');
+    assert.equal((await c.db.one('SELECT verified FROM barbers WHERE id=$1', [bid.id])).verified, false);
+    assert.equal((await c.call('GET', `/api/b/${bid.share_code}`)).status, 404, 'an unverified shop is not publicly live');
+
+    assert.equal((await c.call('POST', '/api/auth/email/send', {}, b.cookie)).status, 200);
+    assert.equal((await c.call('POST', '/api/auth/email/verify', { code: '123456' }, b.cookie)).status, 200);
+    const allowed = await approve();
+    assert.equal(allowed.status, 200, JSON.stringify(allowed.json));
+    assert.equal(allowed.json.review_status, 'VERIFIED');
+    assert.equal((await c.call('GET', `/api/b/${bid.share_code}`)).status, 200, 'the shop goes live only after verification and approval');
+  } finally { done(); if (oldAdmin === undefined) delete process.env.ADMIN_KEY; else process.env.ADMIN_KEY = oldAdmin; }
+});
+
 test('mailer: nothing real is sent from tests; production without a provider key refuses safely and never uses the fixed code', async () => {
   setMailTransport(null);
   assert.equal(mailerMode(), 'log');                               // test env: log transport, never a provider
@@ -166,7 +195,7 @@ test('mailer: nothing real is sent from tests; production without a provider key
   process.env.RESEND_API_KEY = 're_fake'; try { assert.equal(fixedDevCode(), false); assert.equal(mailerMode(), 'log'); } finally { delete process.env.RESEND_API_KEY; }   // NODE_ENV=test never reaches Resend
 });
 
-test('email code PAUSED (flag off, the default): nothing is blocked, nothing is sent, the OTP endpoints stay but refuse to send', async () => {
+test('customer email checks are paused by default, but new barbers still verify before the shop can take bookings', async () => {
   const { c, mails, signup, customer, book, done } = await boot('off');
   try {
     assert.equal((await c.call('GET', '/api/config')).json.email_verification, false);
@@ -178,12 +207,17 @@ test('email code PAUSED (flag off, the default): nothing is blocked, nothing is 
     assert.equal((await c.db.one('SELECT email_verified_at FROM users WHERE id=$1', [u.id])).email_verified_at, null);
     const first = await book(u.cookie);
     assert.equal(first.status, 201, first.text);
-    // a brand-new barber (not verified, not exempt) is bookable
+    // Even an otherwise approved new barber stays paused until the email is verified.
     const b = await signup({ role: 'barber', shop_name: 'New Cuts', email: 'newbarber@example.com', accept_barber_agreement: true });
     const bid = (await c.db.one('SELECT id FROM barbers WHERE user_id=$1', [b.id])).id;
     await c.db.query(`UPDATE barbers SET verified=TRUE, share_code='abcdef123456abcd' WHERE id=$1`, [bid]);
     const svc = (await c.db.one(`INSERT INTO services (barber_id,name,price_kobo,duration_min,active,created_at) VALUES ($1,'Cut',200000,30,TRUE,now()) RETURNING id`, [bid])).id;
     await c.db.query(`INSERT INTO customer_barbers (customer_id, barber_id, added, source, created_at) VALUES ($1,$2,TRUE,'link',now())`, [u.id, bid]);
+    assert.equal((await c.call('GET', `/api/barbers/${bid}`, undefined, u.cookie)).json.booking.paused, true);
+    const blocked = await c.call('POST', '/api/bookings', { barber_id: bid, service_id: svc, date: WED, time: '14:00', payment_option: 'ON_ARRIVAL' }, u.cookie);
+    assert.equal(blocked.status, 409); assert.equal(blocked.json.error.code, 'BARBER_NOT_READY');
+    assert.equal((await c.call('POST', '/api/auth/email/send', {}, b.cookie)).status, 200, 'barber verification stays available even with customer checks off');
+    assert.equal((await c.call('POST', '/api/auth/email/verify', { code: '123456' }, b.cookie)).status, 200);
     assert.equal((await c.call('GET', `/api/barbers/${bid}`, undefined, u.cookie)).json.booking.paused, false);
     const nb = await c.call('POST', '/api/bookings', { barber_id: bid, service_id: svc, date: WED, time: '14:00', payment_option: 'ON_ARRIVAL' }, u.cookie);
     assert.equal(nb.status, 201, nb.text);
@@ -192,16 +226,16 @@ test('email code PAUSED (flag off, the default): nothing is blocked, nothing is 
     await c.db.query(`UPDATE bookings SET payment_status='PAID', payment_option='ONLINE', paid_at=now() WHERE id=$1`, [first.json.booking.id]);
     const h = await c.call('POST', `/api/bookings/${first.json.booking.id}/help`, { note: 'Please help me' }, u.cookie);
     assert.equal(h.status, 201, h.text);
-    // the endpoints are still there but send nothing
+    // Customer endpoints still refuse to send while their global switch is off.
     const s = await c.call('POST', '/api/auth/email/send', {}, u.cookie);
     assert.equal(s.status, 409); assert.equal(s.json.error.code, 'EMAIL_VERIFICATION_OFF');
     assert.equal((await c.call('POST', '/api/auth/email/verify', { code: '123456' }, u.cookie)).status, 409);
-    assert.equal(mails.length, 0);
+    assert.equal(mails.length, 1, 'only the barber verification code was sent');
     assert.equal((await c.db.one('SELECT otp_hash FROM users WHERE id=$1', [u.id])).otp_hash, null);
     // switching it on later enforces the rules again (nothing to migrate)
     setFlag('true');
     assert.equal((await c.call('GET', '/api/config')).json.email_verification, true);
     assert.equal((await c.call('POST', '/api/auth/email/send', {}, u.cookie)).status, 200);
-    assert.equal(mails.length, 1);
+    assert.equal(mails.length, 2);
   } finally { done(); }
 });

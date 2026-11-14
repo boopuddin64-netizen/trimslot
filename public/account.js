@@ -93,10 +93,10 @@ function wireData(u) {
   const d = $('#delacct'); if (d) d.onclick = () => deleteDialog(u);
   const c = $('#delcancel'); if (c) c.onclick = async () => { try { await api('/me/delete/cancel', { method: 'POST', body: {} }); state.user.deletion_requested = false; toast('Request cancelled'); route(); } catch (x) { fail(x); } };
 }
-/** Embed customer data controls in Help, privacy & account actions; keep the legacy barber placement. */
+/** Embed account data controls in the profile privacy/help slot; keep the legacy fallback placement. */
 function addData() {
   const u = state.user; if (!u || $('#exp')) return;
-  const slot = u.role === 'customer' ? $('#profile-data-slot') : null;
+  const slot = $('#profile-data-slot');
   if (slot) { slot.innerHTML = dataSection(u); wireData(u); return; }
   const so = $('#signout'); const list = so && so.closest('.list'); if (!list) return;
   list.insertAdjacentHTML('beforebegin', dataSection(u, true)); wireData(u);

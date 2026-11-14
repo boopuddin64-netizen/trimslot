@@ -24,6 +24,7 @@
     "compact-ui": "node scripts/compact-ui.mjs",
     "rows": "node scripts/rows-per-screen.mjs",
     "account-ui": "node scripts/account-ui.mjs",
+    "barber-profile-ui": "node scripts/barber-profile-ui.mjs",
     "plans-ui": "node scripts/plans-ui.mjs",
     "share-ui": "node scripts/sharelinks-ui.mjs",
     "avatar-ui": "tsx scripts/with-server.ts scripts/avatar-ui-all.mjs",
