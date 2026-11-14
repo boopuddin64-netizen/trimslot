@@ -68,7 +68,7 @@ async function exportData() {
 function deleteDialog(u) {
   const el = document.createElement('div'); el.className = 'scrim';
   el.innerHTML = `<form class="sheet" role="dialog" aria-modal="true" autocomplete="off"><h3 style="margin:0 0 6px">Delete your account</h3>
-    <p class="small muted" style="margin:0 0 8px">${u.role === 'barber' ? 'We remove your shop, so customers cannot find it. You may still have upcoming bookings, a balance to pay TrimSlot, or customer plans to honour. If so, we send your request to TrimSlot, and we finish it when those are done.' : 'We remove your name, contact details and picture. You can no longer log in. We keep bookings and payments because the law and our accounts need them, but without your name.'}</p>
+    <p class="small muted" style="margin:0 0 8px">${u.role === 'barber' ? 'We remove your shop, so customers cannot find it. You may still have upcoming bookings, a balance to pay TrimSlot, or customer plans to honour. If so, we send your request to TrimSlot, and we finish it when those are done.' : 'Your account is frozen now. Log in again within 7 days to keep it. After 7 days we remove your name, contact details and picture, and your unused plan sessions and credits are lost. We keep bookings and payments because the law and our accounts need them, but without your name.'}</p>
     ${u.role === 'customer' ? `<label class="chk"><input type="checkbox" name="forfeit"> <span>I know I lose my unused plan sessions and session credits.</span></label>` : ''}
     <div class="err hidden" id="delerr" role="alert"></div>
     <label>Your password</label><input name="password" type="password" autocomplete="current-password" required>
@@ -84,6 +84,7 @@ function deleteDialog(u) {
       const r = await api('/me/delete', { method: 'POST', body: { password: f.password.value, confirm: f.confirm.value.trim(), acknowledge_forfeit: !!(f.forfeit && f.forfeit.checked) } });
       done();
       if (r && r.requested) { state.user.deletion_requested = true; toast('Request sent. TrimSlot will contact you.'); route(); }
+      else if (r && r.pending_deletion) { state.user = null; toast('Your account is frozen. Log in within 7 days to keep it.'); go('#/login'); }
       else { state.user = null; toast('Your account is deleted'); go('#/login'); }
     } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); b.disabled = false; }
   };

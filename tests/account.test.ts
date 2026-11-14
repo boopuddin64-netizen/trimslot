@@ -73,7 +73,7 @@ test('data export is a JSON download of my own data only, with no password hash'
   } finally { s.server.close(); resetNow(); }
 });
 
-test('customer deletion: password + DELETE needed; upcoming bookings block; unused credits need an OK; financial records are kept, personal data is anonymised', async () => {
+test('customer deletion: password + DELETE needed; then a 7-day grace period (log in to keep it, or removed after);upcoming bookings block; unused credits need an OK; financial records are kept, personal data is anonymised', async () => {
   const s = await boot();
   try {
     const u = await s.signup({ role: 'customer', name: 'Del Me', email: 'del@x.com', phone: '08031112222', password: 'Password123', accept_terms: true });
@@ -90,7 +90,18 @@ test('customer deletion: password + DELETE needed; upcoming bookings block; unus
     const forfeit = await del({ password: 'Password123', confirm: 'DELETE' });
     assert.equal(forfeit.status, 409); assert.equal(forfeit.body.error?.code ?? forfeit.body.code, 'FORFEIT_NEEDS_OK');
     const done = await del({ password: 'Password123', confirm: 'DELETE', acknowledge_forfeit: true });
-    assert.equal(done.status, 200); assert.equal(done.body.deleted, true);
+    assert.equal(done.status, 202); assert.equal(done.body.pending_deletion, true, 'frozen for 7 days, not removed yet');
+    const frozen = await s.db.one('SELECT name, account_status, anonymised_at, deletion_requested_at FROM users WHERE id=$1', [id]);
+    assert.equal(frozen.account_status, 'PENDING_DELETION'); assert.equal(frozen.anonymised_at, null); assert.ok(frozen.deletion_requested_at); assert.equal(frozen.name, 'Del Me', 'kept during the grace period');
+    assert.equal((await s.j('/api/auth/me', { headers: H })).body?.user ?? null, null, 'frozen: signed out');
+    assert.equal((await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'del@x.com', password: 'Wrong-pass1' } })).status, 401);
+    const back = await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'del@x.com', password: 'Password123' } });
+    assert.equal(back.status, 200); assert.equal(back.body.restored, true, 'logging in during the grace period keeps the account');
+    assert.equal((await s.db.one('SELECT account_status FROM users WHERE id=$1', [id])).account_status, 'ACTIVE');
+    const H2 = { Cookie: (back.headers.get('set-cookie') || '').split(';')[0] };
+    assert.equal((await s.j('/api/me/delete', { method: 'POST', headers: H2, body: { password: 'Password123', confirm: 'DELETE', acknowledge_forfeit: true } })).status, 202);
+    await s.db.query(`UPDATE users SET deletion_requested_at = now() - interval '8 days' WHERE id=$1`, [id]);
+    assert.equal((await runSweep(s.db)).grace_finalised, 1, 'after 7 days the sweep removes the person');
     const row = await s.db.one('SELECT name, email, phone, account_status, anonymised_at, avatar_url FROM users WHERE id=$1', [id]);
     assert.ok(row.anonymised_at); assert.notEqual(row.name, 'Del Me'); assert.ok(!/del@x\.com/.test(row.email)); assert.equal(row.phone, null);
     assert.equal((await s.db.one('SELECT COUNT(*)::int c FROM payments WHERE reference=$1', [i.reference])).c, 1, 'payment record kept');

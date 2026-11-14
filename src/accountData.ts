@@ -11,6 +11,10 @@ import { audit } from './helpers';
 import { getSettings, Settings } from './plans';
 import { isoNow, lagosDate } from './time';
 import { outstandingKobo } from './ledger';
+import { LIVE } from './planRefunds';
+
+/** A customer who asks to delete the account is frozen for this many days. Logging in during that time keeps the account. */
+export const GRACE_DAYS = 7;
 
 type H = (req: Request, res: Response) => Promise<any>;
 export type DocKey = 'terms' | 'privacy' | 'barber_agreement';
@@ -116,16 +120,24 @@ export async function buildExport(db: Db, user: { id: number; role: string }) {
 }
 
 /* ---------------- deletion ---------------- */
+/** Plan refund requests still open for this person (as the buyer, or as the barber who sold the plan). Deletion waits for them. */
+async function openPlanRefunds(c: Conn, column: 'customer_id' | 'barber_id', id: number) {
+  return (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM plan_refund_requests rr JOIN plan_purchases pp ON pp.id=rr.plan_purchase_id WHERE pp.${column}=$1 AND rr.status = ANY($2)`, [id, LIVE])).n;
+}
 async function blockers(c: Conn, u: { id: number; role: string }) {
   const out: { code: string; message: string; count?: number }[] = [];
   if (u.role === 'customer') {
     const n = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM bookings WHERE customer_id=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND date >= $2`, [u.id, lagosDate()])).n;
     if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `You have ${n} upcoming booking${n === 1 ? '' : 's'}. Cancel ${n === 1 ? 'it' : 'them'} first. The usual refund and credit rules apply. Then delete your account.` });
+    const rf = await openPlanRefunds(c, 'customer_id', u.id);
+    if (rf) out.push({ code: 'REFUND_OPEN', count: rf, message: `You have ${rf} plan refund request${rf === 1 ? '' : 's'} still open. Wait for ${rf === 1 ? 'it' : 'them'} to finish, or withdraw ${rf === 1 ? 'it' : 'them'}, then delete your account.` });
   } else {
     const b = await c.maybeOne<{ id: number }>('SELECT id FROM barbers WHERE user_id=$1', [u.id]);
     if (b) {
       const n = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM bookings WHERE barber_id=$1 AND status IN ('CONFIRMED','ARRIVED','IN_SERVICE') AND date >= $2`, [b.id, lagosDate()])).n;
       if (n) out.push({ code: 'HAS_UPCOMING', count: n, message: `${n} customer booking${n === 1 ? ' is' : 's are'} still to come.` });
+      const rf = await openPlanRefunds(c, 'barber_id', b.id);
+      if (rf) out.push({ code: 'REFUND_OPEN', count: rf, message: `${rf} customer plan refund request${rf === 1 ? ' is' : 's are'} still open.` });
       const owed = await outstandingKobo(c, b.id);
       if (owed > 0) out.push({ code: 'BALANCE_OWED', message: 'You still owe TrimSlot a commission balance.' });
       const pl = (await c.one<{ n: number }>(`SELECT COUNT(*)::int n FROM plan_purchases WHERE barber_id=$1 AND status='ACTIVE' AND sessions_used < sessions_total AND expires_at > $2`, [b.id, isoNow()])).n;
@@ -133,6 +145,24 @@ async function blockers(c: Conn, u: { id: number; role: string }) {
     }
   }
   return out;
+}
+
+/** Customers who asked to delete their account: once GRACE_DAYS have passed with no log-in, the personal details are removed (same result as an immediate deletion). */
+export async function finalisePendingDeletions(db: Db): Promise<number> {
+  const due = await db.many<{ id: number }>(`SELECT id FROM users WHERE account_status='PENDING_DELETION' AND deletion_requested_at <= now() - make_interval(days => ${GRACE_DAYS}) LIMIT 50`);
+  let removed = 0;
+  for (const d of due) {
+    const ok = await db.tx(async (t) => {
+      // Re-checked under the row: a log-in between the query above and now keeps the account.
+      const still = await t.maybeOne<{ id: number }>(`UPDATE users SET account_status='ACTIVE' WHERE id=$1 AND account_status='PENDING_DELETION' AND deletion_requested_at <= now() - make_interval(days => ${GRACE_DAYS}) RETURNING id`, [d.id]);
+      if (!still) return false;
+      const done = await anonymiseUser(t, d.id, 'grace-expired');
+      if (done) await audit(t, null, { id: d.id, role: 'customer' }, 'ACCOUNT_DELETED_AFTER_GRACE', {});
+      return done;
+    }).catch(() => false);
+    if (ok) removed++;
+  }
+  return removed;
 }
 
 const deleteSchema = z.object({ password: z.string().min(1).max(200), confirm: z.literal('DELETE'), acknowledge_forfeit: z.boolean().optional() });
@@ -158,7 +188,7 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
     res.send(JSON.stringify(data, null, 2));
   }));
 
-  /** Delete my account. Customers: immediate once no upcoming bookings remain. Barbers: immediate when nothing is owed/pending, otherwise a request the admin handles. */
+  /** Delete my account. Customers: frozen for 7 days, then removed (logging in during the 7 days keeps the account). Barbers: immediate when nothing is owed/pending, otherwise a request the admin handles. */
   api.post('/me/delete', requireAuth, wrap(async (req, res) => {
     const d = deleteSchema.safeParse(req.body);
     if (!d.success) throw badRequest('Enter your password and type DELETE to confirm.');
@@ -172,9 +202,10 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
             (SELECT COUNT(*) FROM plan_purchases WHERE customer_id=$1 AND status='ACTIVE' AND sessions_used < sessions_total AND expires_at > $2)::int AS plans,
             (SELECT COUNT(*) FROM session_credits WHERE customer_id=$1 AND status='AVAILABLE' AND expires_at > $2)::int AS credits`, [me.id, isoNow()]);
         if ((lost.plans || lost.credits) && !d.data.acknowledge_forfeit) throw new AppError(409, 'FORFEIT_NEEDS_OK', `You still have ${lost.plans} plan${lost.plans === 1 ? '' : 's'} with unused sessions and ${lost.credits} credit${lost.credits === 1 ? '' : 's'}. They have no cash value. You lose them when you delete your account. Tick the box to go on.`, lost);
-        await anonymiseUser(t, me.id, 'self-service');
-        await audit(t, null, { id: me.id, role: 'customer' }, 'ACCOUNT_SELF_DELETED', { forfeited: lost });
-        return { deleted: true as const };
+        // Frozen, not removed: they can log in during GRACE_DAYS to keep the account. The sweep removes it after that.
+        const frozen = await t.one<{ delete_after: Date }>(`UPDATE users SET account_status='PENDING_DELETION', deletion_requested_at=now(), status_at=now() WHERE id=$1 RETURNING deletion_requested_at + make_interval(days => ${GRACE_DAYS}) AS delete_after`, [me.id]);
+        await audit(t, null, { id: me.id, role: 'customer' }, 'ACCOUNT_DELETION_SCHEDULED', { forfeited: lost, grace_days: GRACE_DAYS });
+        return { deleted: false as const, pending_deletion: true as const, delete_after: frozen.delete_after };
       }
       if (bl.length) {
         await t.query('UPDATE users SET deletion_requested_at=$2, deletion_request_note=$3 WHERE id=$1', [me.id, isoNow(), bl.map((b) => b.message).join(' ').slice(0, 500)]);
@@ -186,7 +217,7 @@ export function registerAccountData(api: Router, db: Db, wrap: (fn: H) => any, r
       await audit(t, null, { id: me.id, role: 'barber' }, 'ACCOUNT_SELF_DELETED', {});
       return { deleted: true as const };
     });
-    if (outcome.deleted) onSignedOut(res);
+    if (outcome.deleted || 'pending_deletion' in outcome) onSignedOut(res);
     else await flushAdminPush(db).catch(() => {});
     res.status(outcome.deleted ? 200 : 202).json(outcome);
   }));
