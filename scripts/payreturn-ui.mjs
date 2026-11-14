@@ -1,6 +1,8 @@
-/* Payment-return messages (browser check against the local dev server, mock payments).
+/* Payment-return messages and receipt acceptance criteria (browser check against the local dev server, mock payments).
    The banner must come from the booking itself: a cancelled booking never says "confirmed", a double payment, a lost race and a late
-   payment each have their own text, the "Pay now" button shows the real total, and the 10-second refresh keeps the banner.
+   payment each have their own text, the "Pay now" button shows the real total, and the 10-second refresh keeps the banner. A receipt
+   appears only for a successful primary charge, includes barber/service/appointment/actual amount/status/reference, is owner-only,
+   and can be shared or saved.
    Usage: node scripts/payreturn-ui.mjs   (env BASE) -> exit 1 on any failure */
 import { chromium } from '/workspace/pw-tools/node_modules/playwright-core/index.mjs';
 const BASE = process.env.BASE || 'http://localhost:4112';
@@ -21,10 +23,18 @@ const done = async (ref) => { await call(`/payments/mock/${ref}/complete`, { met
 // 1) a normal paid booking, a cancelled one, a lost race, a double payment
 const t = slots.map((s) => s.time).slice(-9);   // late slots: the dev clock moves on, early ones disappear
 const _p0 = await book(a, t[0]); if (!_p0.j.booking) console.log('book failed', _p0.r.status, JSON.stringify(_p0.j)); const paid = _p0.j.booking; const pp = await pay(a, paid.id); await done(pp.reference);
+const paidDetail = await call(`/bookings/${paid.id}`, {}, a), receipt = paidDetail.j.booking.receipt;
+ok(receipt && receipt.reference === pp.reference && receipt.amount_kobo === paidDetail.j.booking.money.total_kobo && receipt.status === 'Paid', 'receipt has verified primary reference, actual amount and paid status', JSON.stringify(receipt));
+ok(receipt && receipt.barber && receipt.service === paid.service_name && receipt.appointment_date === paid.date && receipt.appointment_time === paid.start_label, 'receipt has barber, service and appointment date/time', JSON.stringify(receipt));
+const otherReceipt = await call(`/bookings/${paid.id}`, {}, c2);
+ok(otherReceipt.r.status === 404 && !otherReceipt.j?.booking?.receipt, 'receipt is protected by booking ownership');
 const dup = await call(`/bookings/${paid.id}/pay`, { method: 'POST' }, a);   // double click on a booking that is already paid
 ok(dup.r.status >= 400 || dup.j.reference, 'second pay on a paid booking is refused or reuses (no crash)', JSON.stringify(dup.j).slice(0, 100));
+const afterDuplicate = (await call(`/bookings/${paid.id}`, {}, a)).j.booking.receipt;
+ok(afterDuplicate && afterDuplicate.reference === pp.reference, 'duplicate charge does not replace the original receipt reference', JSON.stringify(afterDuplicate));
 const cancelled = (await book(a, t[2])).j.booking; await call(`/bookings/${cancelled.id}/cancel`, { method: 'POST' }, a);
 const pend = (await book(a, t[4])).j.booking;
+ok(!(await call(`/bookings/${pend.id}`, {}, a)).j.booking.receipt, 'no receipt is shown before payment succeeds');
 const loser = (await book(c2, t[6])).j.booking; const lp = await pay(c2, loser.id);
 const winner = (await book(a, t[6])); // same time while the first is still unpaid
 const wb = winner.j && winner.j.booking; if (wb) { const wp = await pay(a, wb.id); await done(wp.reference); }
@@ -32,11 +42,18 @@ await call(`/payments/mock/${lp.reference}/complete`, { method: 'POST' }); await
 
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 const errs = [];
-const open = async (ck, w, hash) => { const ctx = await b.newContext({ viewport: { width: w, height: 844 }, baseURL: BASE }); await ctx.addCookies([{ name: ck.split('=')[0], value: ck.split('=').slice(1).join('='), url: BASE }]); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); await p.goto('/' + hash); await p.waitForSelector('#app .card, #app .ok, #app .err, #app .info', { timeout: 15000 }); await p.waitForTimeout(600); return { ctx, p }; };
+const open = async (ck, w, hash) => { const ctx = await b.newContext({ viewport: { width: w, height: 844 }, baseURL: BASE, acceptDownloads: true }); await ctx.addInitScript(() => { window.__receiptShare = null; Object.defineProperty(navigator, 'share', { configurable: true, value: async (payload) => { window.__receiptShare = payload; } }); }); await ctx.addCookies([{ name: ck.split('=')[0], value: ck.split('=').slice(1).join('='), url: BASE }]); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); await p.goto('/' + hash); await p.waitForSelector('#app .card, #app .ok, #app .err, #app .info', { timeout: 15000 }); await p.waitForTimeout(600); return { ctx, p }; };
 const text = async (p) => (await p.locator('#app').innerText()).replace(/\s+/g, ' ');
 for (const w of [360, 1280]) {
   let { ctx, p } = await open(a, w, `#/booking/${paid.id}?pay=processed`); let tx = await text(p);
-  ok(/Your booking is confirmed/.test(tx), w + ' paid booking: confirmed banner'); await ctx.close();
+  ok(/Your booking is confirmed/.test(tx), w + ' paid booking: confirmed banner');
+  const receiptTextOnPage = await p.locator('.receipt').innerText();
+  ok(await p.locator('.receipt').count() === 1 && ['PAYMENT RECEIPT', 'Barber', 'Appointment', 'Amount paid', 'Payment reference', 'Paid', pp.reference].every((x) => receiptTextOnPage.includes(x)), w + ' receipt shows every accepted field', receiptTextOnPage);
+  await p.locator('#shareReceipt').click();
+  ok(await p.evaluate(() => window.__receiptShare?.title === 'TrimSlot payment receipt' && /Payment reference:/.test(window.__receiptShare.text)), w + ' receipt share action passes receipt details');
+  const [download] = await Promise.all([p.waitForEvent('download'), p.locator('#saveReceipt').click()]);
+  ok(download.suggestedFilename().startsWith('trimslot-receipt-'), w + ' receipt save action downloads a receipt file');
+  await ctx.close();
   ({ ctx, p } = await open(a, w, `#/booking/${paid.id}?pay=duplicate_refund`)); tx = await text(p);
   ok(/paid twice/.test(tx) && /confirmed/.test(tx) && !/not confirmed/.test(tx), w + ' double payment: its own text, still confirmed', tx.slice(0, 160)); await ctx.close();
   ({ ctx, p } = await open(a, w, `#/booking/${cancelled.id}?pay=processed`)); tx = await text(p);

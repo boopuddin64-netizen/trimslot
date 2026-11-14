@@ -926,6 +926,15 @@ function payBanner(b, payResult) {
   if (payResult === 'checked') return b.status === 'CANCELLED' ? '<div class="info">This booking is closed. If you were charged, we will confirm or refund you by ourselves. Use “Report a problem” if you do not hear from us.</div>' : '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
   return '';
 }
+function receiptText(r) {
+  return ['TrimSlot payment receipt', `Barber: ${r.barber}${r.shop ? ` (${r.shop})` : ''}`, `Service: ${r.service}`, `Appointment: ${dateLabel(r.appointment_date)}, ${r.appointment_time}`, `Amount: ${naira(r.amount_kobo)}`, `Status: ${r.status}`, `Payment reference: ${r.reference}`].join('\n');
+}
+function saveReceiptFile(r) {
+  const blob = new Blob([receiptText(r)], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = `trimslot-receipt-${String(r.reference).replace(/[^a-zA-Z0-9_-]/g, '-')}.txt`;
+  document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 async function confirmReturn(kind, id, title) {
   app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please keep this page open. It takes a few seconds.</p></div>`;
   let last = null;
@@ -959,6 +968,16 @@ async function bookingDetail(id, payResult, quiet) {
   }
   const q = b.queue;
   const payMsg = payBanner(b, payResult);
+  const receipt = b.receipt;
+  const receiptClass = receipt && receipt.status === 'Paid' ? 'b-green' : receipt && receipt.status === 'Refunded' ? 'b-blue' : 'b-amber';
+  const receiptHtml = receipt ? `<section class="card receipt" aria-label="Payment receipt">
+    <div class="row between receipt-head"><div><div class="small muted">PAYMENT RECEIPT</div><b>${esc(receipt.service)}</b></div><span class="badge ${receiptClass}">${esc(receipt.status)}</span></div>
+    <div class="receipt-lines"><div><span>Barber</span><b>${esc(receipt.barber)}${receipt.shop && receipt.shop !== receipt.barber ? ` · ${esc(receipt.shop)}` : ''}</b></div>
+      <div><span>Appointment</span><b>${esc(dateLabel(receipt.appointment_date))}, ${esc(receipt.appointment_time)}</b></div>
+      <div><span>Amount paid</span><b>${naira(receipt.amount_kobo)}</b></div>
+      <div class="receipt-ref"><span>Payment reference</span><code>${esc(receipt.reference)}</code></div></div>
+    <div class="btns"><button class="btn sm" type="button" id="shareReceipt">Share receipt</button><button class="btn sm sec" type="button" id="saveReceipt">Save receipt</button></div>
+  </section>` : '';
   const canCancel = b.can_cancel;
   const locked = ['CONFIRMED', 'ARRIVED'].includes(b.status) && !b.can_cancel;
   let qHtml = '';
@@ -969,7 +988,7 @@ async function bookingDetail(id, payResult, quiet) {
       ${q.state === 'IN_LINE' || q.state === 'NEXT' ? `<div class="small muted">${q.ahead} customer${q.ahead === 1 ? ' is' : 's are'} ahead of you</div>` : ''}
       ${q.eta && q.state !== 'BEING_SERVED' ? `<div class="eta">${ic('clock', 'sm')} You should start around <b>${lagosTime(q.eta.est_start)}</b>${q.eta.est_min > 0 ? ` · about ${q.eta.est_min} min` : ''}${q.eta.delay_min ? `<div class="small muted">Your barber is running about ${q.eta.delay_min} min behind</div>` : ''}</div>` : ''}</div>`;
   }
-  app.innerHTML = `<a href="#/bookings" class="back">${ic('back', 'sm')} My bookings</a>${payMsg}
+  app.innerHTML = `<a href="#/bookings" class="back">${ic('back', 'sm')} My bookings</a>${payMsg}${receiptHtml}
     <div class="card"><div class="row between"><h1 style="margin:0;font-size:18px">${esc(b.service_name)}</h1>${statusBadge(b.status, b)}</div>
       <div class="muted">${esc(b.shop_name)} · ${esc(b.barber_name)}</div><div class="muted small">${ic('pin', 'sm')} ${esc(b.location || '')}</div>
       <hr><div class="row between"><span>${ic('cal', 'sm')} ${dateLabel(b.date)}</span><b>${esc(b.start_label)}</b></div>
@@ -996,6 +1015,16 @@ async function bookingDetail(id, payResult, quiet) {
     ${b.payment_status === 'CREDIT_PENDING' ? `<div class="info small">We are deciding if you get a credit or a refund for this payment. We will tell you.</div>` : ''}`;
   if (quiet && keepHelp) { const hn = $('#helpnote'); if (hn) { hn.value = keepHelp; if (helpFocus) hn.focus(); } }
   const on = (sel, fn) => { const el = $(sel); if (el) el.onclick = async () => { el.disabled = true; try { await fn(); } catch (e) { fail(e); el.disabled = false; } }; };
+  on('#shareReceipt', async () => {
+    const text = receiptText(receipt);
+    if (navigator.share) {
+      try { await navigator.share({ title: 'TrimSlot payment receipt', text }); }
+      catch (e) { if (e.name !== 'AbortError') throw e; }
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text); toast('Receipt details copied');
+    } else { saveReceiptFile(receipt); toast('Receipt saved'); }
+  });
+  on('#saveReceipt', async () => { saveReceiptFile(receipt); toast('Receipt saved'); });
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });

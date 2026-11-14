@@ -170,6 +170,32 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
   return out;
 }
 
+/** A receipt is available only for the customer's own booking detail, and only for a successful primary charge. */
+async function customerReceipt(db: Db, b: BookingRow, booking: any) {
+  if (b.payment_option !== 'ONLINE') return undefined;
+  const p = await db.maybeOne<any>(`SELECT reference, amount_kobo, refund_status
+    FROM payments
+    WHERE booking_id=$1 AND status='SUCCESS'
+      AND COALESCE(refund_reason,'') NOT LIKE 'Duplicate payment%'
+    ORDER BY id ASC LIMIT 1`, [b.id]);
+  if (!p) return undefined;
+  const paymentStatus = String(b.payment_status || '');
+  const refundStatus = String(p.refund_status || '');
+  let status = 'Paid';
+  if (paymentStatus === 'REFUNDED' || refundStatus === 'REFUNDED') status = 'Refunded';
+  else if (paymentStatus === 'REFUND_DECLINED' || refundStatus === 'REJECTED') status = 'Refund declined';
+  else if (paymentStatus === 'REFUND_PENDING' || refundStatus === 'PENDING_APPROVAL') status = 'Refund pending review';
+  else if (refundStatus === 'NEEDS_REFUND' || refundStatus === 'REFUND_REQUESTED') status = 'Refund processing';
+  else if (paymentStatus === 'CREDITED') status = 'Session credit issued';
+  else if (paymentStatus === 'CREDIT_PENDING') status = 'Session credit pending review';
+  else if (paymentStatus !== 'PAID') status = 'Payment received';
+  return {
+    barber: booking.barber_name || booking.shop_name || 'Barber', shop: booking.shop_name || null,
+    service: booking.service_name, appointment_date: booking.date, appointment_time: booking.start_label,
+    amount_kobo: Number(p.amount_kobo), status, reference: p.reference,
+  };
+}
+
 /** What a barber may see of a booking's audit trail: only the steps of the visit itself, and only the short note / reason text. Payment problems, refunds, staff and
  *  system details (amounts, times, settings, ledger) stay with the staff. */
 const BARBER_TIMELINE_ACTIONS = new Set(['BOOKED', 'PAYMENT_CONFIRMED', 'CHECKED_IN', 'MARKED_PRESENT', 'STARTED', 'COMPLETED', 'CANCELLED', 'NO_SHOW', 'NOT_SERVED', 'PAYMENT_RECORDED', 'SKIPPED', 'WAITING_FOR_CUSTOMER', 'RESCHEDULED', 'CREDIT_ISSUED']);
@@ -475,7 +501,13 @@ export function createApp(db: Db) {
     if (!b || b.customer_id !== req.user!.id) throw notFound('We could not find that booking.');
     return b;
   };
-  api.get('/bookings/:id', cust, wrap(async (req, res) => res.json({ booking: await decorate(db, await ownBooking(req)) })));
+  api.get('/bookings/:id', cust, wrap(async (req, res) => {
+    const b = await ownBooking(req);
+    const booking = await decorate(db, b);
+    const receipt = await customerReceipt(db, b, booking);
+    if (receipt) booking.receipt = receipt;
+    res.json({ booking });
+  }));
   api.post('/bookings/:id/pay', limits.payment, cust, wrap(async (req, res) => {
     const b = await ownBooking(req);
     // Enforce the platform switch on the server; hiding the button is not a security boundary.
