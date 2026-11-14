@@ -109,7 +109,7 @@ export function assertProductionConfig(env: NodeJS.ProcessEnv = process.env): { 
   if (!env.ADMIN_KEY) errors.push('ADMIN_KEY is not set (admin access is disabled without a dedicated key; generate one: openssl rand -hex 24)');
   else if (env.ADMIN_KEY.length < 16) errors.push('ADMIN_KEY must be at least 16 characters (generate: openssl rand -hex 24)');
   else if (env.ADMIN_KEY === env.CRON_SECRET) errors.push('ADMIN_KEY must be different from CRON_SECRET');
-  if (/^(1|true|yes|on)$/i.test((env.EMAIL_VERIFICATION_REQUIRED || '').trim()) && (!env.RESEND_API_KEY || !env.MAIL_FROM)) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: email codes (sign-up and booking verification) cannot be sent. Set a real email provider key before launch.');
+  if (!env.RESEND_API_KEY || !env.MAIL_FROM) warnings.push('RESEND_API_KEY / MAIL_FROM are not set: new barber email verification codes cannot be sent, so new shops cannot go live. Set a real email provider before approving new barbers. Customer email codes are also unavailable when EMAIL_VERIFICATION_REQUIRED=true.');
   const base = env.APP_BASE_URL || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : '');
   if (!/^https:\/\/[^/]+/.test(base)) errors.push('APP_BASE_URL must be set to your public https:// URL (used for Paystack callbacks and CSRF origin checks)');
   if (/^https:\/\/[^/]*\.(\/|$)/.test(base.trim())) warnings.push('APP_BASE_URL ends with a dot after the domain (e.g. ".com.ng."). Remove the dot in your host settings; links are cleaned automatically for now.');
