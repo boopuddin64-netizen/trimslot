@@ -68,6 +68,9 @@ a.card:hover{border-color:var(--line2)}
 .row{display:flex;gap:12px;align-items:center}.between{justify-content:space-between}.grow{flex:1;min-width:0}.wrap{flex-wrap:wrap}
 .gap>*+*{margin-top:8px}
 .ellip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.receipt{border-color:var(--line2)}.receipt-head{align-items:flex-start;margin-bottom:14px}.receipt-head>div>b{font-size:16px}
+.receipt-lines{display:grid;gap:10px;margin-bottom:14px}.receipt-lines>div{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.receipt-lines span{color:var(--mut);font-size:13px;flex:none}.receipt-lines b{text-align:right;overflow-wrap:anywhere}
+.receipt-ref{display:block!important}.receipt-ref code{display:block;margin-top:4px;color:var(--ink);font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;word-break:break-word}
 
 /* buttons: compact by default (42px), never full-width unless .block (one primary CTA per screen) */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:auto;min-height:42px;border:1px solid transparent;border-radius:10px;background:var(--brand);color:#fff;font:inherit;font-size:14.5px;font-weight:600;padding:0 18px;line-height:1.2;cursor:pointer;text-align:center;text-decoration:none;transition:background .15s,border-color .15s}
