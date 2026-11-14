@@ -56,7 +56,7 @@ export const config = {
     if (this.isProd) throw new Error('JWT_SECRET must be set in production');
     return DEV_JWT_DEFAULT;
   },
-  /** Email verification by one-time code (sign-up, first booking, emergency action, barber ready). PAUSED by default: set EMAIL_VERIFICATION_REQUIRED=true to switch it on. When off nothing is blocked, no code is sent and the UI hides the prompts. Read on every call. */
+  /** Optional global email checks by one-time code (customer first booking and emergency action). New barbers always verify before shop approval; their one-time codes are not disabled by this customer switch. Read on every call. */
   get emailVerificationRequired() { return /^(1|true|yes|on)$/i.test((process.env.EMAIL_VERIFICATION_REQUIRED || '').trim()); },
   get paystackKey() { return process.env.PAYSTACK_SECRET_KEY || ''; },
   /** MOCK payments: only ever possible outside production, and only when no Paystack key is set. */

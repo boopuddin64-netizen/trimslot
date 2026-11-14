@@ -100,7 +100,7 @@ function toast(msg, bad) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); if (bad && window.haptics) haptics.error();
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
-const emailCheckOn = () => !!(state.cfg && state.cfg.email_verification);   // email checking is paused unless the server says it is on
+const emailCheckOn = () => !!(state.cfg && (state.cfg.email_verification || (state.user && state.user.role === 'barber')));   // customers follow the global switch; barbers always verify before going live
 const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
@@ -296,7 +296,7 @@ function authPage(mode, roleQ) {
         else await api('/auth/login', { method: 'POST', body: fd });
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
-        if (signup && fd.email && emailCheckOn()) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new accounts check their email right away (they can skip it for now)
+        if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
         go(dest);
       } catch (e) { saved = fd; draw(e.message); }
     };
@@ -352,7 +352,7 @@ async function verifyEmail(next) {
   let sent = false, masked = '', msg = '';
   const draw = () => {
     const devHint = state.cfg.email_dev_code ? `<div class="info small">Test mode: the code is <b>123456</b>.</div>` : '';
-    const intro = u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'We check your email once, before your first booking. It keeps your account safe.';
+    const intro = u.role === 'barber' ? 'Verify your email once before your shop goes live. You will still sign in with your password.' : 'We check your email once, before your first booking. It keeps your account safe.';
     if (!u.email) {
       app.innerHTML = `<h1>Add your email</h1><p class="muted">${intro}</p><form id="ef"><label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send me a code</button></div></form><p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
       $('#ef').onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/me', { method: 'PATCH', body: { email: new FormData(ev.target).get('email') } }); state.user = { ...state.user, ...r.user }; Object.assign(u, r.user); msg = ''; await send(); } catch (e) { msg = e.message; draw(); } };
@@ -705,25 +705,64 @@ async function barberProfile() {
   const [r, po, shr] = await Promise.all([api('/barber/profile'), api('/barber/plans').catch(() => null), api('/barber/share').catch(() => null)]);
   const p = r.profile, u = state.user;
   const liveBuyers = po ? po.purchases.filter((x) => x.live).length : 0;
-  app.innerHTML = `${pendingBanner()}${payoutBanner()}<div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg', true)}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div><div class="muted small ellip">${esc(u.email || u.phone || '')}</div></div></div>
-    ${shr ? `<h2>My share link</h2>${shareCardHtml({ id: 'profile-sharecard', qr: shr.qr_url, name: p.shop_name, title: 'Your current shop link', hint: 'Share this link so customers can find and book your shop. Old links no longer work.', url: shr.url })}` : `<div class="card small muted">Your share link is temporarily unavailable. Open Shop settings to retry.</div>`}
-    <h2>My shop</h2>
-    <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Share your shop<span class="sub">Manage your link and QR code</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      <a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
-      <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Photo, about, services, hours, days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
-      ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from finished visits. Reply to customers.</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
-      ${p.verified ? `<a class="lrow" href="#/barber/${p.id}"><span class="ico">${ic('user', 'sm')}</span><span class="grow">View my public page<span class="sub">What customers see</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
-    <h2>Account</h2>
-    <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button></div>
-    <div id="editbox" class="hidden"><div class="card">${accountForm(u)}</div></div>
-    <h2>Preferences</h2>
-    <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
-    <div class="list">${signOutRow()}</div>`;
+  const emailState = !emailCheckOn() ? 'Not required right now' : u.email_verified ? 'Verified' : 'Not verified';
+  const emailBadge = !emailCheckOn() ? 'b-blue' : u.email_verified ? 'b-green' : 'b-amber';
+  const review = ({ VERIFIED: ['b-green', 'Approved'], PENDING: ['b-amber', 'Waiting for review'], NEEDS_INFO: ['b-amber', 'Changes requested'], REJECTED: ['b-red', 'Not approved'], SUSPENDED: ['b-red', 'Suspended'] })[p.review_status] || ['b-gray', 'Status unknown'];
+  const reviewCopy = p.verified ? 'Your shop has passed review and is available through its share link.' : p.review_status === 'NEEDS_INFO' ? 'Update the requested details in Shop settings, then send your shop for review again.' : p.review_status === 'REJECTED' ? 'Check the review note, update your shop, and send it for review again.' : p.review_status === 'SUSPENDED' ? 'Customers cannot see or book your shop while it is suspended.' : 'Your shop is not live yet. Complete setup and wait for TrimSlot to review it.';
+  app.innerHTML = `<div class="customer-profile barber-profile">
+    <section class="profile-section" id="barber-profile-status"><h2>Shop status &amp; identity</h2>
+      <div class="prof-head">${avatar({ photo_url: p.photo_url, shop_name: p.shop_name }, 'lg', true)}<div class="grow"><h1 class="ellip">${esc(p.shop_name)}</h1><div class="muted small ellip">${esc(u.name)}${p.location ? ' · ' + esc(p.location) : ''}</div></div></div>
+      <div class="card profile-contact"><div><span>Shop</span><b>${esc(p.shop_name)}</b></div><div><span>Status</span><span class="badge ${review[0]}">${esc(review[1])}</span></div><p class="small muted">${reviewCopy}</p></div>
+      ${pendingBanner()}
+      <div class="list"><a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Edit shop identity<span class="sub">Shop name, photo, location and about</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+    </section>
+    <section class="profile-section" id="barber-profile-link"><h2>Booking link/QR</h2>
+      ${shr ? shareCardHtml({ id: 'profile-sharecard', qr: shr.qr_url, name: p.shop_name, title: 'Your booking link and QR code', hint: 'Customers can find your shop only through the link or QR code you share. Old links no longer work.', url: shr.url }) : `<div class="card small muted">Your booking link is temporarily unavailable. Open Shop settings to retry.</div>`}
+      <div class="list"><a class="lrow" href="#/settings" id="shoplink"><span class="ico">${ic('share', 'sm')}</span><span class="grow">Manage link &amp; QR<span class="sub">View or replace your current booking link</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+    </section>
+    <section class="profile-section" id="barber-profile-tools"><h2>Shop tools &amp; payouts</h2>
+      ${payoutBanner()}
+      <div class="list"><a class="lrow" href="#/payouts"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Payouts<span class="sub">${p.payout && p.payout.status === 'ACTIVE' ? 'Payouts on · ' + esc(p.payout.bank_name || 'Bank') + ' ••' + esc(p.payout.account_last4 || '') : 'Add your bank account to get paid online'}</span></span><span class="end">${p.payout && p.payout.status === 'ACTIVE' ? '<span class="badge b-green">ACTIVE</span>' : '<span class="badge b-amber">SET UP</span>'}${ic('right', 'sm')}</span></a>
+        <a class="lrow" href="#/settings"><span class="ico">${ic('store', 'sm')}</span><span class="grow">Shop settings<span class="sub">Services, hours and days off</span></span><span class="end">${ic('right', 'sm')}</span></a>
+        <a class="lrow" href="#/plans"><span class="ico">${ic('ticket', 'sm')}</span><span class="grow">Plans &amp; credits<span class="sub">${po ? po.plans.length + ' plan' + (po.plans.length === 1 ? '' : 's') + ' · ' + liveBuyers + ' active buyer' + (liveBuyers === 1 ? '' : 's') : 'Create and manage plans'}</span></span><span class="end">${ic('right', 'sm')}</span></a>
+        <a class="lrow" href="#/balance"><span class="ico">${ic('wallet', 'sm')}</span><span class="grow">Platform balance owed<span class="sub">Commission on bookings paid outside the app</span></span><span class="end">${ic('right', 'sm')}</span></a>
+        ${(state.cfg.features || {}).reviews ? `<a class="lrow" href="#/reviews"><span class="ico">${ic('star', 'sm')}</span><span class="grow">Reviews<span class="sub">Ratings from finished visits. Reply to customers.</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}
+        ${p.verified ? `<a class="lrow" href="#/barber/${p.id}"><span class="ico">${ic('user', 'sm')}</span><span class="grow">View my public page<span class="sub">What customers see through your link</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
+    </section>
+    <section class="profile-section" id="barber-profile-contact"><h2>Contact &amp; verification</h2>
+      <div class="card profile-contact"><div><span>Name</span><b>${esc(u.name)}</b></div><div><span>Email</span><b>${esc(u.email || 'Not added')}</b><span class="badge ${emailBadge}">${esc(emailState)}</span></div><div><span>Phone</span><b>${esc(u.phone || 'Not added')}</b></div><p class="small muted">We check your email before your shop goes live. Phone verification is not currently available.</p></div>
+      <div class="list"><button class="lrow" id="editbtn"><span class="ico">${ic('pencil', 'sm')}</span><span class="grow">Edit contact details<span class="sub">Name, email and phone</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        ${emailCheckOn() ? `<a class="lrow" href="#/verify-email?next=%23%2Fprofile"><span class="ico">${ic('shield', 'sm')}</span><span class="grow">${u.email_verified ? 'Email verified' : (u.email ? 'Verify or resend code' : 'Add and verify email')}<span class="sub">${u.email_verified ? 'Your email is checked' : 'Send a 6-digit code to your email'}</span></span><span class="end">${ic('right', 'sm')}</span></a>` : ''}</div>
+      <div id="editbox" class="hidden"><div class="card">${accountForm(u)}</div></div>
+    </section>
+    <section class="profile-section" id="barber-profile-security"><h2>Security</h2>
+      <p class="small muted" style="margin:0 0 8px">Sign in with your password. Email codes are only used for verification or password recovery.</p>
+      <div class="list"><button class="lrow" id="password-toggle" aria-expanded="false"><span class="ico">${ic('lock', 'sm')}</span><span class="grow">Change password<span class="sub">Use your current password to choose a new one</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        <a class="lrow" href="#/password-reset"><span class="ico">${ic('refresh', 'sm')}</span><span class="grow">Reset a forgotten password<span class="sub">Use a code sent to your email</span></span><span class="end">${ic('right', 'sm')}</span></a></div>
+      <div id="password-box" class="hidden"><form id="password-change" class="card" autocomplete="on"><label>Current password</label><input name="current_password" type="password" autocomplete="current-password" required>
+        <label>New password</label><input name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+        <label>Confirm new password</label><input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+        <div class="err hidden" id="password-error" role="alert"></div><div class="btns cta"><button class="btn" type="submit">Update password</button></div></form></div>
+    </section>
+    <section class="profile-section" id="barber-profile-preferences"><h2>Preferences, privacy &amp; help</h2>
+      <div class="list">${themeRow()}<a class="lrow" href="#/notifications"><span class="ico">${ic('bell', 'sm')}</span><span class="grow">Notification centre</span><span class="end">${state.unread ? `<span class="badge b-blue">${state.unread} new</span>` : ''}${ic('right', 'sm')}</span></a>${Notify.prefsRows()}</div>
+      <div class="list"><button class="lrow" data-report="0" data-report-category="OTHER"><span class="ico">${ic('warn', 'sm')}</span><span class="grow">Help &amp; Support<span class="sub">Send a question or report a problem to TrimSlot</span></span><span class="end">${ic('right', 'sm')}</span></button>
+        <a class="lrow" href="/terms.html" target="_blank" rel="noopener"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Terms of Service</span><span class="end">${ic('right', 'sm')}</span></a></div>
+      <div id="profile-data-slot"></div><div class="list">${signOutRow()}</div>
+    </section></div>`;
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
   if (shr) wireShareCard($('#profile-sharecard'), shr.url, p.shop_name);
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
+  $('#password-toggle').onclick = () => { const box = $('#password-box'), open = box.classList.toggle('hidden') === false; $('#password-toggle').setAttribute('aria-expanded', String(open)); };
+  $('#password-change').onsubmit = async (ev) => {
+    ev.preventDefault(); const f = ev.target.elements, btn = ev.target.querySelector('button[type=submit]'), er = $('#password-error');
+    er.classList.add('hidden');
+    if (f.new_password.value !== f.confirm_password.value) { er.textContent = 'Those new passwords do not match.'; er.classList.remove('hidden'); return; }
+    btn.disabled = true;
+    try { await api('/auth/password/change', { method: 'POST', body: { current_password: f.current_password.value, new_password: f.new_password.value } }); ev.target.reset(); toast('Password changed. Other devices will need to log in again.'); }
+    catch (e) { er.textContent = e.message || 'We could not change your password.'; er.classList.remove('hidden'); }
+    finally { btn.disabled = false; }
+  };
 }
 
 /* ---------- barber: payouts (bank list -> account number -> resolve name -> save -> "Payouts active") ---------- */
@@ -1227,7 +1266,8 @@ const emailBanner = () => {
   const u = state.user; if (!emailCheckOn() || !u || u.email_verified !== false) return '';
   const here = (location.hash || '').startsWith('#/verify-email');
   if (here) return '';
-  return `<a class="notice warn" id="emailban" href="#/verify-email" style="text-decoration:none;color:inherit">${ic('shield')}<div><b>${u.email ? 'Check your email address.' : 'Add your email address.'}</b><div class="small">${u.role === 'barber' ? 'Customers can book your shop only after your email is checked.' : 'You need this before your first booking.'} ${u.email ? 'Tap to get a 6-digit code.' : 'Tap to add it.'}</div></div></a>`;
+  const barberHint = u.verified === false ? 'Verify your email before your shop can go live.' : 'Customers cannot book your shop until your email is checked.';
+  return `<a class="notice warn" id="emailban" href="#/verify-email?next=%23%2Fprofile" style="text-decoration:none;color:inherit">${ic('shield')}<div><b>${u.email ? 'Check your email address.' : 'Add your email address.'}</b><div class="small">${u.role === 'barber' ? barberHint : 'You need this before your first booking.'} ${u.email ? 'Tap to get a 6-digit code.' : 'Tap to add it.'}</div></div></a>`;
 };
 const pendingBanner = () => emailBanner() + pendingBanner0();
 const pendingBanner0 = () => {

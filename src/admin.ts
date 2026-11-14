@@ -8,6 +8,7 @@ import { audit, fmtWhen, naira, notify } from './helpers';
 import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund } from './paystack';
 import { isoNow, lagosDate } from './time';
+import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -98,6 +99,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
       const was = b.review_status;
       if (kind === 'approve' && was === 'SUSPENDED') throw conflict('USE_REINSTATE', 'This shop is suspended. Use Reinstate.');
       if (kind === 'reinstate' && was !== 'SUSPENDED') throw conflict('NOT_SUSPENDED', 'You can only reinstate a suspended shop.');
+      await assertBarberEmailVerifiedForGoLive(t, b.user_id);
       await setReview(t, b, 'VERIFIED', null);
       const reinstated = was === 'SUSPENDED';
       await audit(t, null, ADMIN, reinstated ? 'ADMIN_BARBER_REINSTATED' : 'ADMIN_BARBER_VERIFIED', { barber_id: id, shop: b.shop_name, from: was });
