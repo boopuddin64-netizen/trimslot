@@ -52,7 +52,7 @@ function wirePhoto() {
 }
 
 /* ---------- data + deletion ---------- */
-const dataSection = (u) => `<h2>Your data</h2><div class="list">
+const dataSection = (u, heading = false) => `${heading ? '<h2>Your data</h2>' : ''}<div class="list">
   <button class="lrow" id="exp"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Download my data<span class="sub">A JSON file with your account, bookings and payments</span></span><span class="end">${ic('right', 'sm')}</span></button>
   <a class="lrow" href="/privacy.html" target="_blank" rel="noopener"><span class="ico">${ic('shield', 'sm')}</span><span class="grow">Privacy Policy</span><span class="end">${ic('right', 'sm')}</span></a>
   ${u.deletion_requested ? `<button class="lrow" id="delcancel"><span class="ico">${ic('refresh', 'sm')}</span><span class="grow">Cancel my deletion request<span class="sub">TrimSlot has not answered yet</span></span></button>`
@@ -93,10 +93,13 @@ function wireData(u) {
   const d = $('#delacct'); if (d) d.onclick = () => deleteDialog(u);
   const c = $('#delcancel'); if (c) c.onclick = async () => { try { await api('/me/delete/cancel', { method: 'POST', body: {} }); state.user.deletion_requested = false; toast('Request cancelled'); route(); } catch (x) { fail(x); } };
 }
-/** Insert the data section just above the sign-out list (works for customers and barbers). */
+/** Embed customer data controls in Help, privacy & account actions; keep the legacy barber placement. */
 function addData() {
-  const so = $('#signout'); const list = so && so.closest('.list'); if (!list || $('#exp')) return;
-  list.insertAdjacentHTML('beforebegin', dataSection(state.user)); wireData(state.user);
+  const u = state.user; if (!u || $('#exp')) return;
+  const slot = u.role === 'customer' ? $('#profile-data-slot') : null;
+  if (slot) { slot.innerHTML = dataSection(u); wireData(u); return; }
+  const so = $('#signout'); const list = so && so.closest('.list'); if (!list) return;
+  list.insertAdjacentHTML('beforebegin', dataSection(u, true)); wireData(u);
 }
 
 /* ---------- wrap the existing profile pages instead of editing them ---------- */
@@ -107,7 +110,7 @@ profile = async function (editing) {
     const head = $('.prof-head'); const u = state.user;
     if (head && u && u.role === 'customer') {
       const old = head.querySelector('.avatar'); if (old) old.outerHTML = av(u, 'lg');
-      head.insertAdjacentHTML('afterend', photoCard(u)); wirePhoto();
+      const slot = $('#profile-photo-slot'); if (slot) { slot.innerHTML = photoCard(u); wirePhoto(); }
     }
     addData();
   } catch { /* the profile page itself is already usable */ }

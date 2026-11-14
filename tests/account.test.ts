@@ -8,6 +8,7 @@ import { createBooking, customerCancel } from '../src/bookingService';
 import { initializePayment, mockMarkPaid, processReference } from '../src/paystack';
 import { runRetention, runRetentionIfDue } from '../src/retention';
 import { runSweep } from '../src/sweep';
+import { setMailTransport } from '../src/mailer';
 
 const KEY = 'test-admin-key-0123456789';
 async function boot() {
@@ -174,5 +175,52 @@ test('customer avatar: upload (JPEG only by content), shown to me and to a barbe
     assert.equal((await fetch(s.base + url, { headers: C })).status, 404);
     assert.ok((await s.j('/api/admin/audit', { headers: s.A })).body.entries.some((e: any) => /AVATAR/.test(e.action)));
     assert.equal((await s.db.one(`SELECT COUNT(*)::int c FROM notifications WHERE user_id=$1 AND body ILIKE '%Not a face photo%'`, [me.id])).c, 1);
+  } finally { s.server.close(); resetNow(); }
+});
+
+test('password reset uses separate expiring email codes, hides account existence, and revokes old sessions; password change verifies the current password', async () => {
+  const sent: any[] = []; setMailTransport(async (m) => { sent.push(m); });
+  const s = await boot();
+  try {
+    const u = await s.signup({ role: 'customer', name: 'Reset Me', email: 'reset-me@x.com', password: 'OriginalPass123', accept_terms: true });
+    const H = { Cookie: u.cookie };
+    const unknown = await s.j('/api/auth/password/reset/send', { method: 'POST', body: { email: 'nobody@x.com' } });
+    const requested = await s.j('/api/auth/password/reset/send', { method: 'POST', body: { email: 'reset-me@x.com' } });
+    assert.equal(requested.status, 200); assert.equal(requested.body.message, unknown.body.message, 'existing and missing emails get the same response');
+    assert.equal(sent.length, 1); assert.match(sent[0].subject, /reset your TrimSlot password/i);
+    const code = /\b(\d{6})\b/.exec(sent[0].text)?.[1]; assert.ok(code, 'mail contains a six-digit code');
+    assert.equal((await s.j('/api/auth/password/reset', { method: 'POST', body: { email: 'reset-me@x.com', code: '000000', new_password: 'RecoveredPass123' } })).status, 400);
+    const reset = await s.j('/api/auth/password/reset', { method: 'POST', body: { email: 'reset-me@x.com', code, new_password: 'RecoveredPass123' } });
+    assert.equal(reset.status, 200); assert.equal(reset.body.reset, true);
+    assert.equal((await s.j('/api/auth/me', { headers: H })).body.user, null, 'reset invalidates the signup session');
+    assert.equal((await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'reset-me@x.com', password: 'OriginalPass123' } })).status, 401);
+    const login = await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'reset-me@x.com', password: 'RecoveredPass123' } });
+    assert.equal(login.status, 200);
+    const loginCookie = (login.headers.get('set-cookie') || '').split(';')[0];
+    const badChange = await s.j('/api/auth/password/change', { method: 'POST', headers: { Cookie: loginCookie }, body: { current_password: 'WrongPass123', new_password: 'ChangedPass123' } });
+    assert.equal(badChange.status, 403);
+    const changed = await s.j('/api/auth/password/change', { method: 'POST', headers: { Cookie: loginCookie }, body: { current_password: 'RecoveredPass123', new_password: 'ChangedPass123' } });
+    assert.equal(changed.status, 200); assert.ok(changed.headers.get('set-cookie'), 'current device receives a fresh session');
+    assert.equal((await s.j('/api/auth/me', { headers: { Cookie: loginCookie } })).body.user, null, 'other copies of the old token are invalidated');
+    assert.equal((await s.j('/api/auth/login', { method: 'POST', body: { identifier: 'reset-me@x.com', password: 'ChangedPass123' } })).status, 200);
+    assert.equal((await s.j('/api/auth/password/reset', { method: 'POST', body: { email: 'reset-me@x.com', code, new_password: 'ReuseCode123' } })).status, 400, 'reset codes cannot be reused');
+  } finally { setMailTransport(null); s.server.close(); resetNow(); }
+});
+
+test('receipts list shows only the signed-in customer’s successful primary booking receipt', async () => {
+  const s = await boot();
+  try {
+    const u = await s.signup({ role: 'customer', name: 'Receipt Me', email: 'receipt-me@x.com', password: 'ReceiptPass123', accept_terms: true });
+    const H = { Cookie: u.cookie };
+    const b = await createBooking(s.db, u.body.user.id, { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '12:00', payment_option: 'ONLINE' });
+    const init = await initializePayment(s.db, b.id, 'receipt-me@x.com'); await mockMarkPaid(s.db, init.reference); await processReference(s.db, init.reference);
+    const own = await s.j('/api/me/receipts', { headers: H });
+    assert.equal(own.status, 200); assert.equal(own.body.receipts.length, 1);
+    assert.equal(own.body.receipts[0].booking_id, b.id); assert.equal(own.body.receipts[0].status, 'Paid');
+    assert.equal(own.body.receipts[0].reference, init.reference); assert.equal(own.body.receipts[0].service, 'Regular Haircut');
+    assert.equal((await s.j('/api/me/receipts')).status, 401, 'receipts require login');
+    const other = await s.signup({ role: 'customer', name: 'Another Customer', email: 'another-receipt@x.com', password: 'ReceiptPass123', accept_terms: true });
+    const theirs = await s.j('/api/me/receipts', { headers: { Cookie: other.cookie } });
+    assert.equal(theirs.status, 200); assert.equal(theirs.body.receipts.length, 0, 'another customer cannot see this receipt');
   } finally { s.server.close(); resetNow(); }
 });
