@@ -190,7 +190,7 @@ test('mailer: nothing real is sent from tests; production without a provider key
     process.env.NODE_ENV = 'production';
     assert.equal(fixedDevCode(), false);
     assert.equal(mailerMode(), 'none');
-    await assert.rejects(sendMail({ to: 'a@b.co', subject: 's', text: 't' }), (e: any) => e.code === 'EMAIL_NOT_CONFIGURED');
+    await assert.rejects(sendMail({ to: 'a@b.co', subject: 's', text: 't' }), (e: any) => e.code === 'EMAIL_NOT_CONFIGURED' && /Email delivery is not set up yet/.test(e.message));
   } finally { process.env.NODE_ENV = prev; }
   process.env.RESEND_API_KEY = 're_fake'; try { assert.equal(fixedDevCode(), false); assert.equal(mailerMode(), 'log'); } finally { delete process.env.RESEND_API_KEY; }   // NODE_ENV=test never reaches Resend
 });

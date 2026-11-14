@@ -821,13 +821,67 @@ async function barberPayouts() {
 }
 
 /* ---------- barber: plans manager (own tab) ---------- */
+function animatePlanCount(el, target) {
+  if (!el) return;
+  const to = Math.max(0, Math.floor(Number(target) || 0));
+  const from = Number(el.dataset.countValue || 0);
+  if (el.dataset.countReady && from === to) return;
+  el.dataset.countValue = String(to);
+  el.dataset.countReady = '1';
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const paint = (n) => { el.textContent = Math.round(n).toLocaleString(); };
+  if (reduced || from === to) { paint(to); return; }
+  const start = performance.now(), duration = 480;
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration), eased = 1 - Math.pow(1 - t, 3);
+    paint(from + (to - from) * eased);
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+const barberPlanStats = (po) => {
+  const plans = po.plans || [], purchases = po.purchases || [];
+  const livePurchases = purchases.filter((p) => p.live);
+  return {
+    offers: plans.filter((p) => p.active && p.approval_status === 'APPROVED').length,
+    purchases: livePurchases.length,
+    sessions: livePurchases.reduce((sum, p) => sum + Math.max(0, Number(p.sessions_total) - Number(p.sessions_used)), 0),
+  };
+};
+const barberPlanSignature = (po) => JSON.stringify({
+  plans: (po.plans || []).map((p) => [p.id, p.active, p.approval_status, p.buyers, p.sessions_used, p.revenue_kobo]),
+  purchases: (po.purchases || []).map((p) => [p.id, p.live, p.sessions_total, p.sessions_used, p.refund_request && p.refund_request.status]),
+  credits: (po.credits || []).map((c) => [c.id, c.live, c.status, c.expires_at]),
+});
 async function barberPlans() {
-  const [po, r] = await Promise.all([api('/barber/plans'), api('/barber/profile')]);
-  app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Sell session packs to your regular customers. They see the packs on your page.</p><div id="msg"></div>${plansBody(po, r.services)}`;
-  const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
-  wirePlans(po, guard);
-  wireRefundBox(app, 'BARBER', barberPlans);
+  const [initial, profile] = await Promise.all([api('/barber/plans'), api('/barber/profile')]);
+  const render = (po, openIds = []) => {
+    const stats = barberPlanStats(po);
+    const previousCounts = new Map([...app.querySelectorAll('[data-plan-counter]')].map((el) => [el.dataset.planCounter, { value: el.dataset.countValue || el.textContent || '0', ready: el.dataset.countReady }]));
+    app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Manage the packs customers can buy, and see how sessions are being used.</p>
+      <div class="plan-live-summary"><div class="plan-live-head"><div><span class="plan-kicker">Live overview</span><h2 style="margin:3px 0 0;color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">Your plan activity</h2></div><span class="plan-live-dot">LIVE</span></div>
+        <div class="plan-metrics"><div class="plan-metric"><b data-plan-counter="barber-offers">0</b><span>Plans live</span></div><div class="plan-metric"><b data-plan-counter="barber-purchases">0</b><span>Active purchases</span></div><div class="plan-metric primary"><b data-plan-counter="barber-sessions">0</b><span>Sessions left</span></div></div>
+        <p class="plan-live-note">Updates automatically every 10 seconds while this page is open.</p></div>
+      <div id="msg"></div>${plansBody(po, profile.services)}`;
+    app.dataset.planSignature = barberPlanSignature(po);
+    for (const el of app.querySelectorAll('[data-plan-counter]')) { const old = previousCounts.get(el.dataset.planCounter); if (old) { el.textContent = old.value; el.dataset.countValue = old.value; if (old.ready) el.dataset.countReady = old.ready; } }
+    animatePlanCount(document.querySelector('[data-plan-counter="barber-offers"]'), stats.offers);
+    animatePlanCount(document.querySelector('[data-plan-counter="barber-purchases"]'), stats.purchases);
+    animatePlanCount(document.querySelector('[data-plan-counter="barber-sessions"]'), stats.sessions);
+    for (const id of openIds) { const d = document.getElementById(id); if (d) d.open = true; }
+    const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
+    wirePlans(po, guard);
+    wireRefundBox(app, 'BARBER', barberPlans);
+  };
+  render(initial);
+  startPoll(async () => {
+    if (!location.hash.startsWith('#/plans')) return;
+    const latest = await api('/barber/plans');
+    if (barberPlanSignature(latest) === app.dataset.planSignature) return;
+    const openIds = [...app.querySelectorAll('details[open][id]')].map((d) => d.id);
+    render(latest, openIds);
+  });
 }
 
 /* ---------- barber public page (customers land here first) ---------- */
@@ -927,6 +981,62 @@ async function buyPlan(id, el) {
   try { const r = await api(`/plans/${id}/buy`, { method: 'POST' }); location.href = r.authorization_url; } catch (e) { fail(e); el.disabled = false; }
 }
 const expTxt = (iso) => dateLabel(String(iso).slice(0, 10));
+const walletPlanStats = (w) => {
+  const plans = w.plans || [], credits = w.credits || [];
+  const activePlans = plans.filter((p) => p.live), activeCredits = credits.filter((c) => c.live);
+  return { activePlans, activeCredits, sessions: activeCredits.length + activePlans.reduce((sum, p) => sum + Math.max(0, Number(p.sessions_left) || 0), 0) };
+};
+const walletPlanSignature = (w) => JSON.stringify({
+  plans: (w.plans || []).map((p) => [p.id, p.live, p.sessions_left, p.sessions_total, p.expires_at, p.refund_request && p.refund_request.status]),
+  credits: (w.credits || []).map((c) => [c.id, c.live, c.status, c.expires_at]),
+});
+function renderWalletData(w, planResult, openedIds = null) {
+  const { activePlans, activeCredits, sessions } = walletPlanStats(w);
+  const endedPlans = (w.plans || []).filter((p) => !p.live), endedCredits = (w.credits || []).filter((c) => !c.live);
+  const opened = new Set(openedIds || []);
+  const previousCounts = new Map([...app.querySelectorAll('[data-plan-counter]')].map((el) => [el.dataset.planCounter, { value: el.dataset.countValue || el.textContent || '0', ready: el.dataset.countReady }]));
+  const showPlans = openedIds ? opened.has('wallet-plans') : activePlans.length > 0 || activeCredits.length === 0;
+  const showCredits = openedIds ? opened.has('wallet-credits') : activeCredits.length > 0 && activePlans.length === 0;
+  const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">You bought the plan. Choose “Use plan session” when you book.</div>'
+    : planResult === 'not_paid' ? '<div class="err">Your payment did not go through, so the plan is not on.</div>' : planResult === 'checked' ? '<div class="info">Paystack has not told us yet. If you were charged, the plan turns on by itself in a few minutes, or we refund you.</div>' : planResult === 'amount_mismatch' ? '<div class="err">We got your payment, but the amount was not right, so the plan is not on. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">We could not use that payment. We are sending your money back.</div>' : '';
+  const planRows = activePlans.map((p) => {
+    const pct = p.sessions_total > 0 ? Math.max(0, Math.min(100, Math.round(100 * p.sessions_left / p.sessions_total))) : 0;
+    const refund = refundBox(p, 'CUSTOMER');
+    return `<tr><td data-label="Plan"><b>${esc(p.plan_name)}</b><div class="small muted">${esc(p.shop_name)}</div><div class="small muted">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div></td>
+      <td data-label="Sessions"><b>${p.sessions_left} of ${p.sessions_total} left</b><div class="meter"><i style="width:${pct}%"></i></div></td>
+      <td data-label="Ends">${expTxt(p.expires_at)}</td><td data-label="Actions"><div class="plan-table-actions"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>${refund ? `<details class="refund-disclosure"><summary>Refund options</summary>${refund}</details>` : ''}</td></tr>`;
+  }).join('');
+  const creditRows = activeCredits.map((c) => `<tr><td data-label="Barber"><b>${esc(c.shop_name)}</b><span class="badge b-purple" style="margin-top:5px">CREDIT</span></td>
+    <td data-label="Covers">1 session · ${c.service_name ? esc(c.service_name) + ' or any service priced ' : 'any service priced '}${naira(c.value_kobo)}</td><td data-label="Ends">${expTxt(c.expires_at)}</td></tr>`).join('');
+  const endedPlanRows = endedPlans.map((p) => `<tr><td data-label="Plan"><b>${esc(p.plan_name)}</b><div class="small muted">${esc(p.shop_name)}</div></td>
+    <td data-label="Sessions">${p.sessions_left} of ${p.sessions_total} left</td><td data-label="Status"><span class="badge b-gray">${p.sessions_left === 0 ? 'USED UP' : 'ENDED'}</span></td><td data-label="Ended">${expTxt(p.expires_at)}</td></tr>`).join('');
+  const endedCreditRows = endedCredits.map((c) => `<tr><td data-label="Barber"><b>${esc(c.shop_name)}</b></td><td data-label="Status"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></td><td data-label="Date">${c.status === 'USED' ? 'Used' : expTxt(c.expires_at)}</td></tr>`).join('');
+  const planDisabled = (state.cfg.features || {}).plans === false ? '<div class="info small notice">Plans are turned off by TrimSlot right now. You cannot buy one or use a plan session, but your existing sessions and end dates are kept.</div>' : '';
+  const creditDisabled = (state.cfg.features || {}).credits === false ? '<div class="info small notice">Session credits are turned off by TrimSlot right now. Your credits are kept and their end dates do not change.</div>' : '';
+  const planBody = planRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Plan</th><th>Sessions</th><th>Ends</th><th>Actions</th></tr></thead><tbody>${planRows}</tbody></table></div>` : '<p class="muted small">No active plans yet. Open a barber’s link to see the plans they offer.</p>';
+  const creditBody = creditRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Credit covers</th><th>Ends</th></tr></thead><tbody>${creditRows}</tbody></table></div>` : '<p class="muted small">No session credits ready to use.</p>';
+  const endedBody = `${endedPlanRows ? `<h3>Plans</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Plan</th><th>Sessions</th><th>Status</th><th>Ended</th></tr></thead><tbody>${endedPlanRows}</tbody></table></div>` : ''}${endedCreditRows ? `<h3>Credits</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Status</th><th>Date</th></tr></thead><tbody>${endedCreditRows}</tbody></table></div>` : ''}`;
+  app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
+    <div class="plan-live-summary"><div class="plan-live-head"><div><span class="plan-kicker">Ready when you book</span><h2 style="margin:3px 0 0;color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">Your session balance</h2></div><span class="plan-live-dot">LIVE</span></div>
+      <div class="plan-metrics"><div class="plan-metric primary"><b data-plan-counter="wallet-sessions">0</b><span>Sessions ready</span></div><div class="plan-metric"><b data-plan-counter="wallet-plans">0</b><span>Active plans</span></div><div class="plan-metric"><b data-plan-counter="wallet-credits">0</b><span>Credits</span></div></div>
+      <p class="plan-live-note" id="wallet-live-note">Balance updates automatically every 10 seconds while this page is open.</p></div>
+    ${planDisabled}${creditDisabled}
+    <details class="plan-section" id="wallet-plans"${showPlans ? ' open' : ''}><summary><span>My active plans</span><span class="plan-section-count">${activePlans.length} active</span></summary><div class="plan-section-body">${planBody}</div></details>
+    <details class="plan-section" id="wallet-credits"${showCredits ? ' open' : ''}><summary><span>Session credits</span><span class="plan-section-count">${activeCredits.length} ready</span></summary><div class="plan-section-body">${creditBody}</div></details>
+    ${endedBody ? `<details class="plan-section" id="wallet-ended"><summary><span>Used or ended</span><span class="plan-section-count">${endedPlans.length + endedCredits.length}</span></summary><div class="plan-section-body">${endedBody}</div></details>` : ''}
+    <details class="plan-disclosure" id="wallet-rules"><summary><span>How plans and credits work</span><span class="small muted">Terms, expiry and refunds</span></summary><div class="plan-disclosure-body">
+      <p class="plan-rule-copy">If you miss a paid session, you do not get a cash refund. You receive one credit with the same barber. It covers the same service or any service at the same price, lasts ${w.rules.credit_expiry_days} days, cannot be cashed out, and is used when you book with that barber.</p>
+      <p class="plan-rule-copy">If you miss a plan session, it returns to your plan; the plan keeps its original end date. Refund requests for part-used plans go through TrimSlot review and require the other party’s agreement. Any eligible online-booking refund follows the cancellation cutoff shown when you cancel.</p>
+    </div></details>`;
+  for (const el of app.querySelectorAll('[data-plan-counter]')) { const old = previousCounts.get(el.dataset.planCounter); if (old) { el.textContent = old.value; el.dataset.countValue = old.value; if (old.ready) el.dataset.countReady = old.ready; } }
+  for (const id of opened) { const d = document.getElementById(id); if (d) d.open = true; }
+  const stats = walletPlanStats(w);
+  animatePlanCount(document.querySelector('[data-plan-counter="wallet-sessions"]'), stats.sessions);
+  animatePlanCount(document.querySelector('[data-plan-counter="wallet-plans"]'), stats.activePlans.length);
+  animatePlanCount(document.querySelector('[data-plan-counter="wallet-credits"]'), stats.activeCredits.length);
+  app.dataset.walletSignature = walletPlanSignature(w);
+  wireRefundBox(app, 'CUSTOMER', () => wallet());
+}
 async function wallet(planResult, ppId) {
   if (planResult && ppId && !['processed', 'already_processed', 'refund_due', 'checked', 'amount_mismatch'].includes(planResult)) {
     const r = await confirmReturn('plan', ppId, 'Checking your plan payment…');
@@ -935,23 +1045,14 @@ async function wallet(planResult, ppId) {
     planResult = new URLSearchParams(location.hash.split('?')[1] || '').get('plan');
   }
   const w = await api('/me/wallet');
-  const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">You bought the plan. Choose "Use plan session" when you book.</div>'
-    : planResult === 'not_paid' ? '<div class="err">Your payment did not go through, so the plan is not on.</div>' : planResult === 'checked' ? '<div class="info">Paystack has not told us yet. If you were charged, the plan turns on by itself in a few minutes, or we refund you.</div>' : planResult === 'amount_mismatch' ? '<div class="err">We got your payment, but the amount was not right, so the plan is not on. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">We could not use that payment. We are sending your money back.</div>' : '';
-  const live = w.credits.filter((c) => c.live), past = w.credits.filter((c) => !c.live);
-  app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
-    <h2>Session credits</h2>
-    ${(state.cfg.features || {}).credits === false ? '<div class="info small notice">Session credits are turned off by TrimSlot right now, so you cannot use one. Your credits are kept, and their end dates do not change.</div>' : ''}
-    <p class="small muted" style="margin-top:0">If you miss a paid session, we do not refund it. You get 1 credit with the <b>same barber</b>. It covers the <b>same service</b>, or a service with the <b>same price</b>. It works for ${w.rules.credit_expiry_days} days. You cannot cash it out. We use it when you book with that barber.</p>
-    ${live.length ? clist(live.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-purple">CREDIT</span></span></span><span class="c2"><span class="cm">1 session · ${c.service_name ? esc(c.service_name) + ' or any service priced ' : 'any service priced '}${naira(c.value_kobo)}</span><span class="cr">until ${expTxt(c.expires_at)}</span></span></span></div>`)) : '<p class="muted small">You have no credits right now.</p>'}
-    <h2>My plans</h2>
-    ${(state.cfg.features || {}).plans === false ? '<div class="info small notice">Plans are turned off by TrimSlot right now, so you cannot buy one or use a plan session. Your plans keep their sessions and end dates.</div>' : ''}
-    <p class="small muted" style="margin-top:0">If you miss a plan session, it goes back to your plan. It does not become a credit, and your plan keeps its end date.</p>
-    ${w.plans.map((p) => `<div class="card ${p.live ? '' : 'faded'}"><div class="row between"><h3 style="margin:0">${esc(p.plan_name)}</h3><span class="badge ${p.live ? 'b-green' : 'b-gray'}">${p.live ? 'ACTIVE' : p.sessions_left === 0 ? 'USED UP' : 'EXPIRED'}</span></div>
-      <div class="muted small">${esc(p.shop_name)}</div><div class="small">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div><div class="meter"><i style="width:${Math.round(100 * p.sessions_left / p.sessions_total)}%"></i></div>
-      <div class="row between small"><b>${p.sessions_left} of ${p.sessions_total} sessions left</b><span class="muted">${p.live ? 'ends' : 'ended'} ${expTxt(p.expires_at)}</span></div>
-      ${p.live ? `<div class="btns end" style="margin-top:12px"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>` : ''}${refundBox(p, 'CUSTOMER')}</div>`).join('') || '<p class="muted small">You have no plans yet. Open a barber page to see their plans.</p>'}
-    ${past.length ? `<h2>Used or ended credits</h2>${clist(past.map((c) => `<div class="crow"><span class="cb"><span class="c1"><span class="ct">${esc(c.shop_name)}</span><span class="cp"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></span></span><span class="c2"><span class="cm">${c.status === 'USED' ? 'Used' : 'Ended ' + expTxt(c.expires_at)}</span></span></span></div>`))}` : ''}`;
-  wireRefundBox(app, 'CUSTOMER', () => wallet());
+  renderWalletData(w, planResult);
+  startPoll(async () => {
+    if (!location.hash.startsWith('#/wallet')) return;
+    const latest = await api('/me/wallet');
+    if (walletPlanSignature(latest) === app.dataset.walletSignature) return;
+    const openIds = [...app.querySelectorAll('details[open][id]')].map((d) => d.id);
+    renderWalletData(latest, planResult, openIds);
+  });
 }
 
 /* ---------- customer: bookings ---------- */
@@ -1480,23 +1581,50 @@ const planForm = (id, pl, services, limits) => `<form class="planf" ${id ? `data
 function plansBody(po, services) {
   const L = po.limits;
   const F = state.cfg.features || {};
+  const plans = po.plans || [], purchases = po.purchases || [], credits = po.credits || [];
   const offNote = (F.plans === false ? '<div class="warn small" style="margin:10px 0">Plans are turned off by TrimSlot right now. Customers cannot buy a plan or use a plan session. Your plans are saved and show again when plans are back on.</div>' : '')
-    + (F.credits === false ? '<div class="warn small" style="margin:10px 0">Session credits are turned off by TrimSlot right now. Customers cannot use a credit. Credits they have are kept and their end dates do not change.</div>' : '');
-  const rules = `<div class="info small" style="margin:10px 0">Rules: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)} · up to ${L.max_sessions} sessions · lasts up to ${L.max_validity_days} days. If a customer misses a paid session, they get a credit with you. It covers the same service or a service with the same price. It lasts ${L.credit_expiry_days} days. They cannot cash it out. If a customer misses a plan session, it goes back to their plan. Existing buyers keep the price, sessions, included services, and expiry they bought.</div>`;
+    + (F.credits === false ? '<div class="warn small" style="margin:10px 0">Session credits are turned off by TrimSlot right now. Customers cannot use a credit. Credits they have are kept, and their end dates do not change.</div>' : '');
   const planStatus = (pl) => {
     if (pl.approval_status === 'PENDING') return ['b-amber', 'PENDING APPROVAL', 'Hidden from customers until TrimSlot approves it. People who already bought it keep using it.'];
     if (pl.approval_status === 'REJECTED') return ['b-red', 'CHANGES NEEDED', 'Not live — update the plan and save it to send it for review again.'];
     if (!pl.active) return ['b-gray', 'HIDDEN', 'Not live — new customers cannot buy it. Existing purchases continue.'];
     return ['b-green', 'LIVE', 'Customers can see and buy this plan.'];
   };
-  const list = po.plans.map((pl) => { const [statusClass, statusLabel, statusHelp] = planStatus(pl); return `<div class="svcline plnline" data-id="${pl.id}"><div><b>${esc(pl.name)}</b><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div><div class="small muted">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div><div class="small" style="margin-top:6px"><span class="badge ${statusClass}">${statusLabel}</span> <span class="muted">${statusHelp}</span></div>${pl.approval_reason ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Admin note:</b> ${esc(pl.approval_reason)}</div></div>` : ''}${pl.needs_review ? `<div class="warn small notice" style="margin:6px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}<div class="small muted">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold</div></div>
-    <div class="row" style="gap:6px"><button class="mini ed" aria-label="Edit">${ic('pencil', 'sm')}</button>${pl.active ? `<button class="mini red del" aria-label="Stop selling">${ic('trash', 'sm')}</button>` : '<span class="small muted">Not for sale</span>'}</div>
-    <div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`; }).join('') || '<p class="muted small">No plans yet.</p>';
-  const buyers = po.purchases.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${esc(x.plan_name)}</span><span class="${x.live ? '' : 'muted'}">${x.sessions_total - x.sessions_used}/${x.sessions_total} left${x.live ? '' : ' · ended'}</span></div>${x.live ? refundBox(x, 'BARBER') : ''}`).join('');
-  const credits = po.credits.slice(0, 15).map((x) => `<div class="row between small" style="margin:6px 0"><span><b>${esc(x.customer_name)}</b> · ${x.reason === 'NO_SHOW' ? 'no-show' : 'missed session'}</span><span class="${x.live ? '' : 'muted'}">${x.status === 'USED' ? 'used' : x.live ? 'until ' + expTxt(x.expires_at) : 'expired'}</span></div>`).join('');
-  return `${offNote}${rules}${list}<h3 style="margin-top:14px">Create a plan</h3>${planForm(null, null, services, L)}
-    ${buyers ? `<h3 style="margin-top:14px">Plan buyers</h3>${buyers}` : ''}${credits ? `<h3 style="margin-top:14px">Session credits issued</h3>${credits}` : ''}`;
+  const list = plans.map((pl) => {
+    const [statusClass, statusLabel, statusHelp] = planStatus(pl);
+    const perSession = naira(Math.floor(pl.price_kobo / pl.sessions));
+    return `<div class="svcline plnline plan-offer-card" data-id="${pl.id}"><div>
+      <div class="plan-offer-top"><div><h3>${esc(pl.name)}</h3><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div></div>
+        <div class="plan-offer-tools"><button class="mini ed" aria-label="Edit ${esc(pl.name)}">${ic('pencil', 'sm')}</button>${pl.active ? `<button class="mini red del" aria-label="Stop selling ${esc(pl.name)}">${ic('trash', 'sm')}</button>` : '<span class="small muted">Not for sale</span>'}</div></div>
+      <div class="small muted" style="margin-top:8px">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div>
+      <div class="small" style="margin-top:8px"><span class="badge ${statusClass}">${statusLabel}</span> <span class="muted">${statusHelp}</span></div>
+      ${pl.approval_reason ? `<div class="warn small notice" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Admin note:</b> ${esc(pl.approval_reason)}</div></div>` : ''}
+      ${pl.needs_review ? `<div class="warn small notice" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}
+      <details class="plan-stats"><summary>Performance details</summary><div class="plan-stats-body">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold · ${perSession} per session</div></details>
+    </div><div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`;
+  }).join('') || '<p class="muted small">No plans yet. Create one when you are ready to offer session packs.</p>';
+  const buyerRows = purchases.slice(0, 15).map((x) => {
+    const left = Math.max(0, x.sessions_total - x.sessions_used);
+    const refund = x.live ? refundBox(x, 'BARBER') : '';
+    return `<tr><td data-label="Customer"><b>${esc(x.customer_name)}</b></td><td data-label="Plan">${esc(x.plan_name)}</td>
+      <td data-label="Sessions"><b>${left} of ${x.sessions_total} left</b></td><td data-label="Status"><span class="badge ${x.live ? 'b-green' : 'b-gray'}">${x.live ? 'ACTIVE' : 'ENDED'}</span></td>
+      <td data-label="Refund">${refund ? `<details class="refund-disclosure"><summary>Refund options</summary>${refund}</details>` : '<span class="muted">—</span>'}</td></tr>`;
+  }).join('');
+  const creditRows = credits.slice(0, 15).map((x) => `<tr><td data-label="Customer"><b>${esc(x.customer_name)}</b></td>
+    <td data-label="Reason">${x.reason === 'NO_SHOW' ? 'No-show' : 'Missed session'}</td>
+    <td data-label="Status"><span class="badge ${x.status === 'USED' ? 'b-gray' : x.live ? 'b-green' : 'b-gray'}">${x.status === 'USED' ? 'USED' : x.live ? 'AVAILABLE' : 'EXPIRED'}</span></td>
+    <td data-label="Valid until">${x.status === 'USED' ? 'Used' : expTxt(x.expires_at)}</td></tr>`).join('');
+  const buyersContent = buyerRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Customer</th><th>Plan</th><th>Sessions</th><th>Status</th><th>Refund</th></tr></thead><tbody>${buyerRows}</tbody></table></div>${purchases.length > 15 ? '<p class="small muted">Showing the latest 15 purchases.</p>' : ''}` : '<p class="muted small">No customers have bought a plan yet.</p>';
+  const creditsContent = creditRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Customer</th><th>Reason</th><th>Status</th><th>Valid until</th></tr></thead><tbody>${creditRows}</tbody></table></div>${credits.length > 15 ? '<p class="small muted">Showing the latest 15 credits.</p>' : ''}` : '<p class="muted small">No session credits have been issued.</p>';
+  const rules = `Plan sessions are valid for the number of days shown. Customers keep the terms they bought if you later edit a plan. When a customer misses a paid session, they receive one credit with you; it covers the same service or a service at the same price, expires after ${L.credit_expiry_days} days, and cannot be cashed out. A missed plan session returns to the plan and does not extend its end date. Refunds for part-used plans go through TrimSlot review, then require the other party's agreement.`;
+  return `${offNote}
+    <details class="plan-section" id="barber-offers" open><summary><span>Plans you offer</span><span class="plan-section-count">${plans.length} plan${plans.length === 1 ? '' : 's'}</span></summary><div class="plan-section-body">${list}</div></details>
+    <details class="plan-disclosure" id="barber-create"><summary><span>Create a plan</span><span class="small muted">Choose a price, sessions and services</span></summary><div class="plan-disclosure-body">${planForm(null, null, services, L)}</div></details>
+    <details class="plan-section" id="barber-purchases"><summary><span>Customer purchases</span><span class="plan-section-count">${purchases.length}</span></summary><div class="plan-section-body">${buyersContent}</div></details>
+    <details class="plan-section" id="barber-credits"><summary><span>Session credits</span><span class="plan-section-count">${credits.length}</span></summary><div class="plan-section-body">${creditsContent}</div></details>
+    <details class="plan-disclosure" id="barber-rules"><summary><span>Plan rules &amp; refunds</span><span class="small muted">How sessions and refunds work</span></summary><div class="plan-disclosure-body"><p class="plan-rule-copy">${rules}</p><p class="plan-rule-copy">Plan limits: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)}, up to ${L.max_sessions} sessions, and up to ${L.max_validity_days} days.</p></div></details>`;
 }
+
 function wirePlans(po, guard) {
   if (!po) return;
   const body = (f) => { const fd = new FormData(f); return { name: fd.get('name'), price_naira: fd.get('price_naira'), sessions: fd.get('sessions'), validity_days: fd.get('validity_days'), service_ids: fd.getAll('svc').map(Number) }; };
@@ -1505,7 +1633,8 @@ function wirePlans(po, guard) {
     const l = f.closest('.svcline');
     l.querySelector('.ed').onclick = () => l.classList.toggle('editing');
     f.onsubmit = guard(() => api('/barber/plans/' + f.dataset.id, { method: 'PUT', body: body(f) }), 'Plan saved');
-    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');
+    const del = l.querySelector('.del');
+    if (del) del.onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');
   });
 }
 const acc = (id, icon, title, sub, body) => `<details class="acc" data-k="${id}" ${state.open.has(id) ? 'open' : ''}><summary><span class="ico">${ic(icon)}</span><span>${title}<span class="sub">${sub}</span></span><span class="chev">${ic('chev')}</span></summary><div class="body">${body}</div></details>`;

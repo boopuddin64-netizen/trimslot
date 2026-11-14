@@ -18,7 +18,7 @@ export const mailerMode = (): 'custom' | 'resend' | 'log' | 'none' =>
 
 async function viaResend(m: Mail) {
   const from = process.env.MAIL_FROM;
-  if (!from) { logger.error('mail_not_configured', { why: 'MAIL_FROM is not set' }); throw new AppError(503, 'EMAIL_NOT_CONFIGURED', 'We cannot send emails right now. Please try again later.'); }
+  if (!from) { logger.error('mail_not_configured', { why: 'MAIL_FROM is not set' }); throw new AppError(503, 'EMAIL_NOT_CONFIGURED', 'Email delivery is not set up yet. Please contact TrimSlot support.'); }
   let r: Response;
   try {
     r = await fetch('https://api.resend.com/emails', {
@@ -34,6 +34,6 @@ export async function sendMail(m: Mail): Promise<void> {
     case 'custom': return override!(m);
     case 'resend': return viaResend(m);
     case 'log': logger.info('mail_dev_log', { to: m.to, subject: m.subject, text: m.text }); return;
-    default: logger.error('mail_not_configured', { why: 'RESEND_API_KEY is not set' }); throw new AppError(503, 'EMAIL_NOT_CONFIGURED', 'We cannot send emails right now. Please try again later.');
+    default: logger.error('mail_not_configured', { why: 'RESEND_API_KEY is not set' }); throw new AppError(503, 'EMAIL_NOT_CONFIGURED', 'Email delivery is not set up yet. Please contact TrimSlot support.');
   }
 }
