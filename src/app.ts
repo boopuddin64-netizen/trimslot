@@ -177,7 +177,8 @@ async function customerReceipt(db: Db, b: BookingRow, booking: any) {
     FROM payments
     WHERE booking_id=$1 AND status='SUCCESS'
       AND COALESCE(refund_reason,'') NOT LIKE 'Duplicate payment%'
-    ORDER BY id ASC LIMIT 1`, [b.id]);
+    ORDER BY CASE WHEN amount_kobo=(SELECT price_kobo + COALESCE(booking_fee_kobo,0) FROM bookings WHERE id=$1) THEN 0 ELSE 1 END,
+      CASE WHEN refund_status IS NULL THEN 0 ELSE 1 END, id DESC LIMIT 1`, [b.id]);
   if (!p) return undefined;
   const paymentStatus = String(b.payment_status || '');
   const refundStatus = String(p.refund_status || '');
