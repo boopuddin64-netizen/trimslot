@@ -261,6 +261,27 @@ function landing() {
     ${state.cfg.demo ? '<div class="card small"><b>Demo logins</b><br>Customer: <code>chidi@trimslot.demo</code> / <code>Customer123!</code><br>Barber: <code>mike@trimslot.demo</code> / <code>Barber123!</code></div>' : ''}
     <p class="center"><a href="#/login">I already have an account</a></p>`;
 }
+let passwordFieldId = 0;
+function wirePasswordVisibility(root = app) {
+  root.querySelectorAll('input[type="password"]').forEach((input) => {
+    if (input.parentElement?.classList.contains('password-field')) return;
+    const label = input.previousElementSibling?.matches('label') ? input.previousElementSibling : null;
+    if (!input.id) input.id = `trimslot-password-${++passwordFieldId}`;
+    if (label) label.htmlFor = input.id;
+    const wrap = document.createElement('div'); wrap.className = 'password-field';
+    input.before(wrap); wrap.append(input);
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'password-visibility'; button.textContent = 'Show';
+    button.setAttribute('aria-label', 'Show password'); button.setAttribute('aria-pressed', 'false'); button.setAttribute('aria-controls', input.id);
+    button.dataset.passwordToggle = input.id;
+    button.addEventListener('click', () => {
+      const show = input.type === 'password'; input.type = show ? 'text' : 'password';
+      button.textContent = show ? 'Hide' : 'Show'; button.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      button.setAttribute('aria-pressed', String(show)); input.focus({ preventScroll: true });
+    });
+    wrap.append(button);
+  });
+}
 function authPage(mode, roleQ) {
   let role = roleQ === 'barber' ? 'barber' : 'customer', saved = null;
   const draw = (err) => {
@@ -273,7 +294,8 @@ function authPage(mode, roleQ) {
         ${signup && role === 'barber' ? `<label>Shop name</label><input name="shop_name" required><label>Shop location</label><input name="location" placeholder="Street, area, city">` : ''}
         ${signup ? `<label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com"><label>Phone</label><input name="phone" type="tel" autocomplete="tel" placeholder="0803 123 4567"><p class="small muted">Add an email or a phone number. One is enough.</p>`
       : `<label>Email or phone</label><input name="identifier" autocomplete="username" required>`}
-        <label>Password</label><input name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" required minlength="8">
+        <label for="auth-password">Password</label><input id="auth-password" name="password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" required minlength="8">
+        ${signup ? `<label for="auth-confirm-password">Confirm password</label><input id="auth-confirm-password" name="confirm_password" type="password" autocomplete="new-password" required minlength="8" aria-describedby="password-match-error"><p id="password-match-error" class="err hidden" role="alert"></p>` : ''}
         ${signup ? `<label class="chk accept"><input type="checkbox" name="accept_terms" required> <span>I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and have read the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>` : ''}
         ${signup && role === 'barber' ? `<label class="chk accept"><input type="checkbox" name="accept_barber_agreement" required> <span>I agree to the <a href="/barber-agreement.html" target="_blank" rel="noopener">Barber Agreement</a>.</span></label>` : ''}
         ${signup && role === 'barber' ? '<div class="info small">We check every new barber shop before customers can see it. You can add your services and hours now.</div>' : ''}
@@ -284,21 +306,28 @@ function authPage(mode, roleQ) {
         <a href="#" data-fill="chidi@trimslot.demo|Customer123!">Customer: chidi@trimslot.demo</a><br>
         <a href="#" data-fill="tunde@trimslot.demo|Customer123!">Customer 2: tunde@trimslot.demo</a><br>
         <a href="#" data-fill="mike@trimslot.demo|Barber123!">Barber: mike@trimslot.demo</a></div>` : ''}`;
-    if (saved) { for (const [k, v] of Object.entries(saved)) { const el = document.querySelector(`#f [name="${k}"]`); if (el && k !== 'password') el.value = v; } }   // keep what was typed after an error
-    document.querySelectorAll('#roleseg button').forEach((b) => b.onclick = () => { saved = Object.fromEntries(new FormData($('#f'))); role = b.dataset.r; draw(); });
+    wirePasswordVisibility(app);
+    const matchError = $('#password-match-error');
+    if (matchError) for (const field of app.querySelectorAll('#f [name="password"], #f [name="confirm_password"]')) field.addEventListener('input', () => { matchError.classList.add('hidden'); matchError.textContent = ''; });
+    if (saved) { for (const [k, v] of Object.entries(saved)) { const el = document.querySelector(`#f [name="${k}"]`); if (el && !['password', 'confirm_password'].includes(k)) el.value = v; } }   // keep non-secret fields after an error
+    document.querySelectorAll('#roleseg button').forEach((b) => b.onclick = () => { saved = Object.fromEntries(new FormData($('#f'))); delete saved.password; delete saved.confirm_password; role = b.dataset.r; draw(); });
     document.querySelectorAll('[data-fill]').forEach((a) => a.onclick = (ev) => { ev.preventDefault(); const [i, p] = a.dataset.fill.split('|'); $('[name=identifier]').value = i; $('[name=password]').value = p; $('#f').dispatchEvent(new Event('input')); });
     $('#f').onsubmit = async (ev) => {
       ev.preventDefault();
       const fd = Object.fromEntries(new FormData(ev.target));
+      if (signup && fd.password !== fd.confirm_password) {
+        const feedback = $('#password-match-error'); feedback.textContent = 'Passwords do not match.'; feedback.classList.remove('hidden');
+        $('#f [name="confirm_password"]').focus(); return;
+      }
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Making your account…' : 'Logging in…';
       try {
-        if (signup) await api('/auth/signup', { method: 'POST', body: { ...fd, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } });
+        if (signup) { const payload = { ...fd }; delete payload.confirm_password; await api('/auth/signup', { method: 'POST', body: { ...payload, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } }); }
         else await api('/auth/login', { method: 'POST', body: fd });
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
         if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
         go(dest);
-      } catch (e) { saved = fd; draw(e.message); }
+      } catch (e) { saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message); }
     };
   };
   draw();
@@ -320,6 +349,7 @@ function passwordReset(initialEmail = '') {
         <p class="center small"><a href="#" id="pr-resend">Send another code</a></p>`
       : `<form id="prs"><label>Email</label><input name="email" type="email" autocomplete="email" required value="${esc(email)}">
           ${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send reset code</button></div></form>`}`;
+    wirePasswordVisibility(app);
     const request = async (value) => {
       email = String(value || '').trim(); if (!email) { msg = 'Enter your email address.'; draw(); return; }
       const button = document.querySelector('#prs button[type=submit], #pr-resend'); if (button) button.disabled = true;
@@ -859,7 +889,7 @@ async function barberPlans() {
     const stats = barberPlanStats(po);
     const previousCounts = new Map([...app.querySelectorAll('[data-plan-counter]')].map((el) => [el.dataset.planCounter, { value: el.dataset.countValue || el.textContent || '0', ready: el.dataset.countReady }]));
     app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Manage the packs customers can buy, and see how sessions are being used.</p>
-      <div class="plan-live-summary"><div class="plan-live-head"><div><span class="plan-kicker">Live overview</span><h2 style="margin:3px 0 0;color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">Your plan activity</h2></div><span class="plan-live-dot">LIVE</span></div>
+      <div class="plan-live-summary"><div class="plan-live-head"><h2 class="plan-live-title">Your plan activity</h2><span class="plan-live-dot">LIVE</span></div>
         <div class="plan-metrics"><div class="plan-metric"><b data-plan-counter="barber-offers">0</b><span>Plans live</span></div><div class="plan-metric"><b data-plan-counter="barber-purchases">0</b><span>Active purchases</span></div><div class="plan-metric primary"><b data-plan-counter="barber-sessions">0</b><span>Sessions left</span></div></div>
         <p class="plan-live-note">Updates automatically every 10 seconds while this page is open.</p></div>
       <div id="msg"></div>${plansBody(po, profile.services)}`;
@@ -1017,7 +1047,7 @@ function renderWalletData(w, planResult, openedIds = null) {
   const creditBody = creditRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Credit covers</th><th>Ends</th></tr></thead><tbody>${creditRows}</tbody></table></div>` : '<p class="muted small">No session credits ready to use.</p>';
   const endedBody = `${endedPlanRows ? `<h3>Plans</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Plan</th><th>Sessions</th><th>Status</th><th>Ended</th></tr></thead><tbody>${endedPlanRows}</tbody></table></div>` : ''}${endedCreditRows ? `<h3>Credits</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Status</th><th>Date</th></tr></thead><tbody>${endedCreditRows}</tbody></table></div>` : ''}`;
   app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
-    <div class="plan-live-summary"><div class="plan-live-head"><div><span class="plan-kicker">Ready when you book</span><h2 style="margin:3px 0 0;color:var(--ink);font-size:17px;text-transform:none;letter-spacing:0">Your session balance</h2></div><span class="plan-live-dot">LIVE</span></div>
+    <div class="plan-live-summary"><div class="plan-live-head"><h2 class="plan-live-title">Your session balance</h2><span class="plan-live-dot">LIVE</span></div>
       <div class="plan-metrics"><div class="plan-metric primary"><b data-plan-counter="wallet-sessions">0</b><span>Sessions ready</span></div><div class="plan-metric"><b data-plan-counter="wallet-plans">0</b><span>Active plans</span></div><div class="plan-metric"><b data-plan-counter="wallet-credits">0</b><span>Credits</span></div></div>
       <p class="plan-live-note" id="wallet-live-note">Balance updates automatically every 10 seconds while this page is open.</p></div>
     ${planDisabled}${creditDisabled}

@@ -39,6 +39,7 @@ async function runWidth(width, capture = false) {
   await page.fill('#f [name=location]', 'Yaba, Lagos');
   await page.fill('#f [name=email]', `barber.preview.${stamp}@example.com`);
   await page.fill('#f [name=password]', 'PreviewPass123!');
+  await page.fill('#f [name=confirm_password]', 'PreviewPass123!');
   await page.check('#f [name=accept_terms]');
   await page.check('#f [name=accept_barber_agreement]');
   await page.click('#f button[type=submit]');

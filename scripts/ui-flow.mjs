@@ -10,7 +10,7 @@ const ok = (n, c) => console.log((c ? 'PASS ' : 'FAIL ') + n);
 
 await cust.goto('/'); await cust.waitForSelector('.hero'); await shot(cust, '01-landing');
 await cust.goto('/#/signup?role=customer');
-await cust.fill('[name=name]', 'Amaka Demo'); await cust.fill('[name=email]', `amaka${Date.now()}@example.com`); await cust.fill('[name=password]', 'Password123');
+await cust.fill('[name=name]', 'Amaka Demo'); await cust.fill('[name=email]', `amaka${Date.now()}@example.com`); await cust.fill('[name=password]', 'Password123'); await cust.fill('[name=confirm_password]', 'Password123'); await cust.check('[name=accept_terms]');
 await shot(cust, '02-signup');
 await cust.click('button[type=submit]');
 await cust.waitForSelector('text=Choose a barber'); await shot(cust, '03-customer-home');
