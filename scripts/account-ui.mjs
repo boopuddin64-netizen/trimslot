@@ -38,6 +38,12 @@ for (const w of [390, 1280]) {
     ok(signupRequests.length === 1 && !Object.hasOwn(signupRequests[0], 'confirm_password'), w + ' matching signup sends one request without the confirmation value');
     ok(true, w + ' signup with tick-box'); await p.goto('/#/profile'); await p.waitForSelector('.avatar-edit');
     const sections = await p.locator('.profile-section h2').allTextContents();
+    ok(await p.locator('.profile-accordion-trigger').count() === 6, w + ' customer profile sections use accordions');
+    ok(await p.locator('#profile-contact .profile-accordion-trigger').getAttribute('aria-expanded') === 'true', w + ' first customer group starts open');
+    await p.locator('#profile-security .profile-accordion-trigger').click();
+    ok(await p.locator('#profile-security .profile-accordion-trigger').getAttribute('aria-expanded') === 'true' && await p.locator('#profile-security .profile-accordion-chevron').count() === 1, w + ' customer group opens with chevron');
+    await p.locator('#profile-security .profile-accordion-trigger').click();
+    ok(await p.locator('#profile-security .profile-accordion-trigger').getAttribute('aria-expanded') === 'false', w + ' customer group collapses');
     ok(JSON.stringify(sections) === JSON.stringify(['Profile & contact', 'Security & sign-in', 'Bookings', 'Wallet & receipts', 'Preferences', 'Help, privacy & account actions']), w + ' customer profile has exactly the six agreed sections', sections.join(' | '));
     await p.click('#password-toggle'); ok(await p.locator('#password-change:not(.hidden)').count() === 1, w + ' password change form opens');
     await p.click('#profile-help [data-report]'); await p.waitForSelector('#reportbox'); ok(await p.locator('#rform [name=category]').inputValue() === 'OTHER', w + ' general Help & Support opens with the right category');
