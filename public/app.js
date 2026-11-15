@@ -284,6 +284,32 @@ function wirePasswordVisibility(root = app) {
 }
 function authPage(mode, roleQ) {
   let role = roleQ === 'barber' ? 'barber' : 'customer', saved = null;
+  // Login feedback is decorative only; authentication remains entirely server-side.
+  if (!document.getElementById('auth-feedback-motion')) {
+    const style = document.createElement('style'); style.id = 'auth-feedback-motion';
+    style.textContent = `
+      @keyframes trimslot-auth-shake { 0%,100%{transform:translateX(0)} 15%,55%{transform:translateX(-8px)} 35%,75%{transform:translateX(8px)} 90%{transform:translateX(-3px)} }
+      @keyframes trimslot-auth-takeoff { 0%{transform:translateY(0) scale(1);opacity:1} 18%{transform:translateY(8px) scale(.985);opacity:1} 100%{transform:translateY(-110vh) scale(.94);opacity:0} }
+      #app.auth-shake { animation:trimslot-auth-shake .42s ease-in-out; }
+      #app.auth-takeoff { transform-origin:50% 100%; animation:trimslot-auth-takeoff .68s cubic-bezier(.2,.75,.25,1) forwards; pointer-events:none; }
+      @media (prefers-reduced-motion:reduce) { #app.auth-shake,#app.auth-takeoff { animation:none !important; } }
+    `;
+    document.head.appendChild(style);
+  }
+  const clearAuthMotion = () => app.classList.remove('auth-shake','auth-takeoff');
+  const wrongPasswordFeedback = () => {
+    clearAuthMotion(); void app.offsetWidth; app.classList.add('auth-shake');
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && navigator.vibrate) {
+      try { navigator.vibrate([75, 35, 75]); } catch { /* optional device capability */ }
+    }
+  };
+  const successTakeoff = async () => {
+    clearAuthMotion();
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    app.classList.add('auth-takeoff');
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    app.classList.remove('auth-takeoff');
+  };
   const draw = (err) => {
     const signup = mode === 'signup';
     app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book a cut or run your shop.'}</p>
@@ -322,12 +348,15 @@ function authPage(mode, roleQ) {
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Making your account…' : 'Logging in…';
       try {
         if (signup) { const payload = { ...fd }; delete payload.confirm_password; await api('/auth/signup', { method: 'POST', body: { ...payload, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } }); }
-        else await api('/auth/login', { method: 'POST', body: fd });
+        else { await api('/auth/login', { method: 'POST', body: fd }); await successTakeoff(); }
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
         if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
         go(dest);
-      } catch (e) { saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message); }
+      } catch (e) {
+        if (!signup && (e.status === 401 || /invalid|incorrect|wrong password|credentials/i.test(e.message || ''))) wrongPasswordFeedback();
+        saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message);
+      }
     };
   };
   draw();
@@ -379,7 +408,23 @@ async function verifyEmail(next) {
   const u = state.user;
   const target = next && /^#\/[a-z]/.test(next) && !/^#\/(login|signup|verify-email)/.test(next) ? next : '#/';
   if (u.email_verified) { toast('Your email is already checked'); return go(target); }
-  let sent = false, masked = '', msg = '';
+  let sent = false, masked = '', msg = '', codeValue = '', verifying = false;
+  const verifyCode = async () => {
+    if (verifying || !/^[0-9]{6}$/.test(codeValue)) return;
+    verifying = true; msg = '';
+    const input = $('#vf [name=code]'), button = $('#vf button[type=submit]');
+    if (input) input.disabled = true;
+    if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+    try {
+      const r = await api('/auth/email/verify', { method: 'POST', body: { code: codeValue } });
+      state.user = { ...state.user, ...r.user };
+      toast('Your email is checked'); go(target);
+    } catch (e) {
+      verifying = false; msg = e.message || 'That code could not be verified.';
+      draw();
+      const retry = $('#vf [name=code]'); if (retry) { retry.focus(); retry.select(); }
+    }
+  };
   const draw = () => {
     const devHint = state.cfg.email_dev_code ? `<div class="info small">Test mode: the code is <b>123456</b>.</div>` : '';
     const intro = u.role === 'barber' ? 'Verify your email once before your shop goes live. You will still sign in with your password.' : 'We check your email once, before your first booking. It keeps your account safe.';
@@ -389,14 +434,27 @@ async function verifyEmail(next) {
       return;
     }
     app.innerHTML = `<h1>Check your email</h1><p class="muted">${intro}</p>${devHint}
-      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required style="font-size:22px;letter-spacing:6px;text-align:center">${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Check my code</button></div></form>
+      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" pattern="[0-9]{6}" maxlength="6" placeholder="123456" value="${esc(codeValue)}" required aria-describedby="code-help" style="font-size:22px;letter-spacing:6px;text-align:center"><p id="code-help" class="small muted" aria-live="polite">${verifying ? 'Checking your code…' : 'Enter or autofill the code. We will verify it automatically.'}</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit" ${codeValue.length === 6 || verifying ? '' : 'disabled'}>Verify code</button></div></form>
         <p class="center small"><a href="#" id="resend">Send a new code</a> · <a href="#" id="chg">Use a different email</a></p>`
       : `<div class="card"><p style="margin-top:0">We will send a 6-digit code to <b>${esc(u.email)}</b>.</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns"><button class="btn" id="sendcode">Send me a code</button></div></div><p class="center small"><a href="#" id="chg">Use a different email</a></p>`}
       <p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
     const sc = $('#sendcode'); if (sc) sc.onclick = () => { sc.disabled = true; send(); };
     const rs = $('#resend'); if (rs) rs.onclick = (ev) => { ev.preventDefault(); send(); };
     const ch = $('#chg'); if (ch) ch.onclick = (ev) => { ev.preventDefault(); u.email = null; sent = false; msg = ''; draw(); };
-    const vf = $('#vf'); if (vf) { vf.querySelector('input').focus(); vf.onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/auth/email/verify', { method: 'POST', body: { code: new FormData(ev.target).get('code') } }); state.user = { ...state.user, ...r.user }; toast('Your email is checked'); go(target); } catch (e) { msg = e.message; draw(); } }; }
+    const vf = $('#vf'); if (vf) {
+      const input = vf.querySelector('[name=code]');
+      input.focus();
+      const updateCode = () => {
+        codeValue = input.value.replace(/\\D/g, '').slice(0, 6);
+        if (input.value !== codeValue) input.value = codeValue;
+        const button = vf.querySelector('button[type=submit]');
+        if (button) button.disabled = codeValue.length !== 6 || verifying;
+        if (codeValue.length === 6) verifyCode();
+      };
+      input.addEventListener('input', updateCode);
+      input.addEventListener('change', updateCode);
+      vf.onsubmit = (ev) => { ev.preventDefault(); updateCode(); verifyCode(); };
+    }
   };
   const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = e.message; } draw(); };
   draw();
