@@ -767,3 +767,43 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
   .barber-plans-view .barber-compact-count{font-size:12px}
   .barber-plans-view .barber-compact-row .badge{min-width:60px;font-size:9px}
 }
+
+
+/* Customer Plans: roomier disclosure cards; barber rows remain independently scoped. */
+.customer-wallet-view details>summary{position:relative;padding-right:48px;cursor:pointer;list-style:none}
+.customer-wallet-view details>summary::-webkit-details-marker{display:none}
+.customer-wallet-view details>summary:after{content:"";position:absolute;right:11px;top:50%;transform:translateY(-50%);width:26px;height:26px;border:1px solid var(--line2);border-radius:50%;pointer-events:none}
+.customer-wallet-view details>summary:before{content:"";position:absolute;right:21px;top:calc(50% - 5px);width:7px;height:7px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg);transition:transform .22s cubic-bezier(.2,.7,.2,1);pointer-events:none}
+.customer-wallet-view details[open]>summary:before{transform:translateY(3px) rotate(225deg)}
+.customer-wallet-view details>summary:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.customer-wallet-view .plan-section>summary{min-height:56px;padding:12px 49px 12px 13px}
+.customer-wallet-view .plan-disclosure>summary{min-height:54px;padding-right:49px}
+.customer-wallet-view .refund-disclosure>summary{min-height:42px;padding-right:44px}
+.customer-wallet-view .customer-wallet-list{display:grid;gap:10px;margin:10px 0 12px}
+.customer-wallet-view .customer-wallet-row{min-width:0;margin:0;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.customer-wallet-view .customer-wallet-row>summary{display:block;min-height:76px;padding:13px 50px 13px 14px;border:0;border-radius:0;background:var(--card);font-size:13px;font-weight:500;line-height:1.4}
+.customer-wallet-view .customer-wallet-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0}
+.customer-wallet-view .customer-wallet-row-title{display:block;min-width:0;font-size:14px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.customer-wallet-view .customer-wallet-row-value{display:inline-flex;align-items:center;flex:none;padding:4px 9px;border:1px solid var(--line2);border-radius:999px;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:700;line-height:1.25;white-space:nowrap}
+.customer-wallet-view .customer-wallet-row-status{flex:none;margin:0!important;white-space:nowrap}
+.customer-wallet-view .customer-wallet-row-meta{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:5px 12px;min-width:0;margin-top:7px;color:var(--mut);font-size:12px;font-weight:500;line-height:1.4}
+.customer-wallet-view .customer-wallet-row-meta>span{min-width:0;overflow-wrap:anywhere}
+.customer-wallet-view .customer-wallet-row-details{padding:13px 14px 14px;border-top:1px solid var(--line);background:var(--bg2)}
+.customer-wallet-view .customer-wallet-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 15px}
+.customer-wallet-view .customer-wallet-detail-grid>div{display:flex;min-width:0;flex-direction:column;gap:4px}
+.customer-wallet-view .customer-wallet-detail-grid>div>span:not(.customer-wallet-progress){color:var(--mut);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.customer-wallet-view .customer-wallet-detail-grid>div>b{color:var(--ink);font-size:13px;font-weight:600;line-height:1.45;overflow-wrap:anywhere}
+.customer-wallet-view .customer-wallet-progress{display:block;height:5px;margin-top:3px;border-radius:999px;background:var(--line);overflow:hidden}
+.customer-wallet-view .customer-wallet-progress i{display:block;height:100%;border-radius:inherit;background:var(--brand)}
+.customer-wallet-view .customer-wallet-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+.customer-wallet-view .customer-wallet-refund{margin-top:11px;padding-top:8px;border-top:1px solid var(--line)}
+.customer-wallet-view .customer-wallet-refund-body{padding-top:4px}
+.customer-wallet-view .customer-wallet-list-heading{margin:14px 2px 6px;color:var(--mut);font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+@media(max-width:560px){
+  .customer-wallet-view .plan-section>summary{min-height:54px;padding-top:11px;padding-bottom:11px}
+  .customer-wallet-view .customer-wallet-list{gap:9px;margin:9px 0 11px}
+  .customer-wallet-view .customer-wallet-row>summary{min-height:74px;padding-top:12px;padding-bottom:12px}
+  .customer-wallet-view .customer-wallet-row-meta{font-size:11.5px}
+}
+@media(max-width:380px){.customer-wallet-view .customer-wallet-detail-grid{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.customer-wallet-view details>summary:before{transition:none}}

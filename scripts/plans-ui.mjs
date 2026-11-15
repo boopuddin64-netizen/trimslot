@@ -65,32 +65,106 @@ const pFam = await mk('Family pack', [kids.id, reg.id], 60000, 1); await buyPlan
   ok(sent && sent.payment_option === 'PLAN' && sent.plan_purchase_id, 'booking request names the chosen plan purchase', JSON.stringify(sent));
   const w2 = (await call('/me/wallet', {}, cust)).j.plans;
   ok(w2.find((x) => /Family/.test(x.plan_name))?.sessions_used === 1 && w2.find((x) => /Kids pack/.test(x.plan_name))?.sessions_used === 0, 'the chosen plan was charged, not the other one');
+
+  const customerId = (await call('/auth/me', {}, cust)).j.user.id;
+  const adminHeaders = { Authorization: `Bearer ${process.env.ADMIN_KEY || 'local-admin-key-xyz'}` };
+  const usedCreditFixture = await call('/admin/credits/issue', { method: 'POST', headers: adminHeaders, body: { customer_id: customerId, barber_id: barberId, value_naira: kids.price_kobo / 100, reason: 'customer used-credit UI test', days: 30 } });
+  ok(usedCreditFixture.r.ok && usedCreditFixture.j.credit_id, 'local used-credit fixture created');
+  let creditUseBooking = null, creditUseDate = '';
+  const today = (await call('/config')).j.today;
+  for (let offset = 1; offset <= 14 && !creditUseBooking; offset++) {
+    const date = new Date(`${today}T12:00:00.000Z`); date.setUTCDate(date.getUTCDate() + offset); creditUseDate = date.toISOString().slice(0, 10);
+    const available = await call(`/barbers/${barberId}/slots?service_id=${kids.id}&date=${creditUseDate}`, {}, cust);
+    const slot = available.j?.slots?.[0];
+    if (!slot) continue;
+    const booked = await call('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: kids.id, date: creditUseDate, time: slot.time, payment_option: 'CREDIT', credit_id: usedCreditFixture.j.credit_id } }, cust);
+    if (booked.r.status === 201) creditUseBooking = booked;
+  }
+  ok(creditUseBooking?.r.status === 201, 'test credit is redeemed through a valid booking slot', creditUseDate);
+  const usedCredit = (await call('/me/wallet', {}, cust)).j.credits.find((c) => c.id === usedCreditFixture.j.credit_id);
+  ok(usedCredit?.status === 'USED' && !!usedCredit.used_at, 'wallet exposes the actual used-credit date');
+  const creditFixture = await call('/admin/credits/issue', { method: 'POST', headers: adminHeaders, body: { customer_id: customerId, barber_id: barberId, value_naira: 1200, reason: 'compact UI test credit', days: 30 } });
+  ok(creditFixture.r.ok && creditFixture.j.credit_id, 'active customer credit fixture created for Plans checks');
+
   await p.evaluate(() => { localStorage.setItem('trimslot_theme', 'dark'); document.documentElement.dataset.theme = 'dark'; });
-  await p.goto('/#/wallet'); await p.waitForSelector('#wallet-plans table.plan-table'); await p.waitForTimeout(650);
-  const walletText = await p.locator('#wallet-plans').innerText();
-  ok(/Covers: .*Kids Haircut/.test(walletText), 'wallet shows what each plan covers');
+  await p.goto('/#/wallet'); await p.waitForSelector('#wallet-plans .customer-wallet-plan-row'); await p.waitForTimeout(650);
+  const wallet = (await call('/me/wallet', {}, cust)).j;
+  const activePurchase = wallet.plans.find((x) => x.live && /Kids pack/.test(x.plan_name));
+  const activeCredit = wallet.credits.find((x) => x.live);
+  const historyPlan = wallet.plans.find((x) => !x.live && /Family pack/.test(x.plan_name));
+  const historyCredit = wallet.credits.find((x) => x.status === 'USED');
+  const activePlanRow = p.locator(`#wallet-plan-row-${activePurchase.id}`);
+  const activeCreditRow = p.locator(`#wallet-credit-row-${activeCredit.id}`);
+  const historyPlanRow = p.locator(`#wallet-ended-plan-row-${historyPlan.id}`);
+  const historyCreditRow = p.locator(`#wallet-ended-credit-row-${historyCredit.id}`);
   ok(await p.locator('#wallet-plans').evaluate((e) => e.open), 'customer active plans are the primary open section');
+  ok(!(await p.locator('#wallet-credits').evaluate((e) => e.open)) && !(await p.locator('#wallet-ended').evaluate((e) => e.open)), 'customer secondary sections stay collapsed by default');
   ok(!(await p.locator('#wallet-rules').evaluate((e) => e.open)), 'customer rules stay collapsed until requested');
   ok(Number(await p.locator('[data-plan-counter="wallet-sessions"]').innerText()) > 0, 'customer live session counter reflects available sessions');
   ok(await p.locator('[data-plan-counter="wallet-sessions"]').getAttribute('data-count-ready') === '1', 'customer counter initializes accessibly');
+  ok(Number(await p.locator('[data-plan-counter="wallet-credits"]').innerText()) === 1, 'customer live credit count reflects one ready credit');
+  const planSummary = await activePlanRow.locator(':scope > summary').innerText();
+  ok(/Kids pack/.test(planSummary) && /4 of 4 left/.test(planSummary) && /Ends/.test(planSummary) && planSummary.includes(activePurchase.shop_name), 'active plan summary shows its name, barber, sessions remaining, and end date', planSummary);
   const walletLayout = await p.evaluate(() => {
-    const summary = document.querySelector('.plan-live-summary'), metric = document.querySelector('.plan-metric'), header = document.querySelector('#wallet-plans > summary'), cell = document.querySelector('#wallet-plans table.plan-table tbody td');
-    return { summaryHeight: summary.getBoundingClientRect().height, metricBorder: getComputedStyle(metric).borderTopWidth, headerHeight: header.getBoundingClientRect().height, cellFont: parseFloat(getComputedStyle(cell).fontSize), cellPadding: parseFloat(getComputedStyle(cell).paddingTop) };
+    const summary = document.querySelector('.plan-live-summary'), metric = document.querySelector('.plan-metric'), header = document.querySelector('#wallet-plans > summary'), row = document.querySelector('#wallet-plans .customer-wallet-plan-row > summary');
+    return { summaryHeight: summary.getBoundingClientRect().height, metricBorder: getComputedStyle(metric).borderTopWidth, headerHeight: header.getBoundingClientRect().height, rowHeight: row.getBoundingClientRect().height, rowFont: parseFloat(getComputedStyle(row).fontSize), rowPadding: parseFloat(getComputedStyle(row).paddingTop), overflow: row.scrollWidth > row.clientWidth + 1 };
   });
   ok(walletLayout.summaryHeight <= 155 && walletLayout.metricBorder === '0px', '390px customer live summary is compact, with no oversized metric tiles', JSON.stringify(walletLayout));
-  ok(walletLayout.headerHeight >= 44 && walletLayout.headerHeight <= 58 && walletLayout.cellFont >= 12 && walletLayout.cellPadding >= 5, 'customer disclosure remains easy to tap and plan rows stay readable', JSON.stringify(walletLayout));
-  const walletOverflow = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-  ok(!walletOverflow, '390px customer Plans page has no horizontal overflow');
+  ok(walletLayout.headerHeight >= 44 && walletLayout.headerHeight <= 62 && walletLayout.rowHeight >= 70 && walletLayout.rowFont >= 13 && walletLayout.rowPadding >= 12 && !walletLayout.overflow, 'customer disclosure rows are roomier and readable rather than tightly packed', JSON.stringify(walletLayout));
+  ok(!(await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), '390px customer Plans page has no horizontal overflow');
   await p.waitForFunction(() => document.querySelector('#toast')?.classList.contains('hidden'), null, { timeout: 5000 });
   await p.addStyleTag({ content: '.tabs{display:none!important}' }); await p.evaluate(() => window.scrollTo(0, 0));
   await p.screenshot({ path: `${OUT}/customer-plans-phone.png`, fullPage: true, animations: 'disabled' });
+
+  await activePlanRow.locator(':scope > summary').click();
+  const activeDetails = await activePlanRow.locator('.customer-wallet-row-details').innerText();
+  ok(/Covers/i.test(activeDetails) && /Kids Haircut/i.test(activeDetails) && /Sessions/i.test(activeDetails), 'expanded plan reveals coverage and session details');
+  ok(await activePlanRow.locator(`a[href="#/barber/${activePurchase.barber_id}"]`).count() === 1 && await activePlanRow.locator(`a[href="#/book/${activePurchase.barber_id}"]`).count() === 1, 'expanded plan retains View barber and Book actions');
+  const refundDisclosure = activePlanRow.locator(`#wallet-refund-${activePurchase.id}`);
+  ok(await refundDisclosure.count() === 1 && /refund/i.test(await refundDisclosure.innerText()), 'eligible refund options remain inside the expanded active plan');
+  await refundDisclosure.locator(':scope > summary').click();
+  ok(/Ask to cancel and refund/i.test(await refundDisclosure.innerText()), 'existing reviewed plan-refund action remains available without triggering it');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-active-plan-phone.png`, fullPage: true, animations: 'disabled' });
+
+  await activePlanRow.locator(':scope > summary').click(); await p.locator('#wallet-plans > summary').click(); await p.locator('#wallet-credits > summary').click();
+  const creditSummary = await activeCreditRow.locator(':scope > summary').innerText();
+  ok(creditSummary.includes(activeCredit.shop_name) && /Covers/.test(creditSummary) && /Expires/.test(creditSummary) && /AVAILABLE/.test(creditSummary), 'credit summary shows barber, coverage, expiry, and status', creditSummary);
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-credits-phone.png`, fullPage: true, animations: 'disabled' });
+  await activeCreditRow.locator(':scope > summary').click();
+  const creditDetails = await activeCreditRow.locator('.customer-wallet-row-details').innerText();
+  ok(/Coverage/i.test(creditDetails) && /Expires/i.test(creditDetails) && /Status/i.test(creditDetails), 'expanded credit reveals coverage, expiry, and status');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-credit-expanded-phone.png`, fullPage: true, animations: 'disabled' });
+
+  await activeCreditRow.locator(':scope > summary').click(); await p.locator('#wallet-credits > summary').click(); await p.locator('#wallet-ended > summary').click();
+  const endedPlanSummary = await historyPlanRow.locator(':scope > summary').innerText();
+  const endedCreditSummary = await historyCreditRow.locator(':scope > summary').innerText();
+  ok(/Family pack/.test(endedPlanSummary) && /USED UP/.test(endedPlanSummary) && /End date/.test(endedPlanSummary), 'used plan summary shows item, final status, and end date', endedPlanSummary);
+  ok(/Session credit/.test(endedCreditSummary) && /USED/.test(endedCreditSummary) && /Used on [A-Za-z]{3} \d{1,2} [A-Za-z]{3}/.test(endedCreditSummary), 'used credit summary shows item, final status, and actual used date', endedCreditSummary);
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-used-ended-phone.png`, fullPage: true, animations: 'disabled' });
+  await historyPlanRow.locator(':scope > summary').click();
+  const historyPlanDetails = await historyPlanRow.locator('.customer-wallet-row-details').innerText();
+  ok(/Final status/i.test(historyPlanDetails) && /End date/i.test(historyPlanDetails), 'expanded used-plan history retains final status and date');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-used-plan-expanded-phone.png`, fullPage: true, animations: 'disabled' });
+  await historyPlanRow.locator(':scope > summary').click(); await historyCreditRow.locator(':scope > summary').click();
+  const historyCreditDetails = await historyCreditRow.locator('.customer-wallet-row-details').innerText();
+  ok(/Final status/i.test(historyCreditDetails) && /Used on/i.test(historyCreditDetails) && /[A-Za-z]{3} \d{1,2} [A-Za-z]{3}/.test(historyCreditDetails), 'expanded used-credit history shows final status and its redemption date');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/customer-plans-used-credit-expanded-phone.png`, fullPage: true, animations: 'disabled' });
+
+  await p.evaluate(() => { document.querySelectorAll('.customer-wallet-row').forEach((row) => { row.open = false; }); document.querySelector('#wallet-plans').open = true; document.querySelector('#wallet-credits').open = true; document.querySelector('#wallet-ended').open = true; });
+  await p.setViewportSize({ width: 360, height: 844 }); await p.waitForTimeout(100);
+  const narrowRows = await p.locator('.customer-wallet-view .customer-wallet-row > summary').evaluateAll((rows) => rows.map((s) => {
+    const r = s.getBoundingClientRect(), t = s.querySelector('.customer-wallet-row-title').getBoundingClientRect(), pill = s.querySelector('.customer-wallet-row-value, .customer-wallet-row-status'), pr = pill?.getBoundingClientRect();
+    return { height: r.height, font: parseFloat(getComputedStyle(s).fontSize), pad: parseFloat(getComputedStyle(s).paddingTop), noOverflow: s.scrollWidth <= s.clientWidth + 1, titleClear: !pr || t.right <= pr.left + 1, chevronClear: !pr || pr.right <= r.right - 38 };
+  }));
+  ok(narrowRows.length >= 4 && narrowRows.every((r) => r.height >= 70 && r.font >= 13 && r.pad >= 12 && r.noOverflow && r.titleClear && r.chevronClear), '360px customer disclosure summaries stay roomy, readable, and clear of badges/chevrons', JSON.stringify(narrowRows));
+  const expandedNarrowOverflow = await p.evaluate(() => { document.querySelectorAll('.customer-wallet-row').forEach((row) => { row.open = true; }); return document.documentElement.scrollWidth > window.innerWidth + 1 || [...document.querySelectorAll('.customer-wallet-row-details')].some((d) => d.scrollWidth > d.clientWidth + 1); });
+  ok(!expandedNarrowOverflow, '360px expanded customer plan, credit, and history details have no horizontal overflow');
+  await p.evaluate(() => { document.querySelectorAll('.customer-wallet-row').forEach((row) => { row.open = false; }); document.querySelector('#wallet-plans').open = true; document.querySelector('#wallet-credits').open = false; document.querySelector('#wallet-ended').open = false; window.scrollTo(0, 0); });
+  await p.screenshot({ path: `${OUT}/customer-plans-360-phone.png`, fullPage: true, animations: 'disabled' });
   await ctx.close(); }
 // plan not listing the service cannot be forced through the API either
 const forced = await call('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: beard.id, date: (await call('/config')).j.today, time: '16:00', payment_option: 'PLAN', plan_purchase_id: (await call('/me/wallet', {}, cust)).j.plans[0].id } }, cust);
 ok(forced.r.status === 409, 'server refuses a plan session for a service the plan does not include', forced.r.status + JSON.stringify(forced.j));
-const customerId = (await call('/auth/me', {}, cust)).j.user.id;
-const creditFixture = await call('/admin/credits/issue', { method: 'POST', headers: { Authorization: `Bearer ${process.env.ADMIN_KEY || 'local-admin-key-xyz'}` }, body: { customer_id: customerId, barber_id: barberId, value_naira: 1200, reason: 'compact UI test credit', days: 30 } });
-ok(creditFixture.r.ok, 'local session-credit fixture created for compact-row checks', creditFixture.r.status + JSON.stringify(creditFixture.j));
 // barber view: roomy plan editor, collapsed operational sections, and live metrics
 { const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark', baseURL: BASE });
   await ctx.addInitScript(() => { try { localStorage.setItem('trimslot_theme', 'dark'); } catch {} });
