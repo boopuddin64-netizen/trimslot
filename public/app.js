@@ -1327,9 +1327,10 @@ function receiptDate(r) {
 }
 function receiptDocument(r) {
   const isPlan = r.type === 'PLAN', item = isPlan ? r.item : r.service;
+  const receiptNo = `TS-${isPlan ? 'P' : 'B'}-${String(isPlan ? r.plan_purchase_id : r.booking_id).padStart(6, '0')}`;
   const detailRows = isPlan
-    ? [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Sessions included', String(r.sessions_total)], ['Validity', String(r.validity_days) + ' days'], ['Purchase date', receiptDate(r)]]
-    : [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Appointment date', receiptDate(r)], ['Appointment time', r.appointment_time || '—']];
+    ? [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Location', r.location || '—'], ['Sessions included', String(r.sessions_total)], ['Validity', String(r.validity_days) + ' days'], ['Purchase date', receiptDate(r)]]
+    : [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Location', r.location || '—'], ['Appointment date', receiptDate(r)], ['Appointment time', r.appointment_time || '—']];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TrimSlot ${isPlan ? 'Plan Purchase' : 'Booking'} Receipt</title>
   <style>
   *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#172033;font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:28px 14px}
@@ -1351,11 +1352,11 @@ function receiptDocument(r) {
     <section class="body"><h1 class="heading">${isPlan ? 'Plan purchase receipt' : 'Booking payment receipt'}</h1>
     <p class="intro">Your payment has been recorded by TrimSlot. Keep this receipt for your records.</p>
     <div class="amount"><small>Total paid</small><strong>${naira(r.amount_kobo)}</strong></div>
-    <div class="section">Customer</div><div class="rows"><div class="line"><span>Name</span><b>${esc(r.customer_name || 'Customer')}</b></div><div class="line"><span>Email</span><b>${esc(r.customer_email || '—')}</b></div></div>
-    <div class="section">Payment details</div><div class="rows"><div class="line"><span>${isPlan ? 'Plan purchased' : 'Service booked'}</span><b>${esc(item || '—')}</b></div>
+    <div class="section">Customer</div><div class="rows"><div class="line"><span>Name</span><b>${esc(r.customer_name || 'Customer')}</b></div><div class="line"><span>Email</span><b>${esc(r.customer_email || '—')}</b></div><div class="line"><span>Phone</span><b>${esc(r.customer_phone || '—')}</b></div></div>
+    <div class="section">Receipt details</div><div class="rows"><div class="line"><span>Receipt number</span><b>${esc(receiptNo)}</b></div><div class="line"><span>${isPlan ? 'Plan purchased' : 'Service booked'}</span><b>${esc(item || '—')}</b></div>
       ${detailRows.map(([label,value])=>`<div class="line"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}
       <div class="line"><span>Payment method</span><b>Paystack · Online</b></div><div class="line"><span>Payment status</span><b>${esc(r.status)}</b></div></div>
-    <div class="section">Transaction reference</div><div class="reference">${esc(r.reference)}</div></section>
+    <div class="section">Payment details</div><div class="rows"><div class="line"><span>Payment method</span><b>Paystack · Online</b></div><div class="line"><span>Payment status</span><b>${esc(r.status)}</b></div></div><div class="section">Transaction reference</div><div class="reference">${esc(r.reference)}</div></section>
     <footer class="footer"><b>Thank you for using TrimSlot.</b><br>This receipt confirms the payment recorded for the item shown above. For help, contact TrimSlot support and quote the transaction reference.<br><br>Generated ${esc(new Intl.DateTimeFormat('en-NG',{timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'}).format(new Date()))} · TrimSlot</footer>
     </main><div class="actions"><button class="secondary" onclick="window.close()">Close</button><button onclick="window.print()">Print / Save as PDF</button></div></body></html>`;
 }
@@ -1380,7 +1381,7 @@ async function customerReceipts() {
       const when = isPlan ? receiptDate(r) : `${dateLabel(r.appointment_date)} · ${r.appointment_time}`;
       return `<section class="card receipt receipt-list-card" aria-label="${isPlan ? 'Plan' : 'Booking'} receipt for ${esc(heading)}">
         <div class="row between receipt-head"><div><div class="small muted">${isPlan ? 'PLAN PURCHASE' : 'BOOKING PAYMENT'} · ${esc(when)}</div><b>${esc(heading)}</b></div><span class="badge ${tone}">${esc(r.status)}</span></div>
-        <div class="receipt-lines"><div><span>Barber / shop</span><b>${esc(r.barber)}${r.shop && r.shop !== r.barber ? ` · ${esc(r.shop)}` : ''}</b></div>
+        <div class="receipt-lines"><div><span>Barber / shop</span><b>${esc(r.barber)}${r.shop && r.shop !== r.barber ? ` · ${esc(r.shop)}` : ''}</b></div><div><span>Location</span><b>${esc(r.location || '—')}</b></div>
           ${isPlan ? `<div><span>Sessions</span><b>${Number(r.sessions_total || 0)}</b></div><div><span>Validity</span><b>${Number(r.validity_days || 0)} days</b></div>` : ''}
           <div><span>Amount</span><b>${naira(r.amount_kobo)}</b></div><div class="receipt-ref"><span>Payment reference</span><code>${esc(r.reference)}</code></div></div>
         <div class="btns">${!isPlan && r.booking_id ? `<a class="btn sm sec" href="#/booking/${Number(r.booking_id)}">Booking</a>` : ''}
