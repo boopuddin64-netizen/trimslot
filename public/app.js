@@ -1356,7 +1356,7 @@ function receiptDocument(r) {
     <div class="section">Receipt details</div><div class="rows"><div class="line"><span>Receipt number</span><b>${esc(receiptNo)}</b></div><div class="line"><span>${isPlan ? 'Plan purchased' : 'Service booked'}</span><b>${esc(item || '—')}</b></div>
       ${detailRows.map(([label,value])=>`<div class="line"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}
       <div class="line"><span>Payment method</span><b>Paystack · Online</b></div><div class="line"><span>Payment status</span><b>${esc(r.status)}</b></div></div>
-    <div class="section">Payment details</div><div class="rows"><div class="line"><span>Payment method</span><b>Paystack · Online</b></div><div class="line"><span>Payment status</span><b>${esc(r.status)}</b></div></div><div class="section">Transaction reference</div><div class="reference">${esc(r.reference)}</div></section>
+    <div class="section">Transaction reference</div><div class="reference">${esc(r.reference)}</div></section>
     <footer class="footer"><b>Thank you for using TrimSlot.</b><br>This receipt confirms the payment recorded for the item shown above. For help, contact TrimSlot support and quote the transaction reference.<br><br>Generated ${esc(new Intl.DateTimeFormat('en-NG',{timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'}).format(new Date()))} · TrimSlot</footer>
     </main><div class="actions"><button class="secondary" onclick="window.close()">Close</button><button onclick="window.print()">Print / Save as PDF</button></div></body></html>`;
 }
