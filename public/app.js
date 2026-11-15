@@ -1383,53 +1383,43 @@ async function receiptMaterial(r, verification) {
 }
 async function openReceiptPdf(r, verification) {
   const button = $('#receipt-save');
-  if (button) { button.disabled = true; button.textContent = 'Preparing receipt…'; }
+  if (button) { button.disabled = true; button.textContent = 'Generating PDF…'; }
+  // Open synchronously from the tap so iOS Safari does not classify the PDF tab as an unsolicited popup.
+  const pdfWindow = window.open('about:blank', '_blank');
+  if (pdfWindow) {
+    try { pdfWindow.document.title = 'Preparing TrimSlot receipt'; pdfWindow.document.body.innerHTML = '<p style="font:16px system-ui;padding:24px">Preparing your PDF receipt…</p>'; }
+    catch { /* navigation below is sufficient */ }
+  }
   try {
-    const material = await receiptMaterial(r, verification);
-    document.getElementById('receipt-save-overlay')?.remove();
-    const overlay = document.createElement('div');
-    overlay.id = 'receipt-save-overlay';
-    overlay.className = 'receipt-save-overlay';
-    overlay.innerHTML = `<section class="receipt-save-panel" role="dialog" aria-modal="true" aria-label="Save receipt">
-      <header><b>Save your receipt</b><button type="button" class="receipt-save-close" aria-label="Close">×</button></header>
-      <p>Tap Print / Save PDF, then choose Save to Files or Print in the iPhone options.</p>
-      <div class="receipt-save-actions"><button type="button" class="btn sec" data-receipt-close>Close</button><button type="button" class="btn" data-receipt-print>Print / Save PDF</button></div>
-      <div class="receipt-save-paper">${receiptSheetMarkup(material.receipt, material.verification)}</div>
-    </section>`;
-    const printStyle = document.createElement('style');
-    printStyle.id = 'receipt-save-print-style';
-    printStyle.textContent = `
-      @media print {
-        body { margin:0!important; padding:0!important; background:#fff!important; }
-        body > *:not(#receipt-save-overlay) { display:none!important; }
-        #receipt-save-overlay { position:static!important; display:block!important; padding:0!important; background:#fff!important; }
-        #receipt-save-overlay .receipt-save-panel { display:block!important; width:148mm!important; height:auto!important; max-height:none!important; margin:0 auto!important; overflow:visible!important; border:0!important; border-radius:0!important; box-shadow:none!important; background:#fff!important; color:#14233b!important; }
-        #receipt-save-overlay .receipt-save-panel > header,
-        #receipt-save-overlay .receipt-save-panel > p,
-        #receipt-save-overlay .receipt-save-actions { display:none!important; }
-        #receipt-save-overlay .receipt-save-paper { display:block!important; width:148mm!important; margin:0!important; padding:0!important; background:#fff!important; }
-        #receipt-save-overlay .rs-sheet { width:148mm!important; min-height:210mm!important; height:210mm!important; margin:0!important; border:0!important; border-radius:0!important; box-shadow:none!important; break-after:avoid!important; }
-        #receipt-save-overlay .rs-actions,
-        #receipt-save-overlay .rs-print-note { display:none!important; }
-        #receipt-save-overlay .rs-header,
-        #receipt-save-overlay .rs-status,
-        #receipt-save-overlay .rs-amount,
-        #receipt-save-overlay .rs-footer { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
-        @page { size:A5 portrait; margin:0; }
-      }`;
-    document.head.appendChild(printStyle);
-    document.body.appendChild(overlay);
-    const close = () => { overlay.remove(); printStyle.remove(); };
-    overlay.querySelector('.receipt-save-close').onclick = close;
-    overlay.querySelector('[data-receipt-close]').onclick = close;
-    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
-    overlay.querySelector('[data-receipt-print]').onclick = () => {
-      try { window.focus(); window.print(); }
-      catch (e) { toast('Printing is unavailable in this browser. Use Share → Print to save the receipt.', true); }
-    };
-    overlay.querySelector('.receipt-save-close').focus();
-  } catch (e) { fail(e); }
-  finally { if (button) { button.disabled = false; button.textContent = 'Save / Print PDF'; } }
+    const paymentId = Number(r.payment_id);
+    if (!Number.isSafeInteger(paymentId) || paymentId < 1) throw new Error('This receipt could not be opened. Refresh and try again.');
+    const response = await fetch('/api/me/receipts/' + paymentId + '/pdf', { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/pdf' } });
+    if (!response.ok) {
+      let message = 'We could not generate your PDF. Please try again.';
+      try { const body = await response.json(); message = body.error?.message || message; } catch { /* keep safe fallback */ }
+      throw new Error(message);
+    }
+    const blob = await response.blob();
+    if (blob.type && !blob.type.includes('application/pdf')) throw new Error('The server returned an invalid receipt file. Please try again.');
+    const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+    const filename = 'TrimSlot-' + String(r.receipt_number || 'receipt').replace(/[^A-Za-z0-9_-]/g, '-') + '.pdf';
+    const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isAppleMobile) {
+      if (pdfWindow && !pdfWindow.closed) pdfWindow.location.replace(url);
+      else window.location.assign(url); // Safari's built-in PDF viewer exposes Share → Save to Files.
+    } else {
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; link.style.display = 'none';
+      document.body.appendChild(link); link.click(); link.remove();
+      if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (e) {
+    if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
+    toast(e?.message || 'We could not generate your PDF. Please try again.', true);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Download PDF'; }
+  }
 }
 async function shareReceipt(r, verification) {
   const material = await receiptMaterial(r, verification);
