@@ -1382,13 +1382,36 @@ async function receiptMaterial(r, verification) {
   return { receipt, verification };
 }
 async function openReceiptPdf(r, verification) {
-  const win = window.open('', '_blank');
-  if (!win) { toast('Allow pop-ups to open the receipt, then choose Print / Save as PDF.', true); return; }
-  win.document.open(); win.document.write('<!doctype html><title>Opening TrimSlot receipt…</title><p style="font:16px system-ui;padding:24px">Preparing your receipt…</p>'); win.document.close();
+  const button = $('#receipt-save');
+  if (button) { button.disabled = true; button.textContent = 'Preparing receipt…'; }
   try {
     const material = await receiptMaterial(r, verification);
-    win.document.open(); win.document.write(receiptDocument(material.receipt, material.verification)); win.document.close();
-  } catch (e) { win.close(); fail(e); }
+    const prior = document.getElementById('receipt-save-overlay'); prior?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'receipt-save-overlay';
+    overlay.className = 'receipt-save-overlay';
+    overlay.innerHTML = `<section class="receipt-save-panel" role="dialog" aria-modal="true" aria-label="Save receipt">
+      <header><b>Save your receipt</b><button type="button" class="receipt-save-close" aria-label="Close">×</button></header>
+      <p>Use the print options to save a PDF to your device, or print a paper copy.</p>
+      <div class="receipt-save-actions"><button type="button" class="btn sec" data-receipt-close>Close</button><button type="button" class="btn" data-receipt-print>Print / Save PDF</button></div>
+      <iframe title="Print-ready TrimSlot receipt"></iframe>
+    </section>`;
+    document.body.appendChild(overlay);
+    const frame = overlay.querySelector('iframe');
+    frame.srcdoc = receiptDocument(material.receipt, material.verification);
+    const close = () => overlay.remove();
+    overlay.querySelector('.receipt-save-close').onclick = close;
+    overlay.querySelector('[data-receipt-close]').onclick = close;
+    overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+    overlay.querySelector('[data-receipt-print]').onclick = () => {
+      try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+      catch (e) { toast('Use the Share or Print option in your browser to save this receipt.', true); }
+    };
+    frame.addEventListener('load', () => { overlay.querySelector('[data-receipt-print]').disabled = false; });
+    overlay.querySelector('[data-receipt-print]').disabled = true;
+    overlay.querySelector('.receipt-save-close').focus();
+  } catch (e) { fail(e); }
+  finally { if (button) { button.disabled = false; button.textContent = 'Save / Print PDF'; } }
 }
 async function shareReceipt(r, verification) {
   const material = await receiptMaterial(r, verification);
