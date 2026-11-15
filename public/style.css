@@ -926,13 +926,16 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
 @media(prefers-reduced-motion:reduce){.receipt-list-row{transition:none}}
 
 /* Mobile-safe receipt save sheet: avoids relying on a popup being permitted. */
-.receipt-save-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:12px;background:rgba(5,12,24,.72);padding-bottom:calc(12px + env(safe-area-inset-bottom))}
-.receipt-save-panel{display:flex;width:min(100%,680px);height:min(92vh,920px);flex-direction:column;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);box-shadow:0 18px 60px rgba(0,0,0,.3)}
-.receipt-save-panel>header{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line)}
+/* Receipt save sheet: keep controls fixed and make the long receipt independently scrollable on iOS. */
+.receipt-save-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));background:rgba(5,12,24,.72);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.receipt-save-panel{display:flex;width:min(100%,680px);height:min(92dvh,920px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);min-height:0;flex-direction:column;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);box-shadow:0 18px 60px rgba(0,0,0,.3)}
+.receipt-save-panel>header{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--line)}
 .receipt-save-panel>header>b{font-size:15px}
 .receipt-save-close{width:34px;height:34px;border:0;border-radius:9px;background:var(--bg2);color:var(--ink);font-size:24px;line-height:1;cursor:pointer}
-.receipt-save-panel>p{margin:10px 16px;color:var(--mut);font-size:12px}
-.receipt-save-actions{display:flex;gap:8px;padding:0 16px 12px}
+.receipt-save-panel>p{flex:0 0 auto;margin:10px 16px;color:var(--mut);font-size:12px}
+.receipt-save-actions{display:flex;flex:0 0 auto;gap:8px;padding:0 16px 12px}
 .receipt-save-actions .btn{flex:1;justify-content:center}
-.receipt-save-panel iframe{width:100%;min-height:0;flex:1;border:0;background:#fff}
-@media print{.receipt-save-overlay{position:static;display:block;padding:0;background:#fff}.receipt-save-panel{display:block;width:100%;height:auto;border:0;box-shadow:none}.receipt-save-panel>header,.receipt-save-panel>p,.receipt-save-actions{display:none!important}.receipt-save-panel iframe{height:100vh}}
+.receipt-save-paper{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;background:#fff}
+.receipt-save-paper .rs-sheet{width:100%;min-height:210mm;margin:0 auto;border:0;border-radius:0;box-shadow:none}
+@media(max-width:560px){.receipt-save-overlay{place-items:stretch center;padding-left:12px;padding-right:12px}.receipt-save-panel{width:100%;height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px)}}
+@media print{.receipt-save-overlay{position:static;display:block;padding:0;background:#fff;overflow:visible}.receipt-save-panel{display:block;width:148mm;height:auto;max-height:none;border:0;box-shadow:none;overflow:visible}.receipt-save-panel>header,.receipt-save-panel>p,.receipt-save-actions{display:none!important}.receipt-save-paper{display:block;overflow:visible;height:auto}.receipt-save-paper .rs-sheet{width:148mm;height:210mm;min-height:210mm}}
