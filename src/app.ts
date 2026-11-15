@@ -19,6 +19,7 @@ import {
 import { handleWebhook, initializePayment, initializePlanPurchase, mockMarkPaid, processReference, recordPaymentEvent, bookingIdFromReference, planIdFromReference } from './paystack';
 import { barberPlanOverview, customerWallet, entitlementsFor, getSettings, limitsOf, planSchema, publicPlans, savePlan, settingsView, updateSettings } from './plans';
 import { acceptPlanBalanceRefund, declinePlanBalanceRefund, refundStatesFor, requestPlanBalanceRefund, withdrawPlanBalanceRefund } from './planRefunds';
+import { customerReceiptRows, receiptNumber, receiptProviderLabel, receiptStatus, registerReceiptVerificationRoutes } from './receipts';
 
 /** The wallet/plan list fields for one plan: what is left to refund, what blocks it, and the live request (if any). */
 const refundView = (s: { balance_kobo: number; upcoming: number; refund_request: any | null } | undefined) => ({
@@ -172,19 +173,9 @@ async function decorate(db: Db, b: BookingRow, opts: { forBarber?: boolean; queu
 }
 
 /** A receipt is available only for the customer's own booking detail, and only for a successful primary charge. */
-function receiptStatus(paymentStatus: unknown, refundStatus: unknown) {
-  const payment = String(paymentStatus || ''), refund = String(refundStatus || '');
-  if (payment === 'REFUNDED' || refund === 'REFUNDED') return 'Refunded';
-  if (payment === 'REFUND_DECLINED' || refund === 'REJECTED') return 'Refund declined';
-  if (payment === 'REFUND_PENDING' || refund === 'PENDING_APPROVAL') return 'Refund pending review';
-  if (refund === 'NEEDS_REFUND' || refund === 'REFUND_REQUESTED') return 'Refund processing';
-  if (payment === 'CREDITED') return 'Session credit issued';
-  if (payment === 'CREDIT_PENDING') return 'Session credit pending review';
-  return payment === 'PAID' ? 'Paid' : 'Payment received';
-}
 async function customerReceipt(db: Db, b: BookingRow, booking: any) {
   if (b.payment_option !== 'ONLINE') return undefined;
-  const p = await db.maybeOne<any>(`SELECT reference, amount_kobo, refund_status
+  const p = await db.maybeOne<any>(`SELECT id, reference, amount_kobo, refund_status, provider, verified_at, created_at
     FROM payments
     WHERE booking_id=$1 AND status='SUCCESS'
       AND COALESCE(refund_reason,'') NOT LIKE 'Duplicate payment%'
@@ -192,10 +183,12 @@ async function customerReceipt(db: Db, b: BookingRow, booking: any) {
       CASE WHEN refund_status IS NULL THEN 0 ELSE 1 END, id DESC LIMIT 1`, [b.id]);
   if (!p) return undefined;
   const status = receiptStatus(b.payment_status, p.refund_status);
+  const paidAt = String(p.verified_at || (b as any).paid_at || p.created_at);
   return {
+    type: 'BOOKING', payment_id: Number(p.id), receipt_number: receiptNumber('BOOKING', Number(p.id), paidAt), paid_at: paidAt,
     barber: booking.barber_name || booking.shop_name || 'Barber', shop: booking.shop_name || null,
     service: booking.service_name, appointment_date: booking.date, appointment_time: booking.start_label,
-    amount_kobo: Number(p.amount_kobo), status, reference: p.reference,
+    amount_kobo: Number(p.amount_kobo), status, reference: p.reference, payment_provider: receiptProviderLabel(p.provider),
   };
 }
 
@@ -583,37 +576,11 @@ export function createApp(db: Db) {
     res.json({ ...w, plans: w.plans.map((p: any) => ({ ...p, ...refundView(st.get(p.id)) })) });
   }));
   api.get('/me/receipts', cust, wrap(async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    const rows = await db.many<any>(`SELECT * FROM (
-      SELECT 'BOOKING'::text AS receipt_type, k.id AS booking_id, NULL::integer AS plan_purchase_id,
-        k.date::text AS appointment_date, k.start_min, k.service_name AS item_name, NULL::integer AS sessions_total,
-        NULL::integer AS validity_days, b.shop_name, b.location AS barber_location, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email, cu.phone AS customer_phone,
-        p.reference, p.amount_kobo, p.refund_status, k.payment_status, p.created_at
-      FROM payments p JOIN bookings k ON k.id=p.booking_id
-        JOIN barbers b ON b.id=k.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=k.customer_id
-      WHERE k.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
-      UNION ALL
-      SELECT 'PLAN'::text AS receipt_type, NULL::integer AS booking_id, pp.id AS plan_purchase_id,
-        NULL::text AS appointment_date, NULL::integer AS start_min, pp.plan_name AS item_name, pp.sessions_total,
-        pp.validity_days, b.shop_name, b.location AS barber_location, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email, cu.phone AS customer_phone,
-        p.reference, p.amount_kobo, p.refund_status, 'PAID'::text AS payment_status, p.created_at
-      FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id
-        JOIN barbers b ON b.id=pp.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=pp.customer_id
-      WHERE pp.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
-    ) receipts ORDER BY created_at DESC, COALESCE(booking_id, plan_purchase_id) DESC LIMIT 100`, [req.user!.id]);
-    res.json({ receipts: rows.map((r) => ({
-      type: r.receipt_type, booking_id: r.booking_id == null ? null : Number(r.booking_id),
-      plan_purchase_id: r.plan_purchase_id == null ? null : Number(r.plan_purchase_id),
-      barber: r.barber_name || r.shop_name || 'Barber', shop: r.shop_name,
-      customer_name: r.customer_name, customer_email: r.customer_email, customer_phone: r.customer_phone, location: r.barber_location,
-      item: r.item_name, service: r.receipt_type === 'BOOKING' ? r.item_name : null,
-      appointment_date: r.appointment_date, appointment_time: r.start_min == null ? null : fmtTime12(Number(r.start_min)),
-      sessions_total: r.sessions_total == null ? null : Number(r.sessions_total),
-      validity_days: r.validity_days == null ? null : Number(r.validity_days),
-      amount_kobo: Number(r.amount_kobo), status: receiptStatus(r.payment_status, r.refund_status),
-      reference: r.reference, created_at: r.created_at,
-    })) });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.json({ receipts: await customerReceiptRows(db, req.user!.id) });
   }));
+  registerReceiptVerificationRoutes(api, db, wrap, { receiptVerify: limits.receiptVerify });
   // Balance refund for a part-used plan: the customer and the barber both have to agree; then an admin authorizes it.
   api.post('/plans/:id/refund-request', cust, wrap(async (req, res) => res.status(201).json(await requestPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
   api.post('/plan-refunds/:id/accept', cust, wrap(async (req, res) => res.json(await acceptPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));

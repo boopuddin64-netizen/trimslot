@@ -48,11 +48,13 @@ for (const w of [360, 1280]) {
   let { ctx, p } = await open(a, w, `#/booking/${paid.id}?pay=processed`); let tx = await text(p);
   ok(/Your booking is confirmed/.test(tx), w + ' paid booking: confirmed banner');
   const receiptTextOnPage = await p.locator('.receipt').innerText();
-  ok(await p.locator('.receipt').count() === 1 && ['PAYMENT RECEIPT', 'Barber', 'Appointment', 'Amount paid', 'Payment reference', 'Paid', pp.reference].every((x) => receiptTextOnPage.includes(x)), w + ' receipt shows every accepted field', receiptTextOnPage);
-  await p.locator('#shareReceipt').click();
-  ok(await p.evaluate(() => window.__receiptShare?.title === 'TrimSlot payment receipt' && /Payment reference:/.test(window.__receiptShare.text)), w + ' receipt share action passes receipt details');
-  const [download] = await Promise.all([p.waitForEvent('download'), p.locator('#saveReceipt').click()]);
-  ok(download.suggestedFilename().startsWith('trimslot-receipt-'), w + ' receipt save action downloads a receipt file');
+  ok(await p.locator('.receipt').count() === 1 && ['PAYMENT RECEIPT', 'Receipt date', 'Barber', 'Appointment', 'Amount received', 'Transaction reference', 'Paid', pp.reference, receipt.receipt_number].every((x) => receiptTextOnPage.includes(x)), w + ' receipt shows payment date, identity, amount, status and reference', receiptTextOnPage);
+  await p.locator('#shareReceipt').click(); await p.waitForFunction(() => !!window.__receiptShare);
+  const sharedPayload = await p.evaluate(() => window.__receiptShare);
+  ok(sharedPayload?.title === 'TrimSlot payment receipt' && /#\/receipt-verify\//.test(sharedPayload.url) && !sharedPayload.text.includes(pp.reference), w + ' share action exposes only the public verification link, not the transaction reference');
+  const [printTab] = await Promise.all([ctx.waitForEvent('page'), p.locator('#saveReceipt').click()]); await printTab.waitForSelector('.rs-sheet');
+  const printCss = await printTab.locator('style').innerText();
+  ok(printCss.replace(/\s/g, '').includes('@page{size:A5portrait'), w + ' receipt save action opens an A5 portrait print / PDF view'); await printTab.close();
   await ctx.close();
   ({ ctx, p } = await open(a, w, `#/booking/${paid.id}?pay=duplicate_refund`)); tx = await text(p);
   ok(/paid twice/.test(tx) && /confirmed/.test(tx) && !/not confirmed/.test(tx), w + ' double payment: its own text, still confirmed', tx.slice(0, 160)); await ctx.close();
