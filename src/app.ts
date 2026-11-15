@@ -596,7 +596,7 @@ export function createApp(db: Db) {
       SELECT 'PLAN'::text AS receipt_type, NULL::integer AS booking_id, pp.id AS plan_purchase_id,
         NULL::text AS appointment_date, NULL::integer AS start_min, pp.plan_name AS item_name, pp.sessions_total,
         pp.validity_days, b.shop_name, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email,
-        p.reference, p.amount_kobo, p.refund_status, pp.status AS payment_status, p.created_at
+        p.reference, p.amount_kobo, p.refund_status, 'PAID'::text AS payment_status, p.created_at
       FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id
         JOIN barbers b ON b.id=pp.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=pp.customer_id
       WHERE pp.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
