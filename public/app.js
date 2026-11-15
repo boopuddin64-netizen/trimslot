@@ -307,6 +307,7 @@ function authPage(mode, roleQ) {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     app.classList.add('auth-takeoff');
     await new Promise((resolve) => setTimeout(resolve, 700));
+    app.classList.remove('auth-takeoff');
   };
   const draw = (err) => {
     const signup = mode === 'signup';
