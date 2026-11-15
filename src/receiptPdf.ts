@@ -8,8 +8,8 @@ type Receipt = {
   sessions_total?: number | null; validity_days?: number | null; expires_at?: string | null;
 };
 const PAGE_W = 420, PAGE_H = 595;
-const clean = (value: unknown) => String(value ?? '—').replace(/₦/g, 'NGN ').replace(/[^\x20-\x7E]/g, '?');
-const pdfText = (value: unknown) => clean(value).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+const clean = (value: unknown) => Array.from(String(value ?? '—').replace('₦', 'NGN ')).map(ch => { const n = ch.charCodeAt(0); return n >= 32 && n <= 126 ? ch : '?'; }).join('');
+const pdfText = (value: unknown) => clean(value).split(String.fromCharCode(92)).join(String.fromCharCode(92, 92)).split('(').join(String.fromCharCode(92) + '(').split(')').join(String.fromCharCode(92) + ')');
 const money = (kobo: number) => 'NGN ' + (Number(kobo || 0) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Dependency-free A5 PDF renderer. QR modules are native vector squares. */
