@@ -379,7 +379,23 @@ async function verifyEmail(next) {
   const u = state.user;
   const target = next && /^#\/[a-z]/.test(next) && !/^#\/(login|signup|verify-email)/.test(next) ? next : '#/';
   if (u.email_verified) { toast('Your email is already checked'); return go(target); }
-  let sent = false, masked = '', msg = '';
+  let sent = false, masked = '', msg = '', codeValue = '', verifying = false;
+  const verifyCode = async () => {
+    if (verifying || !/^[0-9]{6}$/.test(codeValue)) return;
+    verifying = true; msg = '';
+    const input = $('#vf [name=code]'), button = $('#vf button[type=submit]');
+    if (input) input.disabled = true;
+    if (button) { button.disabled = true; button.textContent = 'Checking…'; }
+    try {
+      const r = await api('/auth/email/verify', { method: 'POST', body: { code: codeValue } });
+      state.user = { ...state.user, ...r.user };
+      toast('Your email is checked'); go(target);
+    } catch (e) {
+      verifying = false; msg = e.message || 'That code could not be verified.';
+      draw();
+      const retry = $('#vf [name=code]'); if (retry) { retry.focus(); retry.select(); }
+    }
+  };
   const draw = () => {
     const devHint = state.cfg.email_dev_code ? `<div class="info small">Test mode: the code is <b>123456</b>.</div>` : '';
     const intro = u.role === 'barber' ? 'Verify your email once before your shop goes live. You will still sign in with your password.' : 'We check your email once, before your first booking. It keeps your account safe.';
@@ -389,14 +405,28 @@ async function verifyEmail(next) {
       return;
     }
     app.innerHTML = `<h1>Check your email</h1><p class="muted">${intro}</p>${devHint}
-      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required style="font-size:22px;letter-spacing:6px;text-align:center">${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Check my code</button></div></form>
+      ${sent ? `<form id="vf"><p>We sent a 6-digit code to <b>${esc(masked)}</b>. It works for 10 minutes.</p><label>Your code</label><input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" pattern="[0-9]{6}" maxlength="6" placeholder="123456" value="${esc(codeValue)}" required aria-describedby="code-help" style="font-size:22px;letter-spacing:6px;text-align:center"><p id="code-help" class="small muted" aria-live="polite">${verifying ? 'Checking your code…' : 'Enter or autofill the code. We will verify it automatically.'}</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit" ${codeValue.length === 6 ? '' : 'disabled'}>Verify code</button></div></form>
         <p class="center small"><a href="#" id="resend">Send a new code</a> · <a href="#" id="chg">Use a different email</a></p>`
       : `<div class="card"><p style="margin-top:0">We will send a 6-digit code to <b>${esc(u.email)}</b>.</p>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns"><button class="btn" id="sendcode">Send me a code</button></div></div><p class="center small"><a href="#" id="chg">Use a different email</a></p>`}
       <p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
     const sc = $('#sendcode'); if (sc) sc.onclick = () => { sc.disabled = true; send(); };
-    const rs = $('#resend'); if (rs) rs.onclick = (ev) => { ev.preventDefault(); send(); };
-    const ch = $('#chg'); if (ch) ch.onclick = (ev) => { ev.preventDefault(); u.email = null; sent = false; msg = ''; draw(); };
-    const vf = $('#vf'); if (vf) { vf.querySelector('input').focus(); vf.onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/auth/email/verify', { method: 'POST', body: { code: new FormData(ev.target).get('code') } }); state.user = { ...state.user, ...r.user }; toast('Your email is checked'); go(target); } catch (e) { msg = e.message; draw(); } }; }
+    const rs = $('#resend'); if (rs) rs.onclick = (ev) => { ev.preventDefault(); codeValue = ''; send(); };
+    const ch = $('#chg'); if (ch) ch.onclick = (ev) => { ev.preventDefault(); u.email = null; sent = false; msg = ''; codeValue = ''; draw(); };
+    const vf = $('#vf');
+    if (vf) {
+      const input = vf.querySelector('[name=code]');
+      const acceptInput = () => {
+        codeValue = input.value.replace(/[^0-9]/g, '').slice(0, 6);
+        if (input.value !== codeValue) input.value = codeValue;
+        const button = vf.querySelector('button[type=submit]');
+        if (button) button.disabled = codeValue.length !== 6;
+        if (codeValue.length === 6) verifyCode();
+      };
+      input.addEventListener('input', acceptInput);
+      input.addEventListener('change', acceptInput);
+      input.focus();
+      vf.onsubmit = async (ev) => { ev.preventDefault(); acceptInput(); await verifyCode(); };
+    }
   };
   const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = e.message; } draw(); };
   draw();
