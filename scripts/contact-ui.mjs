@@ -41,6 +41,22 @@ if (EV) {
   await p.screenshot({ path: 'screenshots/contact/after-signup-paused.png' }); await ctx.close();
 }
 
+// 2) Login feedback: invalid credentials shake/vibrate; valid credentials trigger the takeoff transition.
+{
+  const { ctx, p } = await mk();
+  await p.goto('/#/login'); await p.waitForSelector('[name=identifier]');
+  await p.fill('[name=identifier]', 'mike@trimslot.demo'); await p.fill('[name=password]', 'WrongPassword123!');
+  await p.click('#f button[type=submit]');
+  await p.waitForFunction(() => document.querySelector('#app')?.classList.contains('auth-shake'), null, { timeout: 8000 });
+  ok(await p.locator('#app.auth-shake').count() === 1, 'invalid login triggers shake feedback');
+  await p.fill('[name=password]', 'Barber123!');
+  await p.click('#f button[type=submit]');
+  await p.waitForFunction(() => document.querySelector('#app')?.classList.contains('auth-takeoff'), null, { timeout: 8000 });
+  ok(await p.locator('#app.auth-takeoff').count() === 1, 'valid login triggers takeoff transition');
+  await p.waitForFunction(() => !location.hash.includes('login'), null, { timeout: 8000 });
+  await ctx.close();
+}
+
 // 2) Chidi: paid upcoming booking -> contact box + Change time; locked paid booking -> urgent box + help
 const { ctx, p } = await mk();
 await login(p, 'chidi@trimslot.demo', 'Customer123!');
