@@ -702,6 +702,46 @@ function wireAccount(after) {
 const signOutRow = () => `<button class="lrow danger" id="signout"><span class="ico">${ic('logout')}</span><span class="grow">Sign out</span></button>`;
 const wireSignOut = () => { const b = $('#signout'); if (b) b.onclick = signOut; };
 
+
+/* Accessible, compact accordion sections shared by customer and barber profiles. */
+function wireProfileAccordions() {
+  const sections = [...app.querySelectorAll('.profile-section')];
+  sections.forEach((section, index) => {
+    if (section.dataset.accordionReady === 'true') return;
+    const heading = section.querySelector(':scope > h2');
+    if (!heading) return;
+    section.dataset.accordionReady = 'true';
+    const content = document.createElement('div');
+    content.className = 'profile-accordion-content';
+    content.id = section.id + '-content';
+    while (heading.nextSibling) content.appendChild(heading.nextSibling);
+    const trigger = document.createElement('div');
+    trigger.className = 'profile-accordion-trigger';
+    trigger.setAttribute('role', 'button');
+    trigger.setAttribute('tabindex', '0');
+    trigger.setAttribute('aria-controls', content.id);
+    trigger.setAttribute('aria-expanded', String(index === 0));
+    heading.className = 'profile-accordion-title';
+    trigger.append(heading);
+    const chevron = document.createElement('span');
+    chevron.className = 'profile-accordion-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.innerHTML = ic('chev');
+    trigger.append(chevron);
+    section.append(trigger, content);
+    section.classList.toggle('is-open', index === 0);
+    const toggle = () => {
+      const open = !section.classList.contains('is-open');
+      section.classList.toggle('is-open', open);
+      trigger.setAttribute('aria-expanded', String(open));
+    };
+    trigger.addEventListener('click', toggle);
+    trigger.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); }
+    });
+  });
+}
+
 /* ---------- customer: profile ---------- */
 async function profile(editing) {
   const [w, bk] = await Promise.all([api('/me/wallet'), api('/bookings')]);
@@ -748,6 +788,7 @@ async function profile(editing) {
         <a class="lrow" href="/terms.html" target="_blank" rel="noopener"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Terms of Service</span><span class="end">${ic('right', 'sm')}</span></a></div>
       <div id="profile-data-slot"></div><div class="list">${signOutRow()}</div>
     </section></div>`;
+  wireProfileAccordions();
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
   wireAccount(() => profile(true)); wireTheme(); Notify.wirePrefs(); wireSignOut();
   $('#password-toggle').onclick = () => { const box = $('#password-box'), open = box.classList.toggle('hidden') === false; $('#password-toggle').setAttribute('aria-expanded', String(open)); };

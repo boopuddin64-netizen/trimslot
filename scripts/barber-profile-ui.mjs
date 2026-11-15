@@ -49,6 +49,12 @@ async function runWidth(width, capture = false) {
   await page.waitForSelector('#profile-data-slot #exp', { timeout: 12000 });
   await page.waitForFunction(() => document.querySelectorAll('.profile-section').length === 6, null, { timeout: 8000 });
   const headings = await page.locator('.profile-section h2').allTextContents();
+  assert.equal(await page.locator('.profile-accordion-trigger').count(), 6, 'all barber profile groups use accordions');
+  assert.equal(await page.locator('#barber-profile-status .profile-accordion-trigger').getAttribute('aria-expanded'), 'true', 'first barber group starts open');
+  await page.locator('#barber-profile-security .profile-accordion-trigger').click();
+  assert.equal(await page.locator('#barber-profile-security .profile-accordion-trigger').getAttribute('aria-expanded'), 'true', 'barber accordion opens');
+  await page.locator('#barber-profile-security .profile-accordion-trigger').press('Space');
+  assert.equal(await page.locator('#barber-profile-security .profile-accordion-trigger').getAttribute('aria-expanded'), 'false', 'barber accordion supports keyboard collapse');
   assert.deepEqual(headings, expected, `${width}px profile has exactly the six agreed sections`);
   assert.equal(await page.locator('#barber-profile-contact .badge').first().textContent(), 'Not verified');
   assert.equal(await page.locator('#barber-profile-contact a[href^="#/verify-email"]').count(), 1, 'email verification action is visible');
