@@ -261,6 +261,37 @@ function landing() {
     ${state.cfg.demo ? '<div class="card small"><b>Demo logins</b><br>Customer: <code>chidi@trimslot.demo</code> / <code>Customer123!</code><br>Barber: <code>mike@trimslot.demo</code> / <code>Barber123!</code></div>' : ''}
     <p class="center"><a href="#/login">I already have an account</a></p>`;
 }
+/* Login feedback: tactile error + a short, decorative take-off on successful sign-in. */
+function wrongPasswordFeedback() {
+  const form = $('#f'), field = form && form.querySelector('[name=password]');
+  if (!form || !field) return;
+  form.classList.remove('login-error');
+  void form.offsetWidth;
+  form.classList.add('login-error');
+  field.setAttribute('aria-invalid', 'true');
+  if (window.haptics && typeof window.haptics.error === 'function') window.haptics.error();
+  window.setTimeout(() => { form.classList.remove('login-error'); field.removeAttribute('aria-invalid'); }, 650);
+}
+function successTakeoff() {
+  return new Promise((resolve) => {
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (window.haptics && typeof window.haptics.success === 'function') window.haptics.success();
+    if (reduced) { resolve(); return; }
+    const stage = document.createElement('div');
+    stage.className = 'login-takeoff';
+    stage.setAttribute('role', 'status');
+    stage.setAttribute('aria-label', 'Login successful');
+    stage.innerHTML = '<div class="takeoff-scene"><span class="takeoff-stars"></span><span class="takeoff-plane" aria-hidden="true">✈</span><span class="takeoff-trail" aria-hidden="true"></span><span class="takeoff-copy">You’re cleared for take-off</span></div>';
+    document.body.appendChild(stage);
+    document.body.classList.add('login-taking-off');
+    window.setTimeout(() => {
+      stage.remove();
+      document.body.classList.remove('login-taking-off');
+      resolve();
+    }, 760);
+  });
+}
+
 let passwordFieldId = 0;
 function wirePasswordVisibility(root = app) {
   root.querySelectorAll('input[type="password"]').forEach((input) => {
@@ -354,8 +385,8 @@ function authPage(mode, roleQ) {
         if (!signup) await successTakeoff();
         go(dest);
       } catch (e) {
-        if (!signup && /invalid|incorrect|password|credentials|not found|login/i.test(String(e.message || ''))) wrongPasswordFeedback();
         saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message);
+        if (!signup && /invalid|incorrect|password|credentials|not found|login/i.test(String(e.message || ''))) wrongPasswordFeedback();
       }
     };
   };
