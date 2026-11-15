@@ -7,7 +7,7 @@ import { config } from './config';
 import { AppError } from './errors';
 import { logger } from './logger';
 
-export interface Mail { to: string; subject: string; text: string }
+export interface Mail { to: string; subject: string; text: string; html?: string }
 export type MailTransport = (m: Mail) => Promise<void>;
 
 let override: MailTransport | null = null;
@@ -23,7 +23,7 @@ async function viaResend(m: Mail) {
   try {
     r = await fetch('https://api.resend.com/emails', {
       method: 'POST', headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [m.to], subject: m.subject, text: m.text }), signal: AbortSignal.timeout(8000),
+      body: JSON.stringify({ from, to: [m.to], subject: m.subject, text: m.text, ...(m.html ? { html: m.html } : {}) }), signal: AbortSignal.timeout(8000),
     });
   } catch { throw new AppError(503, 'EMAIL_FAILED', 'We could not send the email. Try again in a minute.'); }
   if (!r.ok) { logger.warn('mail_send_failed', { status: r.status }); throw new AppError(503, 'EMAIL_FAILED', 'We could not send the email. Try again in a minute.'); }
