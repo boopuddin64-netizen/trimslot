@@ -284,6 +284,30 @@ function wirePasswordVisibility(root = app) {
 }
 function authPage(mode, roleQ) {
   let role = roleQ === 'barber' ? 'barber' : 'customer', saved = null;
+  if (!document.getElementById('auth-feedback-motion')) {
+    const style = document.createElement('style'); style.id = 'auth-feedback-motion';
+    style.textContent = `
+      @keyframes trimslot-auth-shake { 0%,100%{transform:translateX(0)} 15%,55%{transform:translateX(-9px)} 35%,75%{transform:translateX(9px)} 90%{transform:translateX(-4px)} }
+      @keyframes trimslot-auth-takeoff { 0%{transform:translateY(0) scale(1);opacity:1} 18%{transform:translateY(8px) scale(.985);opacity:1} 100%{transform:translateY(-115vh) scale(.94);opacity:0} }
+      #app.auth-shake { animation:trimslot-auth-shake .42s ease-in-out; }
+      #app.auth-takeoff { transform-origin:50% 100%; animation:trimslot-auth-takeoff .68s cubic-bezier(.2,.75,.25,1) forwards; pointer-events:none; }
+      @media (prefers-reduced-motion: reduce) { #app.auth-shake,#app.auth-takeoff { animation:none !important; } }
+    `;
+    document.head.appendChild(style);
+  }
+  const clearAuthMotion = () => { app.classList.remove('auth-shake', 'auth-takeoff'); };
+  const wrongPasswordFeedback = () => {
+    clearAuthMotion(); void app.offsetWidth; app.classList.add('auth-shake');
+    if (navigator.vibrate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      try { navigator.vibrate([75, 35, 75]); } catch { /* vibration is optional */ }
+    }
+  };
+  const successTakeoff = async () => {
+    clearAuthMotion();
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    app.classList.add('auth-takeoff');
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  };
   const draw = (err) => {
     const signup = mode === 'signup';
     app.innerHTML = `<h1>${signup ? 'Create your account' : 'Welcome back'}</h1><p class="muted" style="margin:0 0 6px">${signup ? 'It takes less than a minute.' : 'Log in to book a cut or run your shop.'}</p>
@@ -326,8 +350,12 @@ function authPage(mode, roleQ) {
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
         if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
+        if (!signup) await successTakeoff();
         go(dest);
-      } catch (e) { saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message); }
+      } catch (e) {
+        if (!signup && /invalid|incorrect|password|credentials|not found|login/i.test(String(e.message || ''))) wrongPasswordFeedback();
+        saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message);
+      }
     };
   };
   draw();
