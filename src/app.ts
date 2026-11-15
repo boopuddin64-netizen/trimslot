@@ -587,7 +587,7 @@ export function createApp(db: Db) {
     const rows = await db.many<any>(`SELECT * FROM (
       SELECT 'BOOKING'::text AS receipt_type, k.id AS booking_id, NULL::integer AS plan_purchase_id,
         k.date::text AS appointment_date, k.start_min, k.service_name AS item_name, NULL::integer AS sessions_total,
-        NULL::integer AS validity_days, b.shop_name, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email,
+        NULL::integer AS validity_days, b.shop_name, b.location AS barber_location, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email, cu.phone AS customer_phone,
         p.reference, p.amount_kobo, p.refund_status, k.payment_status, p.created_at
       FROM payments p JOIN bookings k ON k.id=p.booking_id
         JOIN barbers b ON b.id=k.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=k.customer_id
@@ -595,7 +595,7 @@ export function createApp(db: Db) {
       UNION ALL
       SELECT 'PLAN'::text AS receipt_type, NULL::integer AS booking_id, pp.id AS plan_purchase_id,
         NULL::text AS appointment_date, NULL::integer AS start_min, pp.plan_name AS item_name, pp.sessions_total,
-        pp.validity_days, b.shop_name, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email,
+        pp.validity_days, b.shop_name, b.location AS barber_location, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email, cu.phone AS customer_phone,
         p.reference, p.amount_kobo, p.refund_status, 'PAID'::text AS payment_status, p.created_at
       FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id
         JOIN barbers b ON b.id=pp.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=pp.customer_id
@@ -605,7 +605,7 @@ export function createApp(db: Db) {
       type: r.receipt_type, booking_id: r.booking_id == null ? null : Number(r.booking_id),
       plan_purchase_id: r.plan_purchase_id == null ? null : Number(r.plan_purchase_id),
       barber: r.barber_name || r.shop_name || 'Barber', shop: r.shop_name,
-      customer_name: r.customer_name, customer_email: r.customer_email,
+      customer_name: r.customer_name, customer_email: r.customer_email, customer_phone: r.customer_phone, location: r.barber_location,
       item: r.item_name, service: r.receipt_type === 'BOOKING' ? r.item_name : null,
       appointment_date: r.appointment_date, appointment_time: r.start_min == null ? null : fmtTime12(Number(r.start_min)),
       sessions_total: r.sessions_total == null ? null : Number(r.sessions_total),
