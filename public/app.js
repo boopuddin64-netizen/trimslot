@@ -1334,20 +1334,20 @@ function receiptDocument(r) {
   <style>
   *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#172033;font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:28px 14px}
   .sheet{max-width:720px;margin:0 auto;background:#fff;border:1px solid #dce3ee;border-radius:18px;overflow:hidden;box-shadow:0 12px 36px rgba(20,35,60,.09)}
-  .top{padding:30px 34px;background:#0b1426;color:#fff;display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
-  .brand{font-size:24px;font-weight:800;letter-spacing:-.8px}.brand span{color:#7190f5}.eyebrow{font-size:11px;letter-spacing:1.7px;text-transform:uppercase;color:#aebbd0;font-weight:700;margin-top:8px}
+  .top{padding:30px 34px;background:linear-gradient(125deg,#0a1730 0%,#142b50 100%);color:#fff;display:flex;justify-content:space-between;gap:20px;align-items:center}
+  .brand{display:flex;align-items:center;gap:11px;font-size:25px;font-weight:850;letter-spacing:-1px}.brand span{color:#73a6ff}.brand-mark{width:42px;height:42px;flex:none;border-radius:12px;background:#3358d4;display:grid;place-items:center}.brand-mark svg{width:25px;height:25px}.brand-copy{display:flex;flex-direction:column;gap:3px}.eyebrow{font-size:10px;letter-spacing:1.8px;text-transform:uppercase;color:#aebbd0;font-weight:750}
   .status{border-radius:99px;padding:7px 12px;background:${r.status === 'Paid' ? '#d9f6e8' : '#fff0d2'};color:${r.status === 'Paid' ? '#146b49' : '#8a5a10'};font-size:11px;font-weight:800;text-transform:uppercase;white-space:nowrap}
   .body{padding:30px 34px}.heading{font-size:25px;line-height:1.2;margin:0 0 6px;letter-spacing:-.5px}.muted{color:#68758a}.intro{margin:0 0 26px;color:#68758a}
-  .amount{padding:20px 22px;border:1px solid #dce3ee;border-radius:14px;background:#f7f9fc;margin:0 0 24px}.amount small{display:block;color:#68758a;font-weight:600}.amount strong{font-size:30px;letter-spacing:-.8px;display:block;margin-top:3px}
-  .section{font-size:11px;letter-spacing:1.2px;color:#68758a;font-weight:800;text-transform:uppercase;margin:24px 0 10px}
+  .amount{padding:22px 24px;border:1px solid #d9e5f6;border-left:4px solid #3358d4;border-radius:12px;background:#f5f8fd;margin:0 0 24px}.amount small{display:block;color:#68758a;font-weight:600}.amount strong{font-size:30px;letter-spacing:-.8px;display:block;margin-top:3px}
+  .section{font-size:10px;letter-spacing:1.5px;color:#3358a8;font-weight:850;text-transform:uppercase;margin:25px 0 10px}
   .rows{border:1px solid #e1e7f0;border-radius:12px;overflow:hidden}.line{display:flex;justify-content:space-between;gap:18px;padding:13px 15px;border-bottom:1px solid #e8edf4}.line:last-child{border:0}.line span{color:#68758a}.line b{text-align:right;overflow-wrap:anywhere}
   .reference{padding:15px;border-radius:12px;background:#f7f9fc;border:1px dashed #c8d2e1;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
-  .footer{padding:22px 34px;background:#f7f9fc;border-top:1px solid #e1e7f0;color:#68758a;font-size:12px}.footer b{color:#172033}
+  .footer{padding:24px 34px;background:#f6f8fc;border-top:1px solid #e1e7f0;color:#68758a;font-size:12px}.footer b{color:#172033}
   .actions{max-width:720px;margin:14px auto 0;display:flex;gap:10px;justify-content:flex-end}.actions button{border:0;border-radius:9px;padding:12px 18px;font:inherit;font-weight:700;background:#536fe0;color:white}.actions button.secondary{background:#fff;color:#172033;border:1px solid #dce3ee}
   @media(max-width:520px){body{padding:0;background:#fff}.sheet{border:0;border-radius:0;box-shadow:none}.top{padding:24px 20px}.body{padding:24px 20px}.footer{padding:20px}.heading{font-size:22px}.line{padding:12px}.amount strong{font-size:27px}}
   @media print{body{padding:0;background:#fff}.sheet{max-width:none;border:0;border-radius:0;box-shadow:none}.actions{display:none}.top,.amount,.footer,.status{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:14mm}}
   </style></head><body><main class="sheet">
-    <header class="top"><div><div class="brand">Trim<span>Slot</span></div><div class="eyebrow">Official payment receipt</div></div><span class="status">${esc(r.status)}</span></header>
+    <header class="top"><div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 100 100" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="30" r="10"/><circle cx="32" cy="70" r="10"/><path d="M78 20 40 58M62 62 78 78M40 42 52 54"/></svg></span><span class="brand-copy"><span>TrimSlot</span><span class="eyebrow">Official payment receipt</span></span></div><span class="status">${esc(r.status)}</span></header>
     <section class="body"><h1 class="heading">${isPlan ? 'Plan purchase receipt' : 'Booking payment receipt'}</h1>
     <p class="intro">Your payment has been recorded by TrimSlot. Keep this receipt for your records.</p>
     <div class="amount"><small>Total paid</small><strong>${naira(r.amount_kobo)}</strong></div>
