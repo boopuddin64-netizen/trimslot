@@ -879,6 +879,7 @@ async function barberProfile() {
         <a class="lrow" href="/terms.html" target="_blank" rel="noopener"><span class="ico">${ic('list', 'sm')}</span><span class="grow">Terms of Service</span><span class="end">${ic('right', 'sm')}</span></a></div>
       <div id="profile-data-slot"></div><div class="list">${signOutRow()}</div>
     </section></div>`;
+  wireProfileAccordions();
   $('#editbtn').onclick = () => $('#editbox').classList.toggle('hidden');
   if (shr) wireShareCard($('#profile-sharecard'), shr.url, p.shop_name);
   wireAccount(() => barberProfile()); wireTheme(); Notify.wirePrefs(); wireSignOut();
