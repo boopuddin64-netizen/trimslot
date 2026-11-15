@@ -1319,46 +1319,76 @@ function payBanner(b, payResult) {
   if (payResult === 'checked') return b.status === 'CANCELLED' ? '<div class="info">This booking is closed. If you were charged, we will confirm or refund you by ourselves. Use “Report a problem” if you do not hear from us.</div>' : '<div class="info">Paystack has not told us yet. If you were charged, your booking confirms by itself in a few minutes, or we refund you. Tap “Check payment” to try again.</div>';
   return '';
 }
-function receiptText(r) {
-  return ['TrimSlot payment receipt', `Barber: ${r.barber}${r.shop ? ` (${r.shop})` : ''}`, `Service: ${r.service}`, `Appointment: ${dateLabel(r.appointment_date)}, ${r.appointment_time}`, `Amount: ${naira(r.amount_kobo)}`, `Status: ${r.status}`, `Payment reference: ${r.reference}`].join('\n');
+function receiptDate(r) {
+  const value = r.type === 'BOOKING' ? r.appointment_date : r.created_at;
+  if (!value) return '—';
+  if (r.type === 'BOOKING') return dateLabel(value);
+  return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value));
 }
-function saveReceiptFile(r) {
-  const blob = new Blob([receiptText(r)], { type: 'text/plain;charset=utf-8' });
+function receiptDocument(r) {
+  const isPlan = r.type === 'PLAN', item = isPlan ? r.item : r.service;
+  const detailRows = isPlan
+    ? [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Sessions included', String(r.sessions_total)], ['Validity', String(r.validity_days) + ' days'], ['Purchase date', receiptDate(r)]]
+    : [['Barber / shop', r.barber + (r.shop && r.shop !== r.barber ? ' · ' + r.shop : '')], ['Appointment date', receiptDate(r)], ['Appointment time', r.appointment_time || '—']];
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TrimSlot ${isPlan ? 'Plan Purchase' : 'Booking'} Receipt</title>
+  <style>
+  *{box-sizing:border-box}body{margin:0;background:#eef2f7;color:#172033;font:15px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:28px 14px}
+  .sheet{max-width:720px;margin:0 auto;background:#fff;border:1px solid #dce3ee;border-radius:18px;overflow:hidden;box-shadow:0 12px 36px rgba(20,35,60,.09)}
+  .top{padding:30px 34px;background:#0b1426;color:#fff;display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
+  .brand{font-size:24px;font-weight:800;letter-spacing:-.8px}.brand span{color:#7190f5}.eyebrow{font-size:11px;letter-spacing:1.7px;text-transform:uppercase;color:#aebbd0;font-weight:700;margin-top:8px}
+  .status{border-radius:99px;padding:7px 12px;background:${r.status === 'Paid' ? '#d9f6e8' : '#fff0d2'};color:${r.status === 'Paid' ? '#146b49' : '#8a5a10'};font-size:11px;font-weight:800;text-transform:uppercase;white-space:nowrap}
+  .body{padding:30px 34px}.heading{font-size:25px;line-height:1.2;margin:0 0 6px;letter-spacing:-.5px}.muted{color:#68758a}.intro{margin:0 0 26px;color:#68758a}
+  .amount{padding:20px 22px;border:1px solid #dce3ee;border-radius:14px;background:#f7f9fc;margin:0 0 24px}.amount small{display:block;color:#68758a;font-weight:600}.amount strong{font-size:30px;letter-spacing:-.8px;display:block;margin-top:3px}
+  .section{font-size:11px;letter-spacing:1.2px;color:#68758a;font-weight:800;text-transform:uppercase;margin:24px 0 10px}
+  .rows{border:1px solid #e1e7f0;border-radius:12px;overflow:hidden}.line{display:flex;justify-content:space-between;gap:18px;padding:13px 15px;border-bottom:1px solid #e8edf4}.line:last-child{border:0}.line span{color:#68758a}.line b{text-align:right;overflow-wrap:anywhere}
+  .reference{padding:15px;border-radius:12px;background:#f7f9fc;border:1px dashed #c8d2e1;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .footer{padding:22px 34px;background:#f7f9fc;border-top:1px solid #e1e7f0;color:#68758a;font-size:12px}.footer b{color:#172033}
+  .actions{max-width:720px;margin:14px auto 0;display:flex;gap:10px;justify-content:flex-end}.actions button{border:0;border-radius:9px;padding:12px 18px;font:inherit;font-weight:700;background:#536fe0;color:white}.actions button.secondary{background:#fff;color:#172033;border:1px solid #dce3ee}
+  @media(max-width:520px){body{padding:0;background:#fff}.sheet{border:0;border-radius:0;box-shadow:none}.top{padding:24px 20px}.body{padding:24px 20px}.footer{padding:20px}.heading{font-size:22px}.line{padding:12px}.amount strong{font-size:27px}}
+  @media print{body{padding:0;background:#fff}.sheet{max-width:none;border:0;border-radius:0;box-shadow:none}.actions{display:none}.top,.amount,.footer,.status{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:14mm}}
+  </style></head><body><main class="sheet">
+    <header class="top"><div><div class="brand">Trim<span>Slot</span></div><div class="eyebrow">Official payment receipt</div></div><span class="status">${esc(r.status)}</span></header>
+    <section class="body"><h1 class="heading">${isPlan ? 'Plan purchase receipt' : 'Booking payment receipt'}</h1>
+    <p class="intro">Your payment has been recorded by TrimSlot. Keep this receipt for your records.</p>
+    <div class="amount"><small>Total paid</small><strong>${naira(r.amount_kobo)}</strong></div>
+    <div class="section">Customer</div><div class="rows"><div class="line"><span>Name</span><b>${esc(r.customer_name || 'Customer')}</b></div><div class="line"><span>Email</span><b>${esc(r.customer_email || '—')}</b></div></div>
+    <div class="section">Payment details</div><div class="rows"><div class="line"><span>${isPlan ? 'Plan purchased' : 'Service booked'}</span><b>${esc(item || '—')}</b></div>
+      ${detailRows.map(([label,value])=>`<div class="line"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}
+      <div class="line"><span>Payment method</span><b>Paystack · Online</b></div><div class="line"><span>Payment status</span><b>${esc(r.status)}</b></div></div>
+    <div class="section">Transaction reference</div><div class="reference">${esc(r.reference)}</div></section>
+    <footer class="footer"><b>Thank you for using TrimSlot.</b><br>This receipt confirms the payment recorded for the item shown above. For help, contact TrimSlot support and quote the transaction reference.<br><br>Generated ${esc(new Intl.DateTimeFormat('en-NG',{timeZone:'Africa/Lagos',dateStyle:'medium',timeStyle:'short'}).format(new Date()))} · TrimSlot</footer>
+    </main><div class="actions"><button class="secondary" onclick="window.close()">Close</button><button onclick="window.print()">Print / Save as PDF</button></div></body></html>`;
+}
+function openReceiptPdf(r) {
+  const win = window.open('', '_blank');
+  if (!win) { toast('Allow pop-ups to open the receipt, then choose Print / Save as PDF.', true); return; }
+  win.document.open(); win.document.write(receiptDocument(r)); win.document.close();
+}
+function saveReceiptHtml(r) {
+  const blob = new Blob([receiptDocument(r)], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob), link = document.createElement('a');
-  link.href = url; link.download = `trimslot-receipt-${String(r.reference).replace(/[^a-zA-Z0-9_-]/g, '-')}.txt`;
+  link.href = url; link.download = `trimslot-receipt-${String(r.reference).replace(/[^a-zA-Z0-9_-]/g, '-')}.html`;
   document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-async function shareReceipt(r) {
-  const text = receiptText(r);
-  if (navigator.share) {
-    try { await navigator.share({ title: 'TrimSlot payment receipt', text }); }
-    catch (e) { if (e.name !== 'AbortError') throw e; }
-  } else if (navigator.clipboard && navigator.clipboard.writeText) {
-    try { await navigator.clipboard.writeText(text); toast('Receipt details copied'); }
-    catch { saveReceiptFile(r); toast('Receipt saved'); }
-  } else { saveReceiptFile(r); toast('Receipt saved'); }
 }
 async function customerReceipts() {
   const { receipts } = await api('/me/receipts');
   app.innerHTML = `<a class="back" href="#/profile">${ic('back', 'sm')} Profile</a><h1>Receipts</h1>
-    <p class="small muted">Payment receipts for successful online bookings. Refund or credit updates appear in the status.</p>
+    <p class="small muted">Your successful online booking payments and plan purchases, in one place.</p>
     ${receipts.length ? receipts.map((r, i) => {
       const tone = r.status === 'Paid' ? 'b-green' : r.status === 'Refunded' ? 'b-blue' : 'b-amber';
-      return `<section class="card receipt receipt-list-card" aria-label="Receipt for ${esc(r.service)}">
-        <div class="row between receipt-head"><div><div class="small muted">${esc(dateLabel(r.appointment_date))} · ${esc(r.appointment_time)}</div><b>${esc(r.service)}</b></div><span class="badge ${tone}">${esc(r.status)}</span></div>
-        <div class="receipt-lines"><div><span>Barber</span><b>${esc(r.barber)}${r.shop && r.shop !== r.barber ? ` · ${esc(r.shop)}` : ''}</b></div>
+      const isPlan = r.type === 'PLAN', heading = isPlan ? r.item : r.service;
+      const when = isPlan ? receiptDate(r) : `${dateLabel(r.appointment_date)} · ${r.appointment_time}`;
+      return `<section class="card receipt receipt-list-card" aria-label="${isPlan ? 'Plan' : 'Booking'} receipt for ${esc(heading)}">
+        <div class="row between receipt-head"><div><div class="small muted">${isPlan ? 'PLAN PURCHASE' : 'BOOKING PAYMENT'} · ${esc(when)}</div><b>${esc(heading)}</b></div><span class="badge ${tone}">${esc(r.status)}</span></div>
+        <div class="receipt-lines"><div><span>Barber / shop</span><b>${esc(r.barber)}${r.shop && r.shop !== r.barber ? ` · ${esc(r.shop)}` : ''}</b></div>
+          ${isPlan ? `<div><span>Sessions</span><b>${Number(r.sessions_total || 0)}</b></div><div><span>Validity</span><b>${Number(r.validity_days || 0)} days</b></div>` : ''}
           <div><span>Amount</span><b>${naira(r.amount_kobo)}</b></div><div class="receipt-ref"><span>Payment reference</span><code>${esc(r.reference)}</code></div></div>
-        <div class="btns"><a class="btn sm sec" href="#/booking/${Number(r.booking_id)}">Booking</a><button class="btn sm" type="button" data-receipt-share="${i}">Share receipt</button><button class="btn sm sec" type="button" data-receipt-save="${i}">Save receipt</button></div>
+        <div class="btns">${!isPlan && r.booking_id ? `<a class="btn sm sec" href="#/booking/${Number(r.booking_id)}">Booking</a>` : ''}
+          <button class="btn sm" type="button" data-receipt-pdf="${i}">View / Save PDF</button><button class="btn sm sec" type="button" data-receipt-html="${i}">Download HTML</button></div>
       </section>`;
-    }).join('') : '<div class="empty"><b>No receipts yet</b><span class="small muted">Receipts for paid online bookings will show here.</span></div>'}`;
-  document.querySelectorAll('[data-receipt-share]').forEach((el) => el.onclick = async () => {
-    const r = receipts[Number(el.dataset.receiptShare)]; if (!r) return;
-    el.disabled = true; try { await shareReceipt(r); } catch (e) { fail(e); } finally { el.disabled = false; }
-  });
-  document.querySelectorAll('[data-receipt-save]').forEach((el) => el.onclick = () => {
-    const r = receipts[Number(el.dataset.receiptSave)]; if (!r) return;
-    saveReceiptFile(r); toast('Receipt saved');
-  });
+    }).join('') : '<div class="empty"><b>No receipts yet</b><span class="small muted">Receipts for successful online bookings and plan purchases will show here.</span></div>'}`;
+  document.querySelectorAll('[data-receipt-pdf]').forEach((el) => el.onclick = () => { const r = receipts[Number(el.dataset.receiptPdf)]; if (r) openReceiptPdf(r); });
+  document.querySelectorAll('[data-receipt-html]').forEach((el) => el.onclick = () => { const r = receipts[Number(el.dataset.receiptHtml)]; if (r) { saveReceiptHtml(r); toast('HTML receipt saved'); } });
 }
 async function confirmReturn(kind, id, title) {
   app.innerHTML = `<div class="card center confirming" role="status" aria-live="polite"><div class="spin"></div><h1>${title}</h1><p class="muted small">Please keep this page open. It takes a few seconds.</p></div>`;
