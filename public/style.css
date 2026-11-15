@@ -740,3 +740,30 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
 .profile-accordion-content{padding:0 0 14px;min-width:0}
 .profile-section:not(.is-open)>.profile-accordion-content{display:none}
 @media(prefers-reduced-motion:reduce){.profile-accordion-chevron{transition:none}}
+
+/* Barber purchases and credits: one-line disclosure rows, not stacked cards. */
+.barber-plans-view .barber-compact-list{margin:7px 0 8px;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.barber-plans-view .barber-compact-row{margin:0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;overflow:visible}
+.barber-plans-view .barber-compact-row:last-child{border-bottom:0}
+.barber-plans-view .barber-compact-row>summary.barber-compact-summary{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px;min-height:48px;padding:8px 44px 8px 11px;font-size:13px;font-weight:500;line-height:1.2}
+.barber-plans-view .barber-compact-row>summary.barber-compact-summary:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.barber-plans-view .barber-compact-row[open]>summary.barber-compact-summary{background:var(--bg2)}
+.barber-plans-view .barber-compact-title{display:flex;align-items:center;gap:5px;min-width:0;white-space:nowrap;overflow:hidden}
+.barber-plans-view .barber-compact-title b{flex:0 1 auto;max-width:47%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:650}
+.barber-plans-view .barber-compact-title i{flex:none;color:var(--mut);font-style:normal}
+.barber-plans-view .barber-compact-title>span{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut);font-size:12.5px}
+.barber-plans-view .barber-compact-count{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.barber-plans-view .barber-compact-row .badge{display:inline-flex;align-items:center;justify-content:center;min-width:64px;padding:2px 5px;font-size:9.5px;line-height:1.45;text-align:center}
+.barber-plans-view .barber-compact-details{padding:9px 11px 10px;border-top:1px solid var(--line);background:var(--bg2)}
+.barber-plans-view .barber-compact-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.barber-plans-view .barber-compact-detail-grid>div{display:grid;gap:2px;min-width:0;font-size:12px;line-height:1.3}
+.barber-plans-view .barber-compact-detail-grid>div>span{color:var(--mut);font-size:10px;font-weight:650;letter-spacing:.04em;text-transform:uppercase}
+.barber-plans-view .barber-compact-detail-grid>div>b{min-width:0;overflow-wrap:anywhere;font-size:12px;font-weight:600}
+.barber-plans-view .barber-compact-details .refund-disclosure{margin-top:9px}
+@media(max-width:370px){
+  .barber-plans-view .barber-compact-row>summary.barber-compact-summary{gap:5px;padding-left:9px;padding-right:42px}
+  .barber-plans-view .barber-compact-title b{max-width:42%;font-size:12.5px}
+  .barber-plans-view .barber-compact-title>span{font-size:12px}
+  .barber-plans-view .barber-compact-count{font-size:12px}
+  .barber-plans-view .barber-compact-row .badge{min-width:60px;font-size:9px}
+}

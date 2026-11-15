@@ -1740,19 +1740,36 @@ function plansBody(po, services) {
       <details class="plan-stats" id="plan-stats-${pl.id}"><summary>Performance details</summary><div class="plan-stats-body"><div>${buyers} buyer${buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold · ${perSession} per session</div>${pl.active ? `<div class="plan-stats-actions"><button class="btn sm sec del" type="button" aria-label="Stop selling ${esc(pl.name)}">Stop selling</button></div>` : ''}</div></details>
       <div class="svcedit" id="plan-edit-${pl.id}">${planForm(pl.id, pl, services, L)}</div></div>`;
   }).join('') || '<p class="muted small">No plans yet. Create one when you are ready to offer session packs.</p>';
-  const buyerRows = purchases.slice(0, 15).map((x) => {
+  const purchaseRows = purchases.slice(0, 15).map((x) => {
     const left = Math.max(0, x.sessions_total - x.sessions_used);
     const refund = x.live ? refundBox(x, 'BARBER') : '';
-    return `<tr><td data-label="Customer"><b>${esc(x.customer_name)}</b></td><td data-label="Plan">${esc(x.plan_name)}</td>
-      <td data-label="Sessions"><b>${left} of ${x.sessions_total} left</b></td><td data-label="Status"><span class="badge ${x.live ? 'b-green' : 'b-gray'}">${x.live ? 'ACTIVE' : 'ENDED'}</span></td>
-      <td data-label="Refund">${refund ? `<details class="refund-disclosure"><summary>Refund options</summary>${refund}</details>` : '<span class="muted">—</span>'}</td></tr>`;
+    const status = x.live ? 'ACTIVE' : 'ENDED';
+    const label = `${x.customer_name}, ${x.plan_name}, ${left} of ${x.sessions_total} sessions left, ${status}`;
+    return `<details class="barber-compact-row" id="barber-purchase-${x.id}"><summary class="barber-compact-summary" aria-label="${esc(label)}">
+      <span class="barber-compact-title" title="${esc(`${x.customer_name} · ${x.plan_name}`)}"><b>${esc(x.customer_name)}</b><i aria-hidden="true">·</i><span>${esc(x.plan_name)}</span></span>
+      <b class="barber-compact-count" aria-label="${left} of ${x.sessions_total} sessions left">${left}/${x.sessions_total}</b><span class="badge ${x.live ? 'b-green' : 'b-gray'}">${status}</span>
+      </summary><div class="barber-compact-details"><div class="barber-compact-detail-grid">
+        <div><span>Plan</span><b>${esc(x.plan_name)}</b></div><div><span>Sessions left</span><b>${left} of ${x.sessions_total}</b></div>
+        <div><span>Sessions used</span><b>${x.sessions_used} of ${x.sessions_total}</b></div><div><span>Price paid</span><b>${naira(x.price_kobo)}</b></div>
+        <div><span>Paid</span><b>${x.paid_at ? expTxt(x.paid_at) : '—'}</b></div><div><span>Expires</span><b>${expTxt(x.expires_at)}</b></div>
+      </div>${refund ? `<details class="refund-disclosure"><summary>Refund options</summary>${refund}</details>` : ''}</div></details>`;
   }).join('');
-  const creditRows = credits.slice(0, 15).map((x) => `<tr><td data-label="Customer"><b>${esc(x.customer_name)}</b></td>
-    <td data-label="Reason">${x.reason === 'NO_SHOW' ? 'No-show' : 'Missed session'}</td>
-    <td data-label="Status"><span class="badge ${x.status === 'USED' ? 'b-gray' : x.live ? 'b-green' : 'b-gray'}">${x.status === 'USED' ? 'USED' : x.live ? 'AVAILABLE' : 'EXPIRED'}</span></td>
-    <td data-label="Valid until">${x.status === 'USED' ? 'Used' : expTxt(x.expires_at)}</td></tr>`).join('');
-  const buyersContent = buyerRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Customer</th><th>Plan</th><th>Sessions</th><th>Status</th><th>Refund</th></tr></thead><tbody>${buyerRows}</tbody></table></div>${purchases.length > 15 ? '<p class="small muted">Showing the latest 15 purchases.</p>' : ''}` : '<p class="muted small">No customers have bought a plan yet.</p>';
-  const creditsContent = creditRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Customer</th><th>Reason</th><th>Status</th><th>Valid until</th></tr></thead><tbody>${creditRows}</tbody></table></div>${credits.length > 15 ? '<p class="small muted">Showing the latest 15 credits.</p>' : ''}` : '<p class="muted small">No session credits have been issued.</p>';
+  const creditRows = credits.slice(0, 15).map((x) => {
+    const reason = x.reason === 'NO_SHOW' ? 'No-show' : x.reason === 'LOYALTY' ? 'Loyalty credit' : x.reason === 'ADMIN_GRANT' ? 'Added by TrimSlot' : 'Missed session';
+    const status = x.status === 'USED' ? 'USED' : x.live ? 'AVAILABLE' : 'EXPIRED';
+    const until = x.status === 'USED' ? 'Used' : expTxt(x.expires_at);
+    const label = `${x.customer_name}, ${reason}, one session credit, ${status}`;
+    return `<details class="barber-compact-row" id="barber-credit-${x.id}"><summary class="barber-compact-summary" aria-label="${esc(label)}">
+      <span class="barber-compact-title" title="${esc(`${x.customer_name} · ${reason}`)}"><b>${esc(x.customer_name)}</b><i aria-hidden="true">·</i><span>${esc(reason)}</span></span>
+      <b class="barber-compact-count" aria-label="One session credit">1 session</b><span class="badge ${x.status === 'USED' || !x.live ? 'b-gray' : 'b-green'}">${status}</span>
+      </summary><div class="barber-compact-details"><div class="barber-compact-detail-grid">
+        <div><span>Customer</span><b>${esc(x.customer_name)}</b></div><div><span>Reason</span><b>${esc(reason)}</b></div>
+        <div><span>Credit value</span><b>${naira(x.value_kobo)}</b></div><div><span>Status</span><b>${status}</b></div>
+        <div><span>Valid until</span><b>${until}</b></div>
+      </div></div></details>`;
+  }).join('');
+  const buyersContent = purchaseRows ? `<div class="barber-compact-list">${purchaseRows}</div>${purchases.length > 15 ? '<p class="small muted">Showing the latest 15 purchases.</p>' : ''}` : '<p class="muted small">No customers have bought a plan yet.</p>';
+  const creditsContent = creditRows ? `<div class="barber-compact-list">${creditRows}</div>${credits.length > 15 ? '<p class="small muted">Showing the latest 15 credits.</p>' : ''}` : '<p class="muted small">No session credits have been issued.</p>';
   const rules = `Plan sessions are valid for the number of days shown. Customers keep the terms they bought if you later edit a plan. When a customer misses a paid session, they receive one credit with you; it covers the same service or a service at the same price, expires after ${L.credit_expiry_days} days, and cannot be cashed out. A missed plan session returns to the plan and does not extend its end date. Refunds for part-used plans go through TrimSlot review, then require the other party's agreement.`;
   return `${offNote}
     <details class="plan-section" id="barber-offers" open><summary><span>Plans you offer</span><span class="plan-section-count">${plans.length} plan${plans.length === 1 ? '' : 's'}</span></summary><div class="plan-section-body">${list}</div></details>

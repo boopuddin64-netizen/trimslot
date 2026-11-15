@@ -19,8 +19,8 @@ await call('/b/' + (await call('/barber/share', {}, mike)).j.code, {}, cust); //
 const svcs = (await call('/barbers/' + barberId, {}, cust)).j.services;
 const byName = (n) => svcs.find((s) => s.name === n);
 const kids = byName('Kids Haircut'), reg = byName('Regular Haircut'), beard = byName('Haircut + Beard');
-const mk = async (name, ids, price = 40000) => {
-  const r = await call('/barber/plans', { method: 'POST', body: { name, price_naira: price, sessions: 4, validity_days: 30, service_ids: ids } }, mike);
+const mk = async (name, ids, price = 40000, sessions = 4) => {
+  const r = await call('/barber/plans', { method: 'POST', body: { name, price_naira: price, sessions, validity_days: 30, service_ids: ids } }, mike);
   if (r.r.status !== 201) { console.log('plan create failed', JSON.stringify(r.j)); return r.j.id; }
   const approved = await call(`/admin/plans/${r.j.id}/approval`, { method: 'POST', headers: { Authorization: `Bearer ${process.env.ADMIN_KEY || 'local-admin-key-xyz'}` }, body: { status: 'APPROVED' } });
   if (!approved.r.ok) console.log('local plan approval failed', approved.r.status, JSON.stringify(approved.j));
@@ -54,7 +54,7 @@ for (const w of [390, 1280]) for (const dark of [false, true]) {
     await p.screenshot({ path: `${OUT}/${tag}-regular.png`, fullPage: true }); await ctx.close(); }
 }
 // two matching plans: no preselect, the customer picks one and the booking names it
-const pFam = await mk('Family pack', [kids.id, reg.id], 60000); await buyPlan(pFam);
+const pFam = await mk('Family pack', [kids.id, reg.id], 60000, 1); await buyPlan(pFam);
 { const { ctx, p } = await go(390, false, kids); await toPay(p, kids);
   ok(await p.locator('[data-p="PLAN"]').count() === 2, 'two matching plans are both offered');
   ok(await p.locator('[data-p="PLAN"].on').count() === 0, 'with two matching plans nothing is preselected');
@@ -88,6 +88,9 @@ const pFam = await mk('Family pack', [kids.id, reg.id], 60000); await buyPlan(pF
 // plan not listing the service cannot be forced through the API either
 const forced = await call('/bookings', { method: 'POST', body: { barber_id: barberId, service_id: beard.id, date: (await call('/config')).j.today, time: '16:00', payment_option: 'PLAN', plan_purchase_id: (await call('/me/wallet', {}, cust)).j.plans[0].id } }, cust);
 ok(forced.r.status === 409, 'server refuses a plan session for a service the plan does not include', forced.r.status + JSON.stringify(forced.j));
+const customerId = (await call('/auth/me', {}, cust)).j.user.id;
+const creditFixture = await call('/admin/credits/issue', { method: 'POST', headers: { Authorization: `Bearer ${process.env.ADMIN_KEY || 'local-admin-key-xyz'}` }, body: { customer_id: customerId, barber_id: barberId, value_naira: 1200, reason: 'compact UI test credit', days: 30 } });
+ok(creditFixture.r.ok, 'local session-credit fixture created for compact-row checks', creditFixture.r.status + JSON.stringify(creditFixture.j));
 // barber view: roomy plan editor, collapsed operational sections, and live metrics
 { const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, colorScheme: 'dark', baseURL: BASE });
   await ctx.addInitScript(() => { try { localStorage.setItem('trimslot_theme', 'dark'); } catch {} });
@@ -140,19 +143,49 @@ ok(forced.r.status === 409, 'server refuses a plan session for a service the pla
   await refreshButton.click(); await manage.click(); await p.evaluate(() => window.scrollTo(0, 0));
   await p.screenshot({ path: `${OUT}/barber-plans-manage-phone.png`, fullPage: true, animations: 'disabled' });
   await manage.click();
+  await p.locator('#barber-offers > summary').click();
   await p.screenshot({ path: `${OUT}/barber-plans-phone.png`, fullPage: true, animations: 'disabled' });
+  await p.locator('#barber-offers > summary').click();
   await p.locator('#barber-create > summary').click();
   ok(/only book the services you tick/i.test(await p.locator('#barber-create').innerText()), 'create form remains available inside its disclosure');
   await p.screenshot({ path: `${OUT}/barber-plans-add-plan-phone.png`, fullPage: true, animations: 'disabled' });
   await p.locator('#barber-create > summary').click();
-  await p.locator('#barber-purchases > summary').click(); await p.waitForSelector('#barber-purchases table.plan-table');
-  ok(await p.locator('#barber-purchases table.plan-table tbody tr').count() > 0, 'barber purchase table expands on demand');
-  const purchaseRow = await p.locator('#barber-purchases table.plan-table tbody td').first().evaluate((e) => ({ font: parseFloat(getComputedStyle(e).fontSize), padding: parseFloat(getComputedStyle(e).paddingTop), label: e.dataset.label }));
-  ok(purchaseRow.font >= 12 && purchaseRow.padding >= 5 && purchaseRow.label === 'Customer', 'expanded barber purchase row keeps readable text and its phone label', JSON.stringify(purchaseRow));
-  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/barber-plans-purchases-phone.png`, fullPage: true, animations: 'disabled' });
+  await p.locator('#barber-offers > summary').click();
+  await p.locator('#barber-purchases > summary').click(); await p.waitForSelector('#barber-purchases .barber-compact-row');
+  const purchaseRows = p.locator('#barber-purchases .barber-compact-row');
+  ok(await purchaseRows.count() === 2, 'barber purchases expand into individual compact disclosure rows');
+  const endedRow = purchaseRows.filter({ hasText: 'Family pack' }).first(), activeRow = purchaseRows.filter({ hasText: 'Kids pack' }).first();
+  ok(await activeRow.locator('details.refund-disclosure').count() === 1, 'active purchase keeps its existing nested refund disclosure');
+  const endedSummary = await endedRow.locator(':scope > summary').innerText(), activeSummary = await activeRow.locator(':scope > summary').innerText();
+  ok(/0\/1/.test(endedSummary) && /ENDED/.test(endedSummary) && /4\/4/.test(activeSummary) && /ACTIVE/.test(activeSummary), 'purchase rows show remaining sessions and the correct active/ended status', `${endedSummary} | ${activeSummary}`);
+  const purchaseLayout = await endedRow.locator(':scope > summary').evaluate((s) => { const r = s.getBoundingClientRect(), t = s.querySelector('.barber-compact-title').getBoundingClientRect(), c = s.querySelector('.barber-compact-count').getBoundingClientRect(), b = s.querySelector('.badge').getBoundingClientRect(); return { height: r.height, font: parseFloat(getComputedStyle(s).fontSize), ordered: t.right <= c.left + 1 && c.right <= b.left + 1 && b.right <= r.right - 35, overflow: s.scrollWidth > s.clientWidth + 1 }; });
+  ok(purchaseLayout.height >= 44 && purchaseLayout.height <= 56 && purchaseLayout.font >= 12 && purchaseLayout.ordered && !purchaseLayout.overflow, 'purchase summaries stay readable, one-line, and clear of the chevron', JSON.stringify(purchaseLayout));
+  await p.setViewportSize({ width: 360, height: 844 }); await p.waitForTimeout(100);
+  const narrowPurchases = await p.locator('#barber-purchases .barber-compact-row > summary').evaluateAll((rows) => rows.every((s) => { const r = s.getBoundingClientRect(), t = s.querySelector('.barber-compact-title').getBoundingClientRect(), b = s.querySelector('.badge').getBoundingClientRect(); return r.height >= 44 && t.right < b.left && b.right <= r.right - 34 && s.scrollWidth <= s.clientWidth + 1; }));
+  ok(narrowPurchases && !(await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), '360px purchase rows remain one line without horizontal overflow');
+  await p.setViewportSize({ width: 390, height: 844 }); await p.evaluate(() => window.scrollTo(0, 0));
+  await p.screenshot({ path: `${OUT}/barber-plans-purchases-phone.png`, fullPage: true, animations: 'disabled' });
+  await endedRow.locator(':scope > summary').click();
+  const purchaseDetails = await endedRow.locator('.barber-compact-details').innerText();
+  ok(/Plan/i.test(purchaseDetails) && /Sessions left/i.test(purchaseDetails) && /Price paid/i.test(purchaseDetails) && /Expires/i.test(purchaseDetails), 'expanded purchase row reveals the plan, session, payment, and expiry details');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/barber-plans-purchase-expanded-phone.png`, fullPage: true, animations: 'disabled' });
+  await endedRow.locator(':scope > summary').click();
   await p.locator('#barber-purchases > summary').click();
-  await p.locator('#barber-credits > summary').click(); await p.waitForTimeout(100); await p.evaluate(() => window.scrollTo(0, 0));
+  await p.locator('#barber-credits > summary').click(); await p.waitForSelector('#barber-credits .barber-compact-row');
+  const creditRow = p.locator('#barber-credits .barber-compact-row').first(), creditSummary = await creditRow.locator('summary').innerText();
+  ok(/Plan Fit/.test(creditSummary) && /Added by TrimSlot/.test(creditSummary) && /1 session/.test(creditSummary) && /AVAILABLE/.test(creditSummary), 'credit row shows customer, credit reason, one session, and availability');
+  const creditLayout = await creditRow.locator('summary').evaluate((s) => { const r = s.getBoundingClientRect(), t = s.querySelector('.barber-compact-title').getBoundingClientRect(), c = s.querySelector('.barber-compact-count').getBoundingClientRect(), b = s.querySelector('.badge').getBoundingClientRect(); return { height: r.height, font: parseFloat(getComputedStyle(s).fontSize), ordered: t.right <= c.left + 1 && c.right <= b.left + 1 && b.right <= r.right - 35, overflow: s.scrollWidth > s.clientWidth + 1 }; });
+  ok(creditLayout.height >= 44 && creditLayout.height <= 56 && creditLayout.font >= 12 && creditLayout.ordered && !creditLayout.overflow, 'credit summary stays readable, one-line, and clear of the chevron', JSON.stringify(creditLayout));
+  await p.setViewportSize({ width: 360, height: 844 }); await p.waitForTimeout(100);
+  const narrowCredits = await p.locator('#barber-credits .barber-compact-row > summary').evaluateAll((rows) => rows.every((s) => { const r = s.getBoundingClientRect(), t = s.querySelector('.barber-compact-title').getBoundingClientRect(), b = s.querySelector('.badge').getBoundingClientRect(); return r.height >= 44 && t.right < b.left && b.right <= r.right - 34 && s.scrollWidth <= s.clientWidth + 1; }));
+  ok(narrowCredits && !(await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), '360px credit rows remain one line without horizontal overflow');
+  await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(100); await p.evaluate(() => window.scrollTo(0, 0));
   await p.screenshot({ path: `${OUT}/barber-plans-credits-phone.png`, fullPage: true, animations: 'disabled' });
+  await creditRow.locator('summary').click();
+  const creditDetails = await creditRow.locator('.barber-compact-details').innerText();
+  ok(/Reason/i.test(creditDetails) && /Credit value/i.test(creditDetails) && /Status/i.test(creditDetails) && /Valid until/i.test(creditDetails), 'expanded credit row reveals reason, value, status, and expiry');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.screenshot({ path: `${OUT}/barber-plans-credit-expanded-phone.png`, fullPage: true, animations: 'disabled' });
+  await creditRow.locator('summary').click();
   await p.locator('#barber-credits > summary').click();
   await p.locator('#barber-rules > summary').click(); await p.waitForTimeout(100); await p.evaluate(() => window.scrollTo(0, 0));
   await p.screenshot({ path: `${OUT}/barber-plans-rules-phone.png`, fullPage: true, animations: 'disabled' });
