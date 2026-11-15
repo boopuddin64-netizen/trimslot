@@ -26,7 +26,7 @@ export async function buildReceiptPdf(receipt: Receipt, verificationUrl: string)
     const v = clean(value), size = v.length > 44 ? 7 : v.length > 30 ? 7.5 : 8.5;
     text(name, 38, top, 8, false, '0.39 0.46 0.56');
     text(v, Math.max(205, 382 - Math.min(v.length, 42) * size * 0.48), top, size, true);
-    line(38, top + 8, 382);
+    line(38, top + 6, 382);
   };
   rect(0, 0, PAGE_W, PAGE_H, '1 1 1');
   rect(0, 0, PAGE_W, 156, '0.03 0.08 0.17');
@@ -42,24 +42,24 @@ export async function buildReceiptPdf(receipt: Receipt, verificationUrl: string)
   label('RECEIPT DATE', 42, 229);
   text(new Date(receipt.paid_at).toLocaleString('en-GB', { timeZone: 'Africa/Lagos', dateStyle: 'medium', timeStyle: 'short' }), 42, 240, 8, true);
   let top = 270;
-  const section = (title: string) => { label(title, 30, top); top += 14; };
+  const section = (title: string) => { label(title, 30, top); top += 12; };
   section(receipt.type === 'PLAN' ? 'PLAN DETAILS' : 'BOOKING DETAILS');
-  row(receipt.type === 'PLAN' ? 'Plan purchased' : 'Service booked', receipt.item || receipt.service, top); top += 22;
-  row('Barber / shop', receipt.shop || receipt.barber, top); top += 22;
-  row('Location', receipt.location, top); top += 22;
+  row(receipt.type === 'PLAN' ? 'Plan purchased' : 'Service booked', receipt.item || receipt.service, top); top += 16;
+  row('Barber / shop', receipt.shop || receipt.barber, top); top += 16;
+  row('Location', receipt.location, top); top += 16;
   if (receipt.type === 'PLAN') {
-    row('Sessions included', receipt.sessions_total, top); top += 22;
-    row('Validity period', receipt.validity_days ? receipt.validity_days + ' days' : null, top); top += 22;
-    if (receipt.expires_at) { row('Valid until', new Date(receipt.expires_at).toLocaleDateString('en-GB', { timeZone: 'Africa/Lagos' }), top); top += 22; }
-  } else { row('Appointment', [receipt.appointment_date, receipt.appointment_time].filter(Boolean).join(' · '), top); top += 22; }
-  top += 4; section('CUSTOMER DETAILS');
-  row('Customer name', receipt.customer_name, top); top += 22;
-  row('Email', receipt.customer_email, top); top += 22;
-  row('Phone', receipt.customer_phone, top); top += 22;
-  top += 4; section('PAYMENT DETAILS');
-  row('Payment provider', receipt.payment_provider, top); top += 22;
-  row('Payment status', receipt.status, top); top += 22;
-  row('Transaction reference', receipt.reference, top); top += 22;
+    row('Sessions included', receipt.sessions_total, top); top += 16;
+    row('Validity period', receipt.validity_days ? receipt.validity_days + ' days' : null, top); top += 16;
+    if (receipt.expires_at) { row('Valid until', new Date(receipt.expires_at).toLocaleDateString('en-GB', { timeZone: 'Africa/Lagos' }), top); top += 16; }
+  } else { row('Appointment', [receipt.appointment_date, receipt.appointment_time].filter(Boolean).join(' · '), top); top += 16; }
+  top += 2; section('CUSTOMER DETAILS');
+  row('Customer name', receipt.customer_name, top); top += 16;
+  row('Email', receipt.customer_email, top); top += 16;
+  row('Phone', receipt.customer_phone, top); top += 16;
+  top += 2; section('PAYMENT DETAILS');
+  row('Payment provider', receipt.payment_provider, top); top += 16;
+  row('Payment status', receipt.status, top); top += 16;
+  row('Transaction reference', receipt.reference, top); top += 16;
   const qr = QRCode.create(verificationUrl, { errorCorrectionLevel: 'M' });
   const qrSize = 88, cell = qrSize / qr.modules.size, qx = 38, qtop = 486;
   rect(28, 478, 364, 98, '0.96 0.97 0.99', '0.86 0.89 0.93');
