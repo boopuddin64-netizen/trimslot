@@ -11,3 +11,34 @@ html{overscroll-behavior-y:contain}
 
 /* Placeholders breathe softly instead of spinning. */
 .sk{animation-duration:1.4s}
+
+
+/* Authentication feedback: tactile rejection and a short, playful take-off on success. */
+#f.auth-login-shake{animation:auth-login-shake .42s cubic-bezier(.36,.07,.19,.97) both}
+@keyframes auth-login-shake{
+  0%,100%{transform:translateX(0)}
+  15%,45%,75%{transform:translateX(-7px)}
+  30%,60%,90%{transform:translateX(7px)}
+}
+.auth-takeoff{position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:24px;background:color-mix(in srgb,var(--bg) 92%,transparent);color:var(--ink);text-align:center;animation:auth-takeoff-fade .18s ease-out both;overflow:hidden}
+.auth-takeoff-scene{position:relative;width:190px;height:118px;margin-bottom:10px}
+.auth-takeoff-plane{position:absolute;left:50%;top:42px;width:58px;height:58px;color:var(--brand);transform:translate(-50%,0) rotate(-8deg);animation:auth-plane-launch .78s cubic-bezier(.2,.75,.25,1) both}
+.auth-takeoff-trail{position:absolute;left:18px;bottom:23px;width:95px;height:2px;border-radius:100%;background:linear-gradient(90deg,transparent,var(--brand));transform:rotate(-22deg);transform-origin:right center;animation:auth-trail-launch .7s ease-out both}
+.auth-takeoff b{font-size:20px;letter-spacing:-.03em}
+.auth-takeoff>span{font-size:13px;color:var(--mut)}
+.auth-takeoff-out{opacity:0;transition:opacity .18s ease}
+@keyframes auth-takeoff-fade{from{opacity:0}to{opacity:1}}
+@keyframes auth-plane-launch{
+  0%{opacity:0;transform:translate(-50%,28px) rotate(-8deg) scale(.75)}
+  18%{opacity:1}
+  100%{opacity:1;transform:translate(95px,-105px) rotate(-17deg) scale(.78)}
+}
+@keyframes auth-trail-launch{
+  0%{opacity:0;transform:translate(-20px,18px) rotate(-22deg) scaleX(.2)}
+  25%{opacity:.8}
+  100%{opacity:0;transform:translate(36px,-28px) rotate(-22deg) scaleX(1.2)}
+}
+@media(prefers-reduced-motion:reduce){
+  #f.auth-login-shake,.auth-takeoff,.auth-takeoff-plane,.auth-takeoff-trail{animation:none!important}
+  .auth-takeoff-out{transition:none}
+}
