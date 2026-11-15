@@ -1373,7 +1373,7 @@ function receiptDocument(r, verification) {
   *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#eef2f8;color:#14233b;font:13px/1.38 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{padding:18px 10px}.rs-sheet{width:min(100%,148mm);min-height:210mm;margin:0 auto;background:#fff;border:1px solid #dce4ef;border-radius:12px;overflow:hidden;box-shadow:0 8px 26px rgba(12,29,54,.12);color:#16243a}.rs-header{height:61mm;min-height:230px;position:relative;overflow:hidden;padding:9mm 10mm 20mm;background:linear-gradient(125deg,#07152d 0%,#102b54 66%,#1b3c70 100%);color:white}.rs-brand-row{display:flex;justify-content:space-between;align-items:center;gap:10px}.rs-brand{display:flex;align-items:center;gap:8px}.rs-brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;background:#426be0;color:#fff}.rs-brand-mark svg{width:23px;height:23px}.rs-wordmark{font-size:19px;font-weight:850;letter-spacing:-.7px}.rs-wordmark span{color:#8eb3ff}.rs-status{padding:5px 9px;border-radius:30px;font-size:8px;line-height:1.3;font-weight:850;letter-spacing:.35px;white-space:nowrap}.rs-status--success{background:#d9f6e8;color:#116845}.rs-status--refunded{background:#dbe8ff;color:#234e9a}.rs-status--pending{background:#fff0d2;color:#80510a}.rs-status--neutral{background:#e8edf5;color:#3c4d65}.rs-header-copy{margin-top:13mm;position:relative;z-index:1}.rs-kicker{font-size:9px;letter-spacing:2px;font-weight:800;color:#a9c5ff}.rs-kind{font-size:22px;font-weight:800;letter-spacing:-.5px;margin-top:4px}.rs-header-note{font-size:10px;color:#d2ddf0;margin-top:3px}.rs-wave{position:absolute;left:0;bottom:-1px;width:100%;height:19mm}.rs-main{padding:0 10mm 7mm;margin-top:-1px}.rs-amount{position:relative;z-index:2;display:grid;grid-template-columns:1.1fr 1fr;gap:8px 14px;margin:-6mm 0 5mm;padding:10px 12px;border:1px solid #dbe6f5;border-left:3px solid #426be0;border-radius:9px;background:#f5f8fd}.rs-amount strong{display:block;font-size:22px;line-height:1.15;letter-spacing:-.7px;margin-top:3px;color:#10274c}.rs-label{display:block;color:#64748a;font-size:7.5px;font-weight:800;letter-spacing:1px}.rs-number b,.rs-issued b{display:block;margin-top:3px;font-size:9px;overflow-wrap:anywhere}.rs-issued{grid-column:1/-1;border-top:1px solid #dbe4f1;padding-top:6px}.rs-section{margin:4mm 0}.rs-section h2{margin:0 0 4px;color:#355a9c;font-size:8px;letter-spacing:1.4px}.rs-rows{border:1px solid #e0e7f0;border-radius:7px;overflow:hidden}.rs-line{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:5px 8px;border-bottom:1px solid #e8edf4;font-size:9px;min-height:22px}.rs-line:last-child{border-bottom:0}.rs-line span{flex:0 0 34%;color:#64748a}.rs-line b{flex:1;text-align:right;font-weight:650;overflow-wrap:anywhere}.rs-reference b{font:8px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace}.rs-footer{display:flex;align-items:center;gap:10px;margin-top:5mm;padding:8px 9px;border:1px solid #e0e7f0;border-radius:8px;background:#f7f9fc}.rs-qr{width:26mm;height:26mm;flex:none;display:grid;place-items:center;background:#fff;border:1px solid #e1e7f0;border-radius:5px}.rs-qr img{display:block;width:23mm;height:23mm;object-fit:contain}.rs-footer-copy{display:flex;flex-direction:column;gap:4px;font-size:8px;color:#5d6d82}.rs-footer-copy b{font-size:9px;color:#172943}.rs-footer-copy a{color:#3159a8;font-weight:700;text-decoration:none}.rs-actions{width:min(100%,148mm);margin:10px auto 0;display:flex;justify-content:flex-end;gap:8px}.rs-actions button{min-height:40px;padding:0 14px;border:1px solid #d6deea;border-radius:8px;background:#fff;color:#172943;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer}.rs-actions button.primary{border-color:#3358d4;background:#3358d4;color:white}.rs-print-note{width:min(100%,148mm);margin:8px auto;color:#64748a;font-size:11px;text-align:center}
   @media(max-width:560px){body{padding:0;background:#fff}.rs-sheet{border:0;border-radius:0;box-shadow:none}.rs-header{min-height:220px}.rs-main{padding-left:18px;padding-right:18px}.rs-amount{padding:9px}.rs-line{padding:7px 8px}.rs-footer{margin-top:18px}}
   @page{size:A5 portrait;margin:0}@media print{.rs-sheet{height:210mm;min-height:210mm}.rs-header{height:50mm;min-height:185px;padding:7mm 9mm 15mm}.rs-header-copy{margin-top:8mm}.rs-wave{height:13mm}.rs-main{padding:0 8mm 3mm}.rs-amount{margin:-4mm 0 2mm;padding:7px 8px}.rs-amount strong{font-size:18px}.rs-section{margin:8px 0}.rs-line{min-height:18px;padding:3px 7px;font-size:8.3px}.rs-reference b{font-size:7.5px}.rs-footer{margin-top:7px;padding:5px 6px}.rs-qr{width:22mm;height:22mm}.rs-qr img{width:20mm;height:20mm}.rs-footer-copy{gap:3px;font-size:7px}.rs-footer-copy b,.rs-footer-copy a{font-size:8px}}@media print{html,body{width:148mm;min-height:210mm;background:#fff;margin:0;padding:0}.rs-sheet{width:148mm;min-height:210mm;margin:0;border:0;border-radius:0;box-shadow:none;break-after:avoid}.rs-header,.rs-status,.rs-amount,.rs-footer{-webkit-print-color-adjust:exact;print-color-adjust:exact}.rs-actions,.rs-print-note{display:none!important}}
-  </style></head><body>${receiptSheetMarkup(r, verification)}<div class="rs-actions"><button onclick="window.close()">Close</button><button class="primary" onclick="window.print()">Print / Save as PDF</button></div><p class="rs-print-note">In the print dialog, choose “Save as PDF” to keep a copy.</p></body></html>`;
+  </style></head><body>${receiptSheetMarkup(r, verification)}</body></html>`;
 }
 async function receiptMaterial(r, verification) {
   let receipt = r;
@@ -1386,29 +1386,47 @@ async function openReceiptPdf(r, verification) {
   if (button) { button.disabled = true; button.textContent = 'Preparing receipt…'; }
   try {
     const material = await receiptMaterial(r, verification);
-    const prior = document.getElementById('receipt-save-overlay'); prior?.remove();
+    document.getElementById('receipt-save-overlay')?.remove();
     const overlay = document.createElement('div');
     overlay.id = 'receipt-save-overlay';
     overlay.className = 'receipt-save-overlay';
     overlay.innerHTML = `<section class="receipt-save-panel" role="dialog" aria-modal="true" aria-label="Save receipt">
       <header><b>Save your receipt</b><button type="button" class="receipt-save-close" aria-label="Close">×</button></header>
-      <p>Use the print options to save a PDF to your device, or print a paper copy.</p>
+      <p>Tap Print / Save PDF, then choose Save to Files or Print in the iPhone options.</p>
       <div class="receipt-save-actions"><button type="button" class="btn sec" data-receipt-close>Close</button><button type="button" class="btn" data-receipt-print>Print / Save PDF</button></div>
-      <iframe title="Print-ready TrimSlot receipt"></iframe>
+      <div class="receipt-save-paper">${receiptSheetMarkup(material.receipt, material.verification)}</div>
     </section>`;
+    const printStyle = document.createElement('style');
+    printStyle.id = 'receipt-save-print-style';
+    printStyle.textContent = `
+      @media print {
+        body { margin:0!important; padding:0!important; background:#fff!important; }
+        body > *:not(#receipt-save-overlay) { display:none!important; }
+        #receipt-save-overlay { position:static!important; display:block!important; padding:0!important; background:#fff!important; }
+        #receipt-save-overlay .receipt-save-panel { display:block!important; width:148mm!important; height:auto!important; max-height:none!important; margin:0 auto!important; overflow:visible!important; border:0!important; border-radius:0!important; box-shadow:none!important; background:#fff!important; color:#14233b!important; }
+        #receipt-save-overlay .receipt-save-panel > header,
+        #receipt-save-overlay .receipt-save-panel > p,
+        #receipt-save-overlay .receipt-save-actions { display:none!important; }
+        #receipt-save-overlay .receipt-save-paper { display:block!important; width:148mm!important; margin:0!important; padding:0!important; background:#fff!important; }
+        #receipt-save-overlay .rs-sheet { width:148mm!important; min-height:210mm!important; height:210mm!important; margin:0!important; border:0!important; border-radius:0!important; box-shadow:none!important; break-after:avoid!important; }
+        #receipt-save-overlay .rs-actions,
+        #receipt-save-overlay .rs-print-note { display:none!important; }
+        #receipt-save-overlay .rs-header,
+        #receipt-save-overlay .rs-status,
+        #receipt-save-overlay .rs-amount,
+        #receipt-save-overlay .rs-footer { -webkit-print-color-adjust:exact!important; print-color-adjust:exact!important; }
+        @page { size:A5 portrait; margin:0; }
+      }`;
+    document.head.appendChild(printStyle);
     document.body.appendChild(overlay);
-    const frame = overlay.querySelector('iframe');
-    frame.srcdoc = receiptDocument(material.receipt, material.verification);
-    const close = () => overlay.remove();
+    const close = () => { overlay.remove(); printStyle.remove(); };
     overlay.querySelector('.receipt-save-close').onclick = close;
     overlay.querySelector('[data-receipt-close]').onclick = close;
-    overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+    overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
     overlay.querySelector('[data-receipt-print]').onclick = () => {
-      try { frame.contentWindow.focus(); frame.contentWindow.print(); }
-      catch (e) { toast('Use the Share or Print option in your browser to save this receipt.', true); }
+      try { window.focus(); window.print(); }
+      catch (e) { toast('Printing is unavailable in this browser. Use Share → Print to save the receipt.', true); }
     };
-    frame.addEventListener('load', () => { overlay.querySelector('[data-receipt-print]').disabled = false; });
-    overlay.querySelector('[data-receipt-print]').disabled = true;
     overlay.querySelector('.receipt-save-close').focus();
   } catch (e) { fail(e); }
   finally { if (button) { button.disabled = false; button.textContent = 'Save / Print PDF'; } }
