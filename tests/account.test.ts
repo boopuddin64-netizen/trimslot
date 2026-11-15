@@ -234,3 +234,62 @@ test('receipts list shows only the signed-in customer’s successful primary boo
     assert.equal(theirs.status, 200); assert.equal(theirs.body.receipts.length, 0, 'another customer cannot see this receipt');
   } finally { s.server.close(); resetNow(); }
 });
+
+test('receipt detail and QR verification are owner-bound, privacy-minimal, timestamp-accurate, and track refunds', async () => {
+  const s = await boot();
+  try {
+    const owner = await s.signup({ role: 'customer', name: 'Private Receipt Owner', email: 'private-receipt@x.com', phone: '08030001111', password: 'ReceiptPass123', accept_terms: true });
+    const other = await s.signup({ role: 'customer', name: 'Other Receipt User', email: 'other-private-receipt@x.com', password: 'ReceiptPass123', accept_terms: true });
+    const H = { Cookie: owner.cookie };
+    const b = await createBooking(s.db, owner.body.user.id, { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '12:00', payment_option: 'ONLINE' });
+    const init = await initializePayment(s.db, b.id, owner.body.user.email); await mockMarkPaid(s.db, init.reference); await processReference(s.db, init.reference);
+    const planId = (await s.db.one(`INSERT INTO plans (barber_id,name,price_kobo,sessions,validity_days) VALUES ($1,'Receipt Expiry Pack',300000,6,45) RETURNING id`, [s.barberId])).id;
+    const purchaseId = (await s.db.one(`INSERT INTO plan_purchases (plan_id,customer_id,barber_id,plan_name,price_kobo,sessions_total,validity_days,service_ids,status,paid_at,expires_at)
+      VALUES ($1,$2,$3,'Receipt Expiry Pack',300000,6,45,$4,'ACTIVE',now() - interval '1 day',now() + interval '44 days') RETURNING id`, [planId, owner.body.user.id, s.barberId, s.serviceIds])).id;
+    const planRef = `TS-PLAN-VERIFY-${purchaseId}`;
+    await s.db.query(`INSERT INTO payments (plan_purchase_id,reference,provider,amount_kobo,status,mock_paid,created_at,verified_at)
+      VALUES ($1,$2,'MOCK',300000,'SUCCESS',TRUE,now() - interval '5 days',now() - interval '1 day')`, [purchaseId, planRef]);
+
+    const list = await s.j('/api/me/receipts', { headers: H });
+    assert.equal(list.status, 200);
+    const bookingReceipt = list.body.receipts.find((r: any) => r.type === 'BOOKING');
+    const planReceipt = list.body.receipts.find((r: any) => r.type === 'PLAN');
+    assert.ok(bookingReceipt?.payment_id && bookingReceipt.receipt_number);
+    assert.equal(bookingReceipt.payment_provider, 'Test payment (mock)');
+    assert.notEqual(bookingReceipt.receipt_number, bookingReceipt.reference, 'the visible serial is not a lookup credential');
+    const bp = await s.db.one('SELECT verified_at FROM payments WHERE reference=$1', [init.reference]);
+    assert.equal(new Date(bookingReceipt.paid_at).toISOString(), new Date(bp.verified_at).toISOString(), 'booking receipt date uses confirmed payment time');
+    assert.equal(planReceipt.item, 'Receipt Expiry Pack');
+    assert.ok(planReceipt.expires_at, 'plan receipt carries its actual expiry timestamp');
+    const pp = await s.db.one('SELECT verified_at,created_at FROM payments WHERE reference=$1', [planRef]);
+    assert.equal(new Date(planReceipt.paid_at).toISOString(), new Date(pp.verified_at).toISOString(), 'plan receipt date prefers confirmed payment time over attempt creation');
+    assert.notEqual(new Date(planReceipt.paid_at).toISOString(), new Date(pp.created_at).toISOString());
+
+    const details = await s.j(`/api/me/receipts/${bookingReceipt.payment_id}`, { headers: H });
+    assert.equal(details.status, 200); assert.equal(details.body.receipt.reference, init.reference);
+    assert.equal((await s.j(`/api/me/receipts/${bookingReceipt.payment_id}`)).status, 401, 'detail needs a customer session');
+    assert.equal((await s.j(`/api/me/receipts/${bookingReceipt.payment_id}`, { headers: { Cookie: other.cookie } })).status, 404, 'another customer cannot open the detail');
+
+    const issued = await s.j(`/api/me/receipts/${bookingReceipt.payment_id}/verification`, { headers: H });
+    assert.equal(issued.status, 200); assert.match(issued.body.qr_data_url, /^data:image\/svg\+xml;base64,/);
+    assert.match(issued.body.verification_url, /#\/receipt-verify\/[A-Za-z0-9_-]{43}$/);
+    assert.equal((await s.j(`/api/me/receipts/${bookingReceipt.payment_id}/verification`)).status, 401);
+    const token = issued.body.verification_url.split('/').pop();
+    const publicCheck = await s.j('/api/receipts/verify', { method: 'POST', body: { token } });
+    assert.equal(publicCheck.status, 200); assert.equal(publicCheck.body.verified, true);
+    assert.deepEqual(Object.keys(publicCheck.body).sort(), ['paid_at', 'receipt_number', 'status', 'type', 'verified']);
+    assert.equal(publicCheck.body.type, 'BOOKING'); assert.equal(publicCheck.body.status, 'Paid');
+    assert.equal(JSON.stringify(publicCheck.body).includes('Private Receipt Owner'), false);
+    assert.equal(JSON.stringify(publicCheck.body).includes(owner.body.user.email), false);
+    assert.equal(JSON.stringify(publicCheck.body).includes(init.reference), false);
+    assert.equal(JSON.stringify(publicCheck.body).includes(String(bookingReceipt.amount_kobo)), false);
+    assert.equal((await s.j('/api/receipts/verify', { method: 'POST', body: { token: bookingReceipt.receipt_number } })).status, 404, 'human serial is never accepted as a verifier credential');
+
+    await s.db.query(`UPDATE payments SET refund_status='REFUNDED' WHERE id=$1`, [bookingReceipt.payment_id]);
+    await s.db.query(`UPDATE bookings SET payment_status='REFUNDED' WHERE id=$1`, [b.id]);
+    const refunded = await s.j('/api/receipts/verify', { method: 'POST', body: { token } });
+    assert.equal(refunded.status, 200); assert.equal(refunded.body.status, 'Refunded', 'public status follows the current refund record');
+    await s.db.query('UPDATE receipt_verification_tokens SET revoked_at=now() WHERE payment_id=$1', [bookingReceipt.payment_id]);
+    assert.equal((await s.j('/api/receipts/verify', { method: 'POST', body: { token } })).status, 404, 'revoked QR tokens stop verifying');
+  } finally { s.server.close(); resetNow(); }
+});
