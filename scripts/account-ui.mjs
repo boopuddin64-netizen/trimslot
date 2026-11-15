@@ -10,12 +10,32 @@ const ok = (c, n, x = '') => { total++; if (!c) { fails++; console.log('FAIL ' +
 const mk = async (w) => { const ctx = await b.newContext({ viewport: { width: w, height: 800 }, baseURL: BASE }); const p = await ctx.newPage(); p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/favicon|Failed to load resource|_vercel\/insights/.test(m.text())) errs.push(m.text().slice(0, 140)); }); return { ctx, p }; };
 const stamp = Date.now();
 for (const w of [390, 1280]) {
-  // --- sign-up needs the tick-box
-  { const { ctx, p } = await mk(w); await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]');
-    await p.fill('[name=name]', 'Ada UI ' + stamp); await p.fill('[name=email]', `ada${w}${stamp}@example.com`); await p.fill('[name=password]', 'Password123');
+  // --- password visibility and signup confirmation
+  { const { ctx, p } = await mk(w);
+    await p.goto('/#/login'); await p.waitForSelector('#f [name=identifier]');
+    const loginPw = p.locator('#f [name=password]'), loginToggle = p.locator('[data-password-toggle="auth-password"]');
+    ok(await loginPw.getAttribute('type') === 'password', w + ' login password starts masked');
+    ok(await loginToggle.getAttribute('aria-label') === 'Show password' && await loginToggle.getAttribute('aria-pressed') === 'false', w + ' login reveal button has accessible name and state');
+    await loginToggle.click(); ok(await loginPw.getAttribute('type') === 'text' && await loginToggle.getAttribute('aria-pressed') === 'true', w + ' login password can be revealed');
+    await loginToggle.click(); ok(await loginPw.getAttribute('type') === 'password' && await loginToggle.getAttribute('aria-pressed') === 'false', w + ' login password can be masked again');
+
+    await p.goto('/#/signup?role=barber'); await p.waitForSelector('#f [name=shop_name]');
+    ok(await p.locator('#f [name=confirm_password]').count() === 1, w + ' barber signup also asks for a confirmation password');
+    const signupRequests = [];
+    p.on('request', (req) => { if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/auth/signup') signupRequests.push(req.postDataJSON()); });
+    await p.goto('/#/signup?role=customer'); await p.waitForSelector('[name=accept_terms]');
+    const signupPw = p.locator('#f [name=password]'), confirmPw = p.locator('#f [name=confirm_password]');
+    ok(await confirmPw.count() === 1 && await confirmPw.getAttribute('autocomplete') === 'new-password', w + ' signup asks for a confirmation password');
+    const signupToggle = p.locator('[data-password-toggle="auth-password"]'); await signupToggle.click();
+    ok(await signupPw.getAttribute('type') === 'text', w + ' signup password can be revealed'); await signupToggle.click();
+    await p.fill('[name=name]', 'Ada UI ' + stamp); await p.fill('[name=email]', `ada${w}${stamp}@example.com`); await p.fill('[name=password]', 'Password123'); await p.fill('[name=confirm_password]', 'Mismatch123');
     await p.waitForTimeout(300);
     ok(await p.locator('button[type=submit]').isDisabled(), w + ' sign-up button stays disabled without the tick-box');
-    await p.check('[name=accept_terms]'); await p.click('button[type=submit]'); await p.waitForFunction(() => !location.hash.includes('signup'), null, { timeout: 8000 });
+    await p.check('[name=accept_terms]'); await p.click('button[type=submit]'); await p.waitForSelector('#password-match-error:not(.hidden)');
+    ok(/do not match/i.test(await p.locator('#password-match-error').innerText()) && signupRequests.length === 0, w + ' mismatched passwords are rejected before signup is sent');
+    await p.fill('[name=confirm_password]', 'Password123'); await p.click('button[type=submit]');
+    await p.waitForFunction(() => location.hash === '#/' && document.querySelector('#app')?.innerText.includes('My barbers'), null, { timeout: 8000 });
+    ok(signupRequests.length === 1 && !Object.hasOwn(signupRequests[0], 'confirm_password'), w + ' matching signup sends one request without the confirmation value');
     ok(true, w + ' signup with tick-box'); await p.goto('/#/profile'); await p.waitForSelector('.avatar-edit');
     const sections = await p.locator('.profile-section h2').allTextContents();
     ok(JSON.stringify(sections) === JSON.stringify(['Profile & contact', 'Security & sign-in', 'Bookings', 'Wallet & receipts', 'Preferences', 'Help, privacy & account actions']), w + ' customer profile has exactly the six agreed sections', sections.join(' | '));

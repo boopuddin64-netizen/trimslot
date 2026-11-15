@@ -27,7 +27,7 @@ const mk = async (name, ids, price = 40000) => {
   return r.j.id;
 };
 const buyPlan = async (planId) => { const b = await call(`/plans/${planId}/buy`, { method: 'POST' }, cust); await call(`/payments/mock/${b.j.reference}/complete`, { method: 'POST' }); await fetch(`${BASE}/api/payments/callback?reference=${b.j.reference}`, { redirect: 'manual' }); };
-const pKids = await mk('Kids pack ' + stamp, [kids.id]);
+const pKids = await mk('Kids pack', [kids.id]);
 await buyPlan(pKids);
 const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: true, args: ['--no-sandbox'] });
 const errs = [];
@@ -54,7 +54,7 @@ for (const w of [390, 1280]) for (const dark of [false, true]) {
     await p.screenshot({ path: `${OUT}/${tag}-regular.png`, fullPage: true }); await ctx.close(); }
 }
 // two matching plans: no preselect, the customer picks one and the booking names it
-const pFam = await mk('Family pack ' + stamp, [kids.id, reg.id], 60000); await buyPlan(pFam);
+const pFam = await mk('Family pack', [kids.id, reg.id], 60000); await buyPlan(pFam);
 { const { ctx, p } = await go(390, false, kids); await toPay(p, kids);
   ok(await p.locator('[data-p="PLAN"]').count() === 2, 'two matching plans are both offered');
   ok(await p.locator('[data-p="PLAN"].on').count() === 0, 'with two matching plans nothing is preselected');
@@ -73,6 +73,12 @@ const pFam = await mk('Family pack ' + stamp, [kids.id, reg.id], 60000); await b
   ok(!(await p.locator('#wallet-rules').evaluate((e) => e.open)), 'customer rules stay collapsed until requested');
   ok(Number(await p.locator('[data-plan-counter="wallet-sessions"]').innerText()) > 0, 'customer live session counter reflects available sessions');
   ok(await p.locator('[data-plan-counter="wallet-sessions"]').getAttribute('data-count-ready') === '1', 'customer counter initializes accessibly');
+  const walletLayout = await p.evaluate(() => {
+    const summary = document.querySelector('.plan-live-summary'), metric = document.querySelector('.plan-metric'), header = document.querySelector('#wallet-plans > summary'), cell = document.querySelector('#wallet-plans table.plan-table tbody td');
+    return { summaryHeight: summary.getBoundingClientRect().height, metricBorder: getComputedStyle(metric).borderTopWidth, headerHeight: header.getBoundingClientRect().height, cellFont: parseFloat(getComputedStyle(cell).fontSize), cellPadding: parseFloat(getComputedStyle(cell).paddingTop) };
+  });
+  ok(walletLayout.summaryHeight <= 155 && walletLayout.metricBorder === '0px', '390px customer live summary is compact, with no oversized metric tiles', JSON.stringify(walletLayout));
+  ok(walletLayout.headerHeight >= 44 && walletLayout.headerHeight <= 58 && walletLayout.cellFont >= 12 && walletLayout.cellPadding >= 5, 'customer disclosure remains easy to tap and plan rows stay readable', JSON.stringify(walletLayout));
   const walletOverflow = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   ok(!walletOverflow, '390px customer Plans page has no horizontal overflow');
   await p.waitForFunction(() => document.querySelector('#toast')?.classList.contains('hidden'), null, { timeout: 5000 });
@@ -93,6 +99,12 @@ ok(forced.r.status === 409, 'server refuses a plan session for a service the pla
   ok(!(await p.locator('#barber-create').evaluate((e) => e.open)), 'barber plan-creation form is collapsed by default');
   ok(!(await p.locator('#barber-purchases').evaluate((e) => e.open)), 'barber purchases are collapsed by default');
   ok(Number(await p.locator('[data-plan-counter="barber-sessions"]').innerText()) > 0, 'barber live counter shows sessions remaining');
+  const barberLayout = await p.evaluate(() => {
+    const summary = document.querySelector('.plan-live-summary'), metric = document.querySelector('.plan-metric'), header = document.querySelector('#barber-offers > summary'), card = document.querySelector('.plan-offer-card');
+    return { summaryHeight: summary.getBoundingClientRect().height, metricBorder: getComputedStyle(metric).borderTopWidth, headerHeight: header.getBoundingClientRect().height, cardPadding: parseFloat(getComputedStyle(card).paddingTop) };
+  });
+  ok(barberLayout.summaryHeight <= 155 && barberLayout.metricBorder === '0px', '390px barber live summary is compact, with no oversized metric tiles', JSON.stringify(barberLayout));
+  ok(barberLayout.headerHeight >= 44 && barberLayout.headerHeight <= 58 && barberLayout.cardPadding >= 9 && barberLayout.cardPadding <= 11, 'barber offer cards are compact while disclosure controls remain easy to tap', JSON.stringify(barberLayout));
   const planOverflow = await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   ok(!planOverflow, '390px barber Plans page has no horizontal overflow');
   await p.locator('#barber-create > summary').click();
@@ -100,6 +112,8 @@ ok(forced.r.status === 409, 'server refuses a plan session for a service the pla
   await p.locator('#barber-create > summary').click();
   await p.locator('#barber-purchases > summary').click(); await p.waitForSelector('#barber-purchases table.plan-table');
   ok(await p.locator('#barber-purchases table.plan-table tbody tr').count() > 0, 'barber purchase table expands on demand');
+  const purchaseRow = await p.locator('#barber-purchases table.plan-table tbody td').first().evaluate((e) => ({ font: parseFloat(getComputedStyle(e).fontSize), padding: parseFloat(getComputedStyle(e).paddingTop), label: e.dataset.label }));
+  ok(purchaseRow.font >= 12 && purchaseRow.padding >= 5 && purchaseRow.label === 'Customer', 'expanded barber purchase row keeps readable text and its phone label', JSON.stringify(purchaseRow));
   await p.locator('#barber-purchases > summary').click();
   await p.addStyleTag({ content: '.tabs{display:none!important}' }); await p.evaluate(() => window.scrollTo(0, 0));
   await p.screenshot({ path: `${OUT}/barber-plans-phone.png`, fullPage: true, animations: 'disabled' });
