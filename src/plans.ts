@@ -242,7 +242,7 @@ export async function customerWallet(c: Conn, customerId: number) {
       (pp.sessions_total - pp.sessions_used) AS sessions_left, (pp.expires_at > $2 AND pp.sessions_used < pp.sessions_total) AS live, b.shop_name,
       COALESCE((SELECT array_agg(sv.name ORDER BY sv.name) FROM services sv WHERE sv.id = ANY(pp.service_ids)), '{}') AS service_names
     FROM plan_purchases pp JOIN barbers b ON b.id=pp.barber_id WHERE pp.customer_id=$1 AND pp.status='ACTIVE' ORDER BY live DESC, pp.expires_at DESC LIMIT 50`, [customerId, now]);
-  const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, b.shop_name,
+  const credits = await c.many(`SELECT sc.id, sc.barber_id, sc.reason, sc.status, sc.expires_at, sc.value_kobo, sc.created_at, sc.used_at, b.shop_name,
       (sc.status='AVAILABLE' AND sc.expires_at > $2) AS live, sb.service_id, sv.name AS service_name
     FROM session_credits sc JOIN barbers b ON b.id=sc.barber_id LEFT JOIN bookings sb ON sb.id = sc.source_booking_id LEFT JOIN services sv ON sv.id = sb.service_id WHERE sc.customer_id=$1 AND sc.status<>'REVOKED' AND (sc.status='AVAILABLE' OR sc.created_at > now() - interval '60 days') ORDER BY live DESC, sc.expires_at LIMIT 50`, [customerId, now]);
   return { rules: limitsOf(s), plans, credits };

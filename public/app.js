@@ -1124,7 +1124,7 @@ const walletPlanStats = (w) => {
 };
 const walletPlanSignature = (w) => JSON.stringify({
   plans: (w.plans || []).map((p) => [p.id, p.live, p.sessions_left, p.sessions_total, p.expires_at, p.refund_request && p.refund_request.status]),
-  credits: (w.credits || []).map((c) => [c.id, c.live, c.status, c.expires_at]),
+  credits: (w.credits || []).map((c) => [c.id, c.live, c.status, c.expires_at, c.used_at]),
 });
 function renderWalletData(w, planResult, openedIds = null) {
   const { activePlans, activeCredits, sessions } = walletPlanStats(w);
@@ -1136,23 +1136,64 @@ function renderWalletData(w, planResult, openedIds = null) {
   const msg = planResult === 'processed' || planResult === 'already_processed' ? '<div class="ok">You bought the plan. Choose “Use plan session” when you book.</div>'
     : planResult === 'not_paid' ? '<div class="err">Your payment did not go through, so the plan is not on.</div>' : planResult === 'checked' ? '<div class="info">Paystack has not told us yet. If you were charged, the plan turns on by itself in a few minutes, or we refund you.</div>' : planResult === 'amount_mismatch' ? '<div class="err">We got your payment, but the amount was not right, so the plan is not on. Please contact support.</div>' : planResult === 'refund_due' ? '<div class="info">We could not use that payment. We are sending your money back.</div>' : '';
   const planRows = activePlans.map((p) => {
-    const pct = p.sessions_total > 0 ? Math.max(0, Math.min(100, Math.round(100 * p.sessions_left / p.sessions_total))) : 0;
+    const left = Math.max(0, Number(p.sessions_left) || 0);
+    const pct = p.sessions_total > 0 ? Math.max(0, Math.min(100, Math.round(100 * left / p.sessions_total))) : 0;
+    const coverage = (p.service_names || []).join(', ') || 'No services';
     const refund = refundBox(p, 'CUSTOMER');
-    return `<tr><td data-label="Plan"><b>${esc(p.plan_name)}</b><div class="small muted">${esc(p.shop_name)}</div><div class="small muted">Covers: ${esc((p.service_names || []).join(', ') || 'no services')}</div></td>
-      <td data-label="Sessions"><b>${p.sessions_left} of ${p.sessions_total} left</b><div class="meter"><i style="width:${pct}%"></i></div></td>
-      <td data-label="Ends">${expTxt(p.expires_at)}</td><td data-label="Actions"><div class="plan-table-actions"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>${refund ? `<details class="refund-disclosure"><summary>Refund options</summary>${refund}</details>` : ''}</td></tr>`;
+    return `<details class="customer-wallet-row customer-wallet-plan-row" id="wallet-plan-row-${p.id}">
+      <summary class="customer-wallet-row-summary"><span class="customer-wallet-row-top"><b class="customer-wallet-row-title">${esc(p.plan_name)}</b><span class="customer-wallet-row-value">${left} of ${p.sessions_total} left</span></span>
+        <span class="customer-wallet-row-meta"><span>${esc(p.shop_name)}</span><span>Ends ${expTxt(p.expires_at)}</span></span></summary>
+      <div class="customer-wallet-row-details"><div class="customer-wallet-detail-grid">
+        <div><span>Barber</span><b>${esc(p.shop_name)}</b></div><div><span>End date</span><b>${expTxt(p.expires_at)}</b></div>
+        <div><span>Sessions</span><b>${p.sessions_used} used · ${left} remaining of ${p.sessions_total}</b><span class="customer-wallet-progress"><i style="width:${pct}%"></i></span></div>
+        <div><span>Covers</span><b>${esc(coverage)}</b></div></div>
+        <div class="customer-wallet-actions"><a class="btn sm sec" href="#/barber/${p.barber_id}">View barber</a><a class="btn sm" href="#/book/${p.barber_id}">Book</a></div>
+        ${refund ? `<details class="refund-disclosure customer-wallet-refund" id="wallet-refund-${p.id}"><summary>Refund options</summary><div class="customer-wallet-refund-body">${refund}</div></details>` : ''}
+      </div></details>`;
   }).join('');
-  const creditRows = activeCredits.map((c) => `<tr><td data-label="Barber"><b>${esc(c.shop_name)}</b><span class="badge b-purple" style="margin-top:5px">CREDIT</span></td>
-    <td data-label="Covers">1 session · ${c.service_name ? esc(c.service_name) + ' or any service priced ' : 'any service priced '}${naira(c.value_kobo)}</td><td data-label="Ends">${expTxt(c.expires_at)}</td></tr>`).join('');
-  const endedPlanRows = endedPlans.map((p) => `<tr><td data-label="Plan"><b>${esc(p.plan_name)}</b><div class="small muted">${esc(p.shop_name)}</div></td>
-    <td data-label="Sessions">${p.sessions_left} of ${p.sessions_total} left</td><td data-label="Status"><span class="badge b-gray">${p.sessions_left === 0 ? 'USED UP' : 'ENDED'}</span></td><td data-label="Ended">${expTxt(p.expires_at)}</td></tr>`).join('');
-  const endedCreditRows = endedCredits.map((c) => `<tr><td data-label="Barber"><b>${esc(c.shop_name)}</b></td><td data-label="Status"><span class="badge b-gray">${c.status === 'USED' ? 'USED' : 'EXPIRED'}</span></td><td data-label="Date">${c.status === 'USED' ? 'Used' : expTxt(c.expires_at)}</td></tr>`).join('');
+  const creditCoverage = (c) => c.service_name ? `${esc(c.service_name)} or any service priced ${naira(c.value_kobo)}` : `Any service priced ${naira(c.value_kobo)}`;
+  const creditRows = activeCredits.map((c) => {
+    const coverage = creditCoverage(c);
+    return `<details class="customer-wallet-row customer-wallet-credit-row" id="wallet-credit-row-${c.id}">
+      <summary class="customer-wallet-row-summary"><span class="customer-wallet-row-top"><b class="customer-wallet-row-title">${esc(c.shop_name)}</b><span class="badge b-green customer-wallet-row-status">AVAILABLE</span></span>
+        <span class="customer-wallet-row-meta"><span>1 session · Covers ${coverage}</span><span>Expires ${expTxt(c.expires_at)}</span></span></summary>
+      <div class="customer-wallet-row-details"><div class="customer-wallet-detail-grid">
+        <div><span>Barber</span><b>${esc(c.shop_name)}</b></div><div><span>Status</span><b>Available</b></div>
+        <div><span>Coverage</span><b>1 session · ${coverage}</b></div><div><span>Credit value</span><b>${naira(c.value_kobo)}</b></div>
+        <div><span>Reason</span><b>${esc(c.reason || 'Session credit')}</b></div><div><span>Issued</span><b>${expTxt(c.created_at)}</b></div>
+        <div><span>Expires</span><b>${expTxt(c.expires_at)}</b></div></div></div></details>`;
+  }).join('');
+  const endedPlanRows = endedPlans.map((p) => {
+    const status = p.sessions_left === 0 ? 'USED UP' : 'ENDED';
+    const left = Math.max(0, Number(p.sessions_left) || 0);
+    const coverage = (p.service_names || []).join(', ') || 'No services';
+    return `<details class="customer-wallet-row customer-wallet-ended-plan-row" id="wallet-ended-plan-row-${p.id}">
+      <summary class="customer-wallet-row-summary"><span class="customer-wallet-row-top"><b class="customer-wallet-row-title">${esc(p.plan_name)}</b><span class="badge b-gray customer-wallet-row-status">${status}</span></span>
+        <span class="customer-wallet-row-meta"><span>${esc(p.shop_name)}</span><span>End date ${expTxt(p.expires_at)}</span></span></summary>
+      <div class="customer-wallet-row-details"><div class="customer-wallet-detail-grid">
+        <div><span>Barber</span><b>${esc(p.shop_name)}</b></div><div><span>Final status</span><b>${status}</b></div>
+        <div><span>Sessions</span><b>${p.sessions_used} used · ${left} remaining of ${p.sessions_total}</b></div>
+        <div><span>Covers</span><b>${esc(coverage)}</b></div><div><span>End date</span><b>${expTxt(p.expires_at)}</b></div></div></div></details>`;
+  }).join('');
+  const endedCreditRows = endedCredits.map((c) => {
+    const status = c.status === 'USED' ? 'USED' : 'EXPIRED';
+    const date = c.status === 'USED' ? (c.used_at ? expTxt(c.used_at) : 'Date unavailable') : expTxt(c.expires_at);
+    const dateLabel = c.status === 'USED' ? 'Used on' : 'Expired';
+    const coverage = creditCoverage(c);
+    return `<details class="customer-wallet-row customer-wallet-ended-credit-row" id="wallet-ended-credit-row-${c.id}">
+      <summary class="customer-wallet-row-summary"><span class="customer-wallet-row-top"><b class="customer-wallet-row-title">Session credit · ${esc(c.shop_name)}</b><span class="badge b-gray customer-wallet-row-status">${status}</span></span>
+        <span class="customer-wallet-row-meta"><span>1 session · Covers ${coverage}</span><span>${dateLabel} ${date}</span></span></summary>
+      <div class="customer-wallet-row-details"><div class="customer-wallet-detail-grid">
+        <div><span>Barber</span><b>${esc(c.shop_name)}</b></div><div><span>Final status</span><b>${status}</b></div>
+        <div><span>Coverage</span><b>1 session · ${coverage}</b></div><div><span>Credit value</span><b>${naira(c.value_kobo)}</b></div>
+        <div><span>Reason</span><b>${esc(c.reason || 'Session credit')}</b></div><div><span>${dateLabel}</span><b>${date}</b></div></div></div></details>`;
+  }).join('');
   const planDisabled = (state.cfg.features || {}).plans === false ? '<div class="info small notice">Plans are turned off by TrimSlot right now. You cannot buy one or use a plan session, but your existing sessions and end dates are kept.</div>' : '';
   const creditDisabled = (state.cfg.features || {}).credits === false ? '<div class="info small notice">Session credits are turned off by TrimSlot right now. Your credits are kept and their end dates do not change.</div>' : '';
-  const planBody = planRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Plan</th><th>Sessions</th><th>Ends</th><th>Actions</th></tr></thead><tbody>${planRows}</tbody></table></div>` : '<p class="muted small">No active plans yet. Open a barber’s link to see the plans they offer.</p>';
-  const creditBody = creditRows ? `<div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Credit covers</th><th>Ends</th></tr></thead><tbody>${creditRows}</tbody></table></div>` : '<p class="muted small">No session credits ready to use.</p>';
-  const endedBody = `${endedPlanRows ? `<h3>Plans</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Plan</th><th>Sessions</th><th>Status</th><th>Ended</th></tr></thead><tbody>${endedPlanRows}</tbody></table></div>` : ''}${endedCreditRows ? `<h3>Credits</h3><div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Barber</th><th>Status</th><th>Date</th></tr></thead><tbody>${endedCreditRows}</tbody></table></div>` : ''}`;
-  app.innerHTML = `<h1>Plans &amp; credits</h1>${msg}
+  const planBody = planRows ? `<div class="customer-wallet-list">${planRows}</div>` : '<p class="muted small">No active plans yet. Open a barber’s link to see the plans they offer.</p>';
+  const creditBody = creditRows ? `<div class="customer-wallet-list">${creditRows}</div>` : '<p class="muted small">No session credits ready to use.</p>';
+  const endedBody = `${endedPlanRows ? `<h3 class="customer-wallet-list-heading">Plans</h3><div class="customer-wallet-list">${endedPlanRows}</div>` : ''}${endedCreditRows ? `<h3 class="customer-wallet-list-heading">Credits</h3><div class="customer-wallet-list">${endedCreditRows}</div>` : ''}`;
+  app.innerHTML = `<div class="customer-wallet-view"><h1>Plans &amp; credits</h1>${msg}
     <div class="plan-live-summary"><div class="plan-live-head"><h2 class="plan-live-title">Your session balance</h2><span class="plan-live-dot">LIVE</span></div>
       <div class="plan-metrics"><div class="plan-metric primary"><b data-plan-counter="wallet-sessions">0</b><span>Sessions ready</span></div><div class="plan-metric"><b data-plan-counter="wallet-plans">0</b><span>Active plans</span></div><div class="plan-metric"><b data-plan-counter="wallet-credits">0</b><span>Credits</span></div></div>
       <p class="plan-live-note" id="wallet-live-note">Balance updates automatically every 10 seconds while this page is open.</p></div>
@@ -1163,7 +1204,7 @@ function renderWalletData(w, planResult, openedIds = null) {
     <details class="plan-disclosure" id="wallet-rules"><summary><span>How plans and credits work</span><span class="small muted">Terms, expiry and refunds</span></summary><div class="plan-disclosure-body">
       <p class="plan-rule-copy">If you miss a paid session, you do not get a cash refund. You receive one credit with the same barber. It covers the same service or any service at the same price, lasts ${w.rules.credit_expiry_days} days, cannot be cashed out, and is used when you book with that barber.</p>
       <p class="plan-rule-copy">If you miss a plan session, it returns to your plan; the plan keeps its original end date. Refund requests for part-used plans go through TrimSlot review and require the other party’s agreement. Any eligible online-booking refund follows the cancellation cutoff shown when you cancel.</p>
-    </div></details>`;
+    </div></details></div>`;
   for (const el of app.querySelectorAll('[data-plan-counter]')) { const old = previousCounts.get(el.dataset.planCounter); if (old) { el.textContent = old.value; el.dataset.countValue = old.value; if (old.ready) el.dataset.countReady = old.ready; } }
   for (const id of opened) { const d = document.getElementById(id); if (d) d.open = true; }
   const stats = walletPlanStats(w);
