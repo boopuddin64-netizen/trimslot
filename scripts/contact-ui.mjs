@@ -23,9 +23,9 @@ if (EV) {
   await p.waitForSelector('#sendcode', { timeout: 8000 });
   ok(/Test mode: the code is/.test(await p.innerText('#app, main, body')), 'test-mode hint shows the dev code');
   await p.click('#sendcode'); await p.waitForSelector('#vf');
-  await p.fill('#vf [name=code]', '000000'); await p.click('#vf button'); await p.waitForSelector('.err[role=alert]');
-  ok(/tries left/.test(await p.innerText('.err[role=alert]')), 'wrong code shows tries left');
-  await p.fill('#vf [name=code]', '123456'); await p.click('#vf button'); await p.waitForFunction(() => !location.hash.includes('verify-email'), null, { timeout: 8000 });
+  await p.fill('#vf [name=code]', '000000'); await p.waitForSelector('.err[role=alert]');
+  ok(/tries left/.test(await p.innerText('.err[role=alert]')), 'wrong code auto-checks and shows tries left');
+  await p.fill('#vf [name=code]', '123456'); await p.waitForFunction(() => !location.hash.includes('verify-email'), null, { timeout: 8000 });
   ok(await p.locator('#emailban').count() === 0, 'no email banner after verifying');
   await p.screenshot({ path: 'screenshots/contact/after-verify.png' }); await ctx.close(); }
 } else {
