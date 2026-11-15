@@ -726,3 +726,17 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
 /* Tapped refresh help stays below the live figures instead of overlaying them. */
 .barber-plans-view .plan-live-summary .plan-live-note{position:static;width:auto;max-width:none;margin:7px 0 0;padding:7px 9px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);box-shadow:none;color:var(--mut);font-size:11px;line-height:1.35;text-align:left}
 .barber-plans-view .plan-live-summary.is-refresh-open .plan-live-note{display:block}
+
+
+/* Profile accordions: one shared pattern for customers and barbers. */
+.profile-section{border:1px solid var(--line);border-radius:14px;padding:0 14px;background:var(--card);overflow:hidden}
+.profile-section+.profile-section{margin-top:10px;padding-top:0;border-top:1px solid var(--line)}
+.profile-accordion-trigger{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:58px;cursor:pointer;user-select:none;outline:none}
+.profile-accordion-trigger:focus-visible{border-radius:8px;box-shadow:0 0 0 3px var(--focus,rgba(51,88,212,.25))}
+.profile-accordion-title{margin:0!important;flex:1;color:var(--text);font-size:14px!important;font-weight:650!important;letter-spacing:0!important;text-transform:none!important}
+.profile-accordion-chevron{display:grid;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:50%;color:var(--mut);background:var(--soft,rgba(127,127,127,.09));transition:transform .2s ease,background .2s ease}
+.profile-accordion-chevron .i{width:17px;height:17px}
+.profile-section.is-open .profile-accordion-chevron{transform:rotate(180deg);background:var(--line)}
+.profile-accordion-content{padding:0 0 14px;min-width:0}
+.profile-section:not(.is-open)>.profile-accordion-content{display:none}
+@media(prefers-reduced-motion:reduce){.profile-accordion-chevron{transition:none}}
