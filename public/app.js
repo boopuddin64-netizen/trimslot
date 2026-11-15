@@ -888,17 +888,23 @@ async function barberPlans() {
   const render = (po, openIds = []) => {
     const stats = barberPlanStats(po);
     const previousCounts = new Map([...app.querySelectorAll('[data-plan-counter]')].map((el) => [el.dataset.planCounter, { value: el.dataset.countValue || el.textContent || '0', ready: el.dataset.countReady }]));
-    app.innerHTML = `${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Manage the packs customers can buy, and see how sessions are being used.</p>
-      <div class="plan-live-summary"><div class="plan-live-head"><h2 class="plan-live-title">Your plan activity</h2><span class="plan-live-dot">LIVE</span></div>
-        <div class="plan-metrics"><div class="plan-metric"><b data-plan-counter="barber-offers">0</b><span>Plans live</span></div><div class="plan-metric"><b data-plan-counter="barber-purchases">0</b><span>Active purchases</span></div><div class="plan-metric primary"><b data-plan-counter="barber-sessions">0</b><span>Sessions left</span></div></div>
-        <p class="plan-live-note">Updates automatically every 10 seconds while this page is open.</p></div>
-      <div id="msg"></div>${plansBody(po, profile.services)}`;
+    app.innerHTML = `<div class="barber-plans-view">${pendingBanner()}<h1>Plans &amp; credits</h1><p class="muted">Manage the packs customers can buy, and see how sessions are being used.</p>
+      <div class="plan-live-summary"><div class="plan-live-head"><h2 class="plan-live-title">Your plan activity</h2><div class="plan-live-tools"><span class="plan-live-dot">LIVE</span><span class="plan-refresh-wrap"><button class="plan-refresh-info" type="button" aria-label="Show refresh information" aria-expanded="false" aria-controls="barber-refresh-note">i</button></span></div></div>
+        <div class="plan-metrics barber-plan-metrics"><div class="plan-metric barber-plan-offers"><b data-plan-counter="barber-offers">0</b><span>Plans live</span></div><div class="plan-metric primary barber-plan-sessions"><b data-plan-counter="barber-sessions">0</b><span>Sessions left</span></div><div class="plan-metric barber-plan-purchases"><b data-plan-counter="barber-purchases">0</b><span>Active purchases</span></div><span class="barber-plan-balance" aria-hidden="true"></span></div>
+        <p class="plan-live-note" id="barber-refresh-note" role="tooltip">Updates automatically every 10 seconds while this page is open.</p></div>
+      <div id="msg"></div>${plansBody(po, profile.services)}</div>`;
     app.dataset.planSignature = barberPlanSignature(po);
     for (const el of app.querySelectorAll('[data-plan-counter]')) { const old = previousCounts.get(el.dataset.planCounter); if (old) { el.textContent = old.value; el.dataset.countValue = old.value; if (old.ready) el.dataset.countReady = old.ready; } }
     animatePlanCount(document.querySelector('[data-plan-counter="barber-offers"]'), stats.offers);
     animatePlanCount(document.querySelector('[data-plan-counter="barber-purchases"]'), stats.purchases);
     animatePlanCount(document.querySelector('[data-plan-counter="barber-sessions"]'), stats.sessions);
     for (const id of openIds) { const d = document.getElementById(id); if (d) d.open = true; }
+    const refreshInfo = app.querySelector('.plan-refresh-info');
+    if (refreshInfo) {
+      const summary = refreshInfo.closest('.plan-live-summary');
+      refreshInfo.onclick = () => { const open = !summary.classList.contains('is-refresh-open'); summary.classList.toggle('is-refresh-open', open); refreshInfo.setAttribute('aria-expanded', String(open)); };
+      refreshInfo.onkeydown = (ev) => { if (ev.key === 'Escape') { summary.classList.remove('is-refresh-open'); refreshInfo.setAttribute('aria-expanded', 'false'); } };
+    }
     const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
     const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
     wirePlans(po, guard);
@@ -1622,16 +1628,18 @@ function plansBody(po, services) {
   };
   const list = plans.map((pl) => {
     const [statusClass, statusLabel, statusHelp] = planStatus(pl);
+    const buyers = Number(pl.buyers) || 0;
     const perSession = naira(Math.floor(pl.price_kobo / pl.sessions));
-    return `<div class="svcline plnline plan-offer-card" data-id="${pl.id}"><div>
-      <div class="plan-offer-top"><div><h3>${esc(pl.name)}</h3><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div></div>
-        <div class="plan-offer-tools"><button class="mini ed" aria-label="Edit ${esc(pl.name)}">${ic('pencil', 'sm')}</button>${pl.active ? `<button class="mini red del" aria-label="Stop selling ${esc(pl.name)}">${ic('trash', 'sm')}</button>` : '<span class="small muted">Not for sale</span>'}</div></div>
-      <div class="small muted" style="margin-top:8px">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div>
-      <div class="small" style="margin-top:8px"><span class="badge ${statusClass}">${statusLabel}</span> <span class="muted">${statusHelp}</span></div>
-      ${pl.approval_reason ? `<div class="warn small notice" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Admin note:</b> ${esc(pl.approval_reason)}</div></div>` : ''}
-      ${pl.needs_review ? `<div class="warn small notice" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}
-      <details class="plan-stats"><summary>Performance details</summary><div class="plan-stats-body">${pl.buyers} buyer${pl.buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold · ${perSession} per session</div></details>
-    </div><div class="svcedit" style="grid-column:1/-1">${planForm(pl.id, pl, services, L)}</div></div>`;
+    return `<div class="svcline plnline plan-offer-card" data-id="${pl.id}">
+      <div class="plan-offer-main"><div class="plan-offer-info"><h3>${esc(pl.name)}</h3><div class="small muted">${naira(pl.price_kobo)} · ${pl.sessions} sessions · ${pl.validity_days} days</div>
+          <div class="small muted">Includes ${esc(svcNames(pl.service_ids, services) || 'no services')}</div></div>
+        <div class="plan-offer-status"><span class="badge ${statusClass}">${statusLabel}</span><div class="plan-offer-buyers"><b>${buyers}</b><span>purchase${buyers === 1 ? '' : 's'}</span></div></div>
+        <div class="plan-offer-actions"><button class="btn sm plan-manage" type="button" aria-controls="plan-stats-${pl.id}" aria-expanded="false">Manage</button><button class="btn sm sec ed" type="button" aria-controls="plan-edit-${pl.id}" aria-expanded="false" aria-label="Edit ${esc(pl.name)}">Edit</button></div></div>
+      ${statusLabel !== 'LIVE' ? `<p class="plan-status-help small muted">${statusHelp}</p>` : ''}
+      ${pl.approval_reason ? `<div class="warn small notice plan-card-warning" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Admin note:</b> ${esc(pl.approval_reason)}</div></div>` : ''}
+      ${pl.needs_review ? `<div class="warn small notice plan-card-warning" style="margin:8px 0">${ic('warn', 'sm')}<div><b>Please check this plan.</b> We linked it to your services that cost no more than ${naira(Math.floor(pl.price_kobo / pl.sessions))} each. Tap edit, check the list, then save.</div></div>` : ''}
+      <details class="plan-stats" id="plan-stats-${pl.id}"><summary>Performance details</summary><div class="plan-stats-body"><div>${buyers} buyer${buyers === 1 ? '' : 's'} · ${pl.sessions_used} session${pl.sessions_used === 1 ? '' : 's'} used · ${naira(pl.revenue_kobo)} sold · ${perSession} per session</div>${pl.active ? `<div class="plan-stats-actions"><button class="btn sm sec del" type="button" aria-label="Stop selling ${esc(pl.name)}">Stop selling</button></div>` : ''}</div></details>
+      <div class="svcedit" id="plan-edit-${pl.id}">${planForm(pl.id, pl, services, L)}</div></div>`;
   }).join('') || '<p class="muted small">No plans yet. Create one when you are ready to offer session packs.</p>';
   const buyerRows = purchases.slice(0, 15).map((x) => {
     const left = Math.max(0, x.sessions_total - x.sessions_used);
@@ -1649,10 +1657,10 @@ function plansBody(po, services) {
   const rules = `Plan sessions are valid for the number of days shown. Customers keep the terms they bought if you later edit a plan. When a customer misses a paid session, they receive one credit with you; it covers the same service or a service at the same price, expires after ${L.credit_expiry_days} days, and cannot be cashed out. A missed plan session returns to the plan and does not extend its end date. Refunds for part-used plans go through TrimSlot review, then require the other party's agreement.`;
   return `${offNote}
     <details class="plan-section" id="barber-offers" open><summary><span>Plans you offer</span><span class="plan-section-count">${plans.length} plan${plans.length === 1 ? '' : 's'}</span></summary><div class="plan-section-body">${list}</div></details>
-    <details class="plan-disclosure" id="barber-create"><summary><span>Create a plan</span><span class="small muted">Choose a price, sessions and services</span></summary><div class="plan-disclosure-body">${planForm(null, null, services, L)}</div></details>
+    <details class="plan-disclosure" id="barber-create"><summary><span class="plan-add-label">${ic('plus', 'sm')} Add a plan</span><span class="small muted">Price · sessions · services</span></summary><div class="plan-disclosure-body">${planForm(null, null, services, L)}</div></details>
     <details class="plan-section" id="barber-purchases"><summary><span>Customer purchases</span><span class="plan-section-count">${purchases.length}</span></summary><div class="plan-section-body">${buyersContent}</div></details>
     <details class="plan-section" id="barber-credits"><summary><span>Session credits</span><span class="plan-section-count">${credits.length}</span></summary><div class="plan-section-body">${creditsContent}</div></details>
-    <details class="plan-disclosure" id="barber-rules"><summary><span>Plan rules &amp; refunds</span><span class="small muted">How sessions and refunds work</span></summary><div class="plan-disclosure-body"><p class="plan-rule-copy">${rules}</p><p class="plan-rule-copy">Plan limits: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)}, up to ${L.max_sessions} sessions, and up to ${L.max_validity_days} days.</p></div></details>`;
+    <details class="plan-disclosure" id="barber-rules"><summary><span>Rules &amp; refunds</span><span class="small muted">Plan terms</span></summary><div class="plan-disclosure-body"><p class="plan-rule-copy">${rules}</p><p class="plan-rule-copy">Plan limits: price ${naira(L.min_price_kobo)}–${naira(L.max_price_kobo)}, up to ${L.max_sessions} sessions, and up to ${L.max_validity_days} days.</p></div></details>`;
 }
 
 function wirePlans(po, guard) {
@@ -1661,7 +1669,15 @@ function wirePlans(po, guard) {
   const add = $('#addplan'); if (add) add.onsubmit = guard(() => api('/barber/plans', { method: 'POST', body: body(add) }), 'Plan created');
   document.querySelectorAll('.plnline .planf').forEach((f) => {
     const l = f.closest('.svcline');
-    l.querySelector('.ed').onclick = () => l.classList.toggle('editing');
+    const edit = l.querySelector('.ed');
+    edit.onclick = () => { const open = l.classList.toggle('editing'); edit.setAttribute('aria-expanded', String(open)); };
+    const manage = l.querySelector('.plan-manage'), stats = l.querySelector('.plan-stats');
+    if (manage && stats) {
+      const syncManage = () => manage.setAttribute('aria-expanded', String(stats.open));
+      manage.onclick = () => { stats.open = !stats.open; syncManage(); };
+      stats.addEventListener('toggle', syncManage);
+      syncManage();
+    }
     f.onsubmit = guard(() => api('/barber/plans/' + f.dataset.id, { method: 'PUT', body: body(f) }), 'Plan saved');
     const del = l.querySelector('.del');
     if (del) del.onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');

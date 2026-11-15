@@ -646,3 +646,83 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
   .plan-disclosure>summary{min-height:48px;padding:9px 12px}
   .plan-disclosure-body{padding:0 12px 12px}
 }
+
+
+/* ---- Barber Plans reference layout: scoped so customer Plans stay unchanged ---- */
+.barber-plans-view .plan-live-summary{position:relative;padding:12px;margin:10px 0;overflow:visible}
+.barber-plans-view .plan-live-tools{display:flex;align-items:center;gap:8px}
+.barber-plans-view .plan-refresh-wrap{position:relative;display:inline-flex;align-items:center;z-index:8}
+.barber-plans-view .plan-refresh-info{width:26px;height:26px;display:grid;place-items:center;border:1px solid var(--line2);border-radius:50%;background:transparent;color:var(--mut);font:700 14px/1 Georgia,serif;cursor:pointer}
+.barber-plans-view .plan-refresh-info:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.barber-plans-view .plan-live-note{display:none;position:absolute;top:calc(100% + 7px);right:0;width:220px;max-width:calc(100vw - 42px);margin:0;padding:9px 11px;border:1px solid var(--line2);border-radius:9px;background:var(--card);box-shadow:0 8px 22px #0005;color:var(--ink);font-size:11px;line-height:1.4;text-align:left;z-index:20}
+.barber-plans-view .plan-refresh-wrap.is-open .plan-live-note{display:block}
+.barber-plans-view .plan-metrics.barber-plan-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:auto auto;gap:0;margin-top:9px;padding:6px 0 2px;border-top:1px solid var(--line);border-bottom:0;align-items:stretch}
+.barber-plans-view .barber-plan-metrics .plan-metric{min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:5px 4px;border:0;border-radius:0;background:transparent;text-align:center}
+.barber-plans-view .barber-plan-offers{grid-column:1;grid-row:1 / span 2;border-right:1px solid var(--line)!important}
+.barber-plans-view .barber-plan-sessions{grid-column:2;grid-row:1;padding:4px 3px 2px!important}
+.barber-plans-view .barber-plan-purchases{grid-column:2;grid-row:2;margin:3px 5px 0;padding:5px 3px 2px!important;border-top:1px solid var(--line)!important}
+.barber-plans-view .barber-plan-balance{grid-column:3;grid-row:1 / span 2;min-width:0}
+.barber-plans-view .barber-plan-metrics .plan-metric b{font-size:19px;line-height:1.1}
+.barber-plans-view .barber-plan-metrics .barber-plan-sessions b{font-size:28px;color:var(--brand)}
+.barber-plans-view .barber-plan-metrics .barber-plan-purchases b{font-size:16px}
+.barber-plans-view .barber-plan-metrics .plan-metric span{margin-top:3px;font-size:10px;line-height:1.2}
+.barber-plans-view .plan-offer-card{display:block;margin:7px 0;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.barber-plans-view .plan-offer-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(68px,78px) max-content;align-items:center;gap:7px}
+.barber-plans-view .plan-offer-info{min-width:0}
+.barber-plans-view .plan-offer-info h3{margin:0 0 4px;font-size:14px;line-height:1.2;overflow-wrap:anywhere}
+.barber-plans-view .plan-offer-info .small{font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+.barber-plans-view .plan-offer-status{min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center}
+.barber-plans-view .plan-offer-status .badge{max-width:100%;justify-content:center;padding:4px 6px;font-size:9px;line-height:1.1;text-align:center;white-space:normal}
+.barber-plans-view .plan-offer-buyers{display:flex;align-items:baseline;justify-content:center;gap:3px;color:var(--mut);font-size:9px;line-height:1.15;white-space:nowrap}
+.barber-plans-view .plan-offer-buyers b{color:var(--ink);font-size:13px;font-weight:700}
+.barber-plans-view .plan-offer-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;white-space:nowrap}
+.barber-plans-view .plan-offer-actions .btn{min-height:34px;padding:0 8px;font-size:12px;white-space:nowrap}
+.barber-plans-view .plan-status-help{margin:7px 0 0;line-height:1.35}
+.barber-plans-view .plan-card-warning{grid-column:1/-1}
+.barber-plans-view .plan-stats{margin-top:6px}
+.barber-plans-view .plan-stats-body{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.barber-plans-view .plan-stats-actions{display:flex;align-items:center;gap:6px}
+.barber-plans-view .plan-add-label{display:inline-flex;align-items:center;gap:8px}
+.barber-plans-view .plan-add-label .ico{color:var(--brand)}
+
+/* Every barber Plans disclosure uses the same down/up chevron and eased rotation. */
+.barber-plans-view details>summary{position:relative;padding-right:46px;list-style:none}
+.barber-plans-view details>summary::-webkit-details-marker{display:none}
+.barber-plans-view details>summary::after{content:"";position:absolute;top:50%;right:8px;width:26px;height:26px;display:block;border:1px solid var(--line2);border-radius:50%;background:transparent;transform:translateY(-50%)}
+.barber-plans-view details>summary::before{content:"";position:absolute;top:50%;right:19px;width:7px;height:7px;border-right:1.6px solid var(--mut);border-bottom:1.6px solid var(--mut);transform:translate(-50%,-50%) rotate(45deg);transform-origin:center;transition:transform 240ms cubic-bezier(.22,.61,.36,1)}
+.barber-plans-view details[open]>summary::before{transform:translate(-50%,-50%) rotate(225deg)}
+.barber-plans-view .plan-section[open]>summary::after,.barber-plans-view .plan-disclosure[open]>summary::after{content:""}
+.barber-plans-view .plan-stats>summary,.barber-plans-view .refund-disclosure>summary{min-height:30px;padding:5px 30px 5px 0;font-size:12px;line-height:1.25}
+.barber-plans-view .plan-stats>summary::after,.barber-plans-view .refund-disclosure>summary::after{right:3px;width:20px;height:20px}
+.barber-plans-view .plan-stats>summary::before,.barber-plans-view .refund-disclosure>summary::before{right:11px;width:6px;height:6px}
+
+@media(max-width:560px){
+  .barber-plans-view .plan-live-summary{padding:11px;margin:8px 0}
+  .barber-plans-view .plan-metrics.barber-plan-metrics{margin-top:8px}
+  .barber-plans-view .plan-offer-main{grid-template-columns:minmax(0,1fr) 72px max-content;gap:6px}
+  .barber-plans-view .plan-offer-info h3{font-size:13.5px}
+  .barber-plans-view .plan-offer-info .small{font-size:10.5px}
+  .barber-plans-view .plan-offer-actions{gap:4px}
+  .barber-plans-view .plan-offer-actions .btn{min-height:34px;padding:0 7px;font-size:11.5px}
+}
+@media(max-width:370px){
+  .barber-plans-view .plan-offer-main{grid-template-columns:minmax(0,1fr) 98px;grid-template-areas:"info actions" "status actions";gap:5px 7px}
+  .barber-plans-view .plan-offer-info{grid-area:info}
+  .barber-plans-view .plan-offer-status{grid-area:status;flex-direction:row;justify-content:flex-start;gap:7px}
+  .barber-plans-view .plan-offer-actions{grid-area:actions;flex-direction:column;align-items:stretch}
+  .barber-plans-view .plan-offer-actions .btn{width:100%;padding:0 5px}
+}
+
+
+@media(max-width:560px){
+  .barber-plans-view .plan-live-summary{padding:9px 11px}
+  .barber-plans-view .plan-metrics.barber-plan-metrics{padding:3px 0 1px}
+  .barber-plans-view .barber-plan-metrics .plan-metric{padding:3px 4px}
+  .barber-plans-view .barber-plan-sessions{padding:2px 3px 1px!important}
+  .barber-plans-view .barber-plan-purchases{margin:1px 5px 0;padding:3px 3px 0!important}
+}
+
+
+/* Tapped refresh help stays below the live figures instead of overlaying them. */
+.barber-plans-view .plan-live-summary .plan-live-note{position:static;width:auto;max-width:none;margin:7px 0 0;padding:7px 9px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);box-shadow:none;color:var(--mut);font-size:11px;line-height:1.35;text-align:left}
+.barber-plans-view .plan-live-summary.is-refresh-open .plan-live-note{display:block}
