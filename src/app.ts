@@ -584,19 +584,35 @@ export function createApp(db: Db) {
   }));
   api.get('/me/receipts', cust, wrap(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    const rows = await db.many<any>(`SELECT r.* FROM (
-      SELECT DISTINCT ON (k.id) k.id AS booking_id, k.date, k.start_min, k.service_name, k.payment_status,
-        b.shop_name, u.name AS barber_name, p.reference, p.amount_kobo, p.refund_status, p.created_at
+    const rows = await db.many<any>(`SELECT * FROM (
+      SELECT 'BOOKING'::text AS receipt_type, k.id AS booking_id, NULL::integer AS plan_purchase_id,
+        k.date::text AS appointment_date, k.start_min, k.service_name AS item_name, NULL::integer AS sessions_total,
+        NULL::integer AS validity_days, b.shop_name, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email,
+        p.reference, p.amount_kobo, p.refund_status, k.payment_status, p.created_at
       FROM payments p JOIN bookings k ON k.id=p.booking_id
-        JOIN barbers b ON b.id=k.barber_id JOIN users u ON u.id=b.user_id
+        JOIN barbers b ON b.id=k.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=k.customer_id
       WHERE k.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
-      ORDER BY k.id,
-        CASE WHEN p.amount_kobo=(k.price_kobo+COALESCE(k.booking_fee_kobo,0)) THEN 0 ELSE 1 END,
-        CASE WHEN p.refund_status IS NULL THEN 0 ELSE 1 END, p.id DESC
-    ) r ORDER BY r.created_at DESC, r.booking_id DESC LIMIT 100`, [req.user!.id]);
-    res.json({ receipts: rows.map((r) => ({ booking_id: Number(r.booking_id), barber: r.barber_name || r.shop_name || 'Barber', shop: r.shop_name,
-      service: r.service_name, appointment_date: r.date, appointment_time: fmtTime12(Number(r.start_min)), amount_kobo: Number(r.amount_kobo),
-      status: receiptStatus(r.payment_status, r.refund_status), reference: r.reference, created_at: r.created_at })) });
+      UNION ALL
+      SELECT 'PLAN'::text AS receipt_type, NULL::integer AS booking_id, pp.id AS plan_purchase_id,
+        NULL::text AS appointment_date, NULL::integer AS start_min, pp.plan_name AS item_name, pp.sessions_total,
+        pp.validity_days, b.shop_name, bu.name AS barber_name, cu.name AS customer_name, cu.email AS customer_email,
+        p.reference, p.amount_kobo, p.refund_status, pp.status AS payment_status, p.created_at
+      FROM payments p JOIN plan_purchases pp ON pp.id=p.plan_purchase_id
+        JOIN barbers b ON b.id=pp.barber_id JOIN users bu ON bu.id=b.user_id JOIN users cu ON cu.id=pp.customer_id
+      WHERE pp.customer_id=$1 AND p.status='SUCCESS' AND COALESCE(p.refund_reason,'') NOT LIKE 'Duplicate payment%'
+    ) receipts ORDER BY created_at DESC, COALESCE(booking_id, plan_purchase_id) DESC LIMIT 100`, [req.user!.id]);
+    res.json({ receipts: rows.map((r) => ({
+      type: r.receipt_type, booking_id: r.booking_id == null ? null : Number(r.booking_id),
+      plan_purchase_id: r.plan_purchase_id == null ? null : Number(r.plan_purchase_id),
+      barber: r.barber_name || r.shop_name || 'Barber', shop: r.shop_name,
+      customer_name: r.customer_name, customer_email: r.customer_email,
+      item: r.item_name, service: r.receipt_type === 'BOOKING' ? r.item_name : null,
+      appointment_date: r.appointment_date, appointment_time: r.start_min == null ? null : fmtTime12(Number(r.start_min)),
+      sessions_total: r.sessions_total == null ? null : Number(r.sessions_total),
+      validity_days: r.validity_days == null ? null : Number(r.validity_days),
+      amount_kobo: Number(r.amount_kobo), status: receiptStatus(r.payment_status, r.refund_status),
+      reference: r.reference, created_at: r.created_at,
+    })) });
   }));
   // Balance refund for a part-used plan: the customer and the barber both have to agree; then an admin authorizes it.
   api.post('/plans/:id/refund-request', cust, wrap(async (req, res) => res.status(201).json(await requestPlanBalanceRefund(db, Number(req.params.id) || 0, { userId: req.user!.id, role: 'CUSTOMER' }))));
