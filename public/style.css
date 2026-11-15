@@ -646,3 +646,19 @@ a.card.wallet-chip{display:flex;flex-wrap:nowrap;align-items:center;gap:12px}
   .plan-disclosure>summary{min-height:48px;padding:9px 12px}
   .plan-disclosure-body{padding:0 12px 12px}
 }
+
+
+/* Login feedback: shake on rejected credentials; lift-off on successful sign-in. */
+#f.login-error{animation:login-reject .48s cubic-bezier(.36,.07,.19,.97) both}
+#f.login-error [name=password]{border-color:var(--red,#d94b4b);box-shadow:0 0 0 3px color-mix(in srgb,var(--red,#d94b4b) 16%,transparent)}
+@keyframes login-reject{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-6px)}40%,60%{transform:translateX(6px)}}
+.login-takeoff{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;overflow:hidden;background:radial-gradient(ellipse at 50% 70%,#193b65 0%,#08182c 58%,#030914 100%);color:#fff;animation:takeoff-fade .76s ease-in both}
+.takeoff-scene{position:relative;width:min(100%,420px);height:240px;display:grid;place-items:center}
+.takeoff-plane{position:absolute;font-size:56px;filter:drop-shadow(0 8px 18px #58b9ff66);transform:rotate(-12deg);animation:plane-lift .72s cubic-bezier(.2,.75,.25,1) both}
+.takeoff-trail{position:absolute;width:130px;height:3px;border-radius:50%;background:linear-gradient(90deg,transparent,#7dd3fc,transparent);transform:translate(-48px,32px) rotate(-22deg);filter:blur(1px);animation:trail-lift .72s ease-out both}
+.takeoff-copy{position:absolute;bottom:18px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:#d8efff;opacity:0;animation:takeoff-copy .55s .12s ease-out forwards}
+@keyframes plane-lift{0%{opacity:0;transform:translate(-28px,48px) rotate(-20deg) scale(.65)}25%{opacity:1}100%{opacity:1;transform:translate(95px,-115px) rotate(-12deg) scale(1.12)}}
+@keyframes trail-lift{0%{opacity:0;transform:translate(-55px,45px) rotate(-22deg) scaleX(.2)}35%{opacity:.9}100%{opacity:0;transform:translate(68px,-95px) rotate(-22deg) scaleX(1.5)}}
+@keyframes takeoff-copy{to{opacity:1}}
+@keyframes takeoff-fade{0%{opacity:0}12%,82%{opacity:1}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){#f.login-error{animation:none}.login-takeoff{animation:none;opacity:0}}
