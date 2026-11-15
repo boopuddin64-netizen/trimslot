@@ -445,7 +445,7 @@ async function verifyEmail(next) {
       const input = vf.querySelector('[name=code]');
       input.focus();
       const updateCode = () => {
-        codeValue = input.value.replace(/\\D/g, '').slice(0, 6);
+        codeValue = input.value.replace(/\D/g, '').slice(0, 6);
         if (input.value !== codeValue) input.value = codeValue;
         const button = vf.querySelector('button[type=submit]');
         if (button) button.disabled = codeValue.length !== 6 || verifying;
