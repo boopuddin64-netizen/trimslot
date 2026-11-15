@@ -214,10 +214,20 @@ test('receipts list shows only the signed-in customer’s successful primary boo
     const H = { Cookie: u.cookie };
     const b = await createBooking(s.db, u.body.user.id, { barber_id: s.barberId, service_id: s.serviceIds[0], date: WED, time: '12:00', payment_option: 'ONLINE' });
     const init = await initializePayment(s.db, b.id, 'receipt-me@x.com'); await mockMarkPaid(s.db, init.reference); await processReference(s.db, init.reference);
+    const planId = (await s.db.one(`INSERT INTO plans (barber_id, name, price_kobo, sessions, validity_days) VALUES ($1,'Receipt Pack',250000,5,45) RETURNING id`, [s.barberId])).id;
+    const purchaseId = (await s.db.one(`INSERT INTO plan_purchases (plan_id, customer_id, barber_id, plan_name, price_kobo, sessions_total, validity_days, service_ids, status, paid_at, expires_at)
+      VALUES ($1,$2,$3,'Receipt Pack',250000,5,45,$4,'ACTIVE',now(),now() + interval '45 days') RETURNING id`, [planId, u.body.user.id, s.barberId, s.serviceIds])).id;
+    const planRef = 'TS-PLAN-RECEIPT-' + purchaseId;
+    await s.db.query(`INSERT INTO payments (plan_purchase_id, reference, provider, amount_kobo, status, mock_paid) VALUES ($1,$2,'MOCK',250000,'SUCCESS',TRUE)`, [purchaseId, planRef]);
     const own = await s.j('/api/me/receipts', { headers: H });
-    assert.equal(own.status, 200); assert.equal(own.body.receipts.length, 1);
-    assert.equal(own.body.receipts[0].booking_id, b.id); assert.equal(own.body.receipts[0].status, 'Paid');
-    assert.equal(own.body.receipts[0].reference, init.reference); assert.equal(own.body.receipts[0].service, 'Regular Haircut');
+    assert.equal(own.status, 200); assert.equal(own.body.receipts.length, 2);
+    const bookingReceipt = own.body.receipts.find((r: any) => r.type === 'BOOKING');
+    assert.equal(bookingReceipt.booking_id, b.id); assert.equal(bookingReceipt.status, 'Paid');
+    assert.equal(bookingReceipt.reference, init.reference); assert.equal(bookingReceipt.service, 'Regular Haircut');
+    const planReceipt = own.body.receipts.find((r: any) => r.type === 'PLAN');
+    assert.equal(planReceipt.plan_purchase_id, purchaseId); assert.equal(planReceipt.item, 'Receipt Pack');
+    assert.equal(planReceipt.sessions_total, 5); assert.equal(planReceipt.validity_days, 45);
+    assert.equal(planReceipt.reference, planRef); assert.equal(planReceipt.status, 'Paid');
     assert.equal((await s.j('/api/me/receipts')).status, 401, 'receipts require login');
     const other = await s.signup({ role: 'customer', name: 'Another Customer', email: 'another-receipt@x.com', password: 'ReceiptPass123', accept_terms: true });
     const theirs = await s.j('/api/me/receipts', { headers: { Cookie: other.cookie } });
