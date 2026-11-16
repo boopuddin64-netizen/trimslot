@@ -1439,12 +1439,12 @@ async function exportReceipt(r, verification, format, pdfWindow) {
     const receipt = material.receipt;
     const base = 'TrimSlot-' + String(receipt.receipt_number || 'receipt').replace(/[^A-Za-z0-9_-]/g, '-');
     if (format === 'pdf') {
-      const popup = window.open('', '_blank');
+      const popup = pdfWindow;
       if (!popup) throw new Error('Allow pop-ups for TrimSlot, then try saving the PDF again.');
       popup.document.open();
       popup.document.write(receiptDocument(receipt, material.verification));
       popup.document.close();
-      popup.onload = () => { popup.focus(); setTimeout(() => popup.print(), 350); };
+      setTimeout(() => { try { popup.focus(); popup.print(); } catch { toast('Use the browser Share or Print option to save this receipt.', true); } }, 500);
       return;
     }
     const blob = await receiptImageBlob(receipt, material.verification, format);
