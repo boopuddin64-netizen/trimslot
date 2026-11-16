@@ -1400,7 +1400,7 @@ async function receiptImageBlob(r, verification, format) {
   const { style, markup } = receiptExportDocument(r, verification);
   const width = 560, height = 792, scale = 2;
   const safeStyle = style.replace(/<\\/style/gi, '<\\/style');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${safeStyle}</style><body style="margin:0;padding:0;background:#fff">${markup}</body></div></foreignObject></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${safeStyle}</style><div style="margin:0;padding:0;background:#fff">${markup}</div></div></foreignObject></svg>`;
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const objectUrl = URL.createObjectURL(svgBlob);
   try {
@@ -1431,7 +1431,7 @@ async function shareReceiptFile(blob, filename) {
   document.body.appendChild(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
-async function exportReceipt(r, verification, format) {
+async function exportReceipt(r, verification, format, pdfWindow) {
   const button = $('#receipt-save');
   if (button) { button.disabled = true; button.textContent = 'Preparing…'; }
   try {
@@ -1471,7 +1471,7 @@ function openReceiptSaveMenu(r, verification) {
   menu.querySelector('.receipt-format-heading button').onclick = close;
   menu.addEventListener('click', event => { if (event.target === menu) close(); });
   menu.querySelectorAll('[data-format]').forEach(option => option.addEventListener('click', () => {
-    const format = option.dataset.format; close(); exportReceipt(r, verification, format);
+    const format = option.dataset.format; close();\n    const pdfWindow = format === 'pdf' ? window.open('about:blank', '_blank') : null;\n    exportReceipt(r, verification, format, pdfWindow);
   }));
   document.body.appendChild(menu);
 }
