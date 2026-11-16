@@ -1471,7 +1471,9 @@ function openReceiptSaveMenu(r, verification) {
   menu.querySelector('.receipt-format-heading button').onclick = close;
   menu.addEventListener('click', event => { if (event.target === menu) close(); });
   menu.querySelectorAll('[data-format]').forEach(option => option.addEventListener('click', () => {
-    const format = option.dataset.format; close();\n    const pdfWindow = format === 'pdf' ? window.open('about:blank', '_blank') : null;\n    exportReceipt(r, verification, format, pdfWindow);
+    const format = option.dataset.format; close();
+    const pdfWindow = format === 'pdf' ? window.open('about:blank', '_blank') : null;
+    exportReceipt(r, verification, format, pdfWindow);
   }));
   document.body.appendChild(menu);
 }
