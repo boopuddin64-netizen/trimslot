@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { Request, Response, Router } from 'express';
 import QRCode from 'qrcode';
+import { buildReceiptPdf } from './receiptPdf';
 import { requireRole } from './auth';
 import { config, TIMEZONE } from './config';
 import { Db } from './db';
@@ -124,6 +125,22 @@ export function registerReceiptVerificationRoutes(api: Router, db: Db, wrap: Wra
     const paymentId = Number(req.params.paymentId);
     if (!Number.isSafeInteger(paymentId) || paymentId < 1) throw notFound('We could not find that receipt.');
     res.json({ receipt: await ownedReceipt(paymentId, req.user!.id) });
+  }));
+
+  api.get('/me/receipts/:paymentId/pdf', cust, wrap(async (req, res) => {
+    const paymentId = Number(req.params.paymentId);
+    if (!Number.isSafeInteger(paymentId) || paymentId < 1) throw notFound('We could not find that receipt.');
+    const receipt = await ownedReceipt(paymentId, req.user!.id);
+    const token = await tokenForPayment(db, paymentId);
+    const verificationUrl = `${config.appBaseUrl}/#/receipt-verify/${token}`;
+    const pdf = await buildReceiptPdf(receipt, verificationUrl);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="TrimSlot-${receipt.receipt_number}.pdf"`);
+    res.setHeader('Content-Length', String(pdf.length));
+    res.send(pdf);
   }));
 
   api.get('/me/receipts/:paymentId/verification', cust, wrap(async (req, res) => {
