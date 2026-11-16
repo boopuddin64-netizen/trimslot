@@ -1522,7 +1522,7 @@ async function customerReceiptDetail(paymentId) {
   const { receipt } = await api(`/me/receipts/${paymentId}`);
   const verification = await api(`/me/receipts/${paymentId}/verification`);
   document.title = `TrimSlot payment receipt ${receipt.receipt_number}`;
-  app.innerHTML = `<section class="receipt-detail-page"><div class="receipt-detail-toolbar"><a class="back" href="#/receipts">${ic('back', 'sm')} All receipts</a><div class="btns"><button class="btn sm sec" id="receipt-share">Share</button><button class="btn sm" id="receipt-save">Save / Print PDF</button></div></div><div class="receipt-preview-frame">${receiptSheetMarkup(receipt, verification)}</div></section>`;
+  app.innerHTML = `<section class="receipt-detail-page"><div class="receipt-detail-toolbar"><a class="back" href="#/receipts">${ic('back', 'sm')} All receipts</a><div class="btns"><button class="btn sm sec" id="receipt-share">Share</button><button class="btn sm" id="receipt-save">Save Receipt</button></div></div><div class="receipt-preview-frame">${receiptSheetMarkup(receipt, verification)}</div></section>`;
   $('#receipt-share').onclick = async () => { const el = $('#receipt-share'); el.disabled = true; try { await shareReceipt(receipt, verification); } catch (e) { fail(e); } finally { el.disabled = false; } };
   $('#receipt-save').onclick = () => openReceiptSaveMenu(receipt, verification);
 }
