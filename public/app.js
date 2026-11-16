@@ -1381,45 +1381,101 @@ async function receiptMaterial(r, verification) {
   if (!verification) verification = await api(`/me/receipts/${Number(receipt.payment_id)}/verification`);
   return { receipt, verification };
 }
-async function openReceiptPdf(r, verification) {
-  const button = $('#receipt-save');
-  if (button) { button.disabled = true; button.textContent = 'Generating PDF…'; }
-  // Open synchronously from the tap so iOS Safari does not classify the PDF tab as an unsolicited popup.
-  const pdfWindow = window.open('about:blank', '_blank');
-  if (pdfWindow) {
-    try { pdfWindow.document.title = 'Preparing TrimSlot receipt'; pdfWindow.document.body.innerHTML = '<p style="font:16px system-ui;padding:24px">Preparing your PDF receipt…</p>'; }
-    catch { /* navigation below is sufficient */ }
-  }
+function receiptExportDocument(r, verification) {
+  const html = receiptDocument(r, verification);
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const style = parsed.querySelector('style')?.textContent || '';
+  const sheet = parsed.querySelector('.rs-sheet');
+  if (!sheet) throw new Error('Receipt layout is unavailable.');
+  sheet.style.width = '560px';
+  sheet.style.minHeight = '792px';
+  sheet.style.height = '792px';
+  sheet.style.margin = '0';
+  sheet.style.border = '0';
+  sheet.style.borderRadius = '0';
+  sheet.style.boxShadow = 'none';
+  return { style, markup: sheet.outerHTML };
+}
+async function receiptImageBlob(r, verification, format) {
+  const { style, markup } = receiptExportDocument(r, verification);
+  const width = 560, height = 792, scale = 2;
+  const safeStyle = style.replace(/<\\/style/gi, '<\\/style');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${safeStyle}</style><div style="margin:0;padding:0;background:#fff">${markup}</div></div></foreignObject></svg>`;
+  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const objectUrl = URL.createObjectURL(svgBlob);
   try {
-    const paymentId = Number(r.payment_id);
-    if (!Number.isSafeInteger(paymentId) || paymentId < 1) throw new Error('This receipt could not be opened. Refresh and try again.');
-    const response = await fetch('/api/me/receipts/' + paymentId + '/pdf', { method: 'GET', credentials: 'same-origin', headers: { Accept: 'application/pdf' } });
-    if (!response.ok) {
-      let message = 'We could not generate your PDF. Please try again.';
-      try { const body = await response.json(); message = body.error?.message || message; } catch { /* keep safe fallback */ }
-      throw new Error(message);
-    }
-    const blob = await response.blob();
-    if (blob.type && !blob.type.includes('application/pdf')) throw new Error('The server returned an invalid receipt file. Please try again.');
-    const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
-    const filename = 'TrimSlot-' + String(r.receipt_number || 'receipt').replace(/[^A-Za-z0-9_-]/g, '-') + '.pdf';
-    const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isAppleMobile) {
-      if (pdfWindow && !pdfWindow.closed) pdfWindow.location.replace(url);
-      else window.location.assign(url); // Safari's built-in PDF viewer exposes Share → Save to Files.
-    } else {
-      const link = document.createElement('a');
-      link.href = url; link.download = filename; link.style.display = 'none';
-      document.body.appendChild(link); link.click(); link.remove();
-      if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 120000);
-  } catch (e) {
-    if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-    toast(e?.message || 'We could not generate your PDF. Please try again.', true);
-  } finally {
-    if (button) { button.disabled = false; button.textContent = 'Download PDF'; }
+    const image = new Image();
+    image.decoding = 'sync';
+    image.src = objectUrl;
+    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Your browser could not render this receipt image.')); });
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale; canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Image export is unavailable in this browser.');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the receipt image.')), mime, format === 'jpeg' ? 0.94 : undefined));
+    return blob;
+  } finally { URL.revokeObjectURL(objectUrl); }
+}
+async function shareReceiptFile(blob, filename) {
+  const file = new File([blob], filename, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+    await navigator.share({ files: [file], title: 'TrimSlot receipt' });
+    return;
   }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = filename; link.style.display = 'none';
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+async function exportReceipt(r, verification, format, pdfWindow) {
+  const button = $('#receipt-save');
+  if (button) { button.disabled = true; button.textContent = 'Preparing…'; }
+  try {
+    const material = await receiptMaterial(r, verification);
+    const receipt = material.receipt;
+    const base = 'TrimSlot-' + String(receipt.receipt_number || 'receipt').replace(/[^A-Za-z0-9_-]/g, '-');
+    if (format === 'pdf') {
+      const popup = pdfWindow;
+      if (!popup) throw new Error('Allow pop-ups for TrimSlot, then try saving the PDF again.');
+      popup.document.open();
+      popup.document.write(receiptDocument(receipt, material.verification));
+      popup.document.close();
+      setTimeout(() => { try { popup.focus(); popup.print(); } catch { toast('Use the browser Share or Print option to save this receipt.', true); } }, 500);
+      return;
+    }
+    const blob = await receiptImageBlob(receipt, material.verification, format);
+    await shareReceiptFile(blob, base + (format === 'jpeg' ? '.jpg' : '.png'));
+  } catch (e) {
+    if (e?.name !== 'AbortError') toast(e?.message || 'We could not save this receipt. Please try again.', true);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Save Receipt'; }
+  }
+}
+function openReceiptSaveMenu(r, verification) {
+  document.getElementById('receipt-format-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'receipt-format-menu';
+  menu.className = 'receipt-format-backdrop';
+  menu.innerHTML = `<section class="receipt-format-sheet" role="dialog" aria-modal="true" aria-label="Choose receipt format">
+    <div class="receipt-format-heading"><b>Save receipt</b><button type="button" aria-label="Close">×</button></div>
+    <p>Choose a file format</p>
+    <button type="button" data-format="pdf"><span>PDF</span><small>For printing and documents</small></button>
+    <button type="button" data-format="jpeg"><span>JPEG image</span><small>Save or share in Photos</small></button>
+    <button type="button" data-format="png"><span>PNG image</span><small>Higher-detail image</small></button>
+  </section>`;
+  const close = () => menu.remove();
+  menu.querySelector('.receipt-format-heading button').onclick = close;
+  menu.addEventListener('click', event => { if (event.target === menu) close(); });
+  menu.querySelectorAll('[data-format]').forEach(option => option.addEventListener('click', () => {
+    const format = option.dataset.format; close();
+    const pdfWindow = format === 'pdf' ? window.open('about:blank', '_blank') : null;
+    exportReceipt(r, verification, format, pdfWindow);
+  }));
+  document.body.appendChild(menu);
 }
 async function shareReceipt(r, verification) {
   const material = await receiptMaterial(r, verification);
@@ -1468,9 +1524,9 @@ async function customerReceiptDetail(paymentId) {
   const { receipt } = await api(`/me/receipts/${paymentId}`);
   const verification = await api(`/me/receipts/${paymentId}/verification`);
   document.title = `TrimSlot payment receipt ${receipt.receipt_number}`;
-  app.innerHTML = `<section class="receipt-detail-page"><div class="receipt-detail-toolbar"><a class="back" href="#/receipts">${ic('back', 'sm')} All receipts</a><div class="btns"><button class="btn sm sec" id="receipt-share">Share</button><button class="btn sm" id="receipt-save">Save / Print PDF</button></div></div><div class="receipt-preview-frame">${receiptSheetMarkup(receipt, verification)}</div></section>`;
+  app.innerHTML = `<section class="receipt-detail-page"><div class="receipt-detail-toolbar"><a class="back" href="#/receipts">${ic('back', 'sm')} All receipts</a><div class="btns"><button class="btn sm sec" id="receipt-share">Share</button><button class="btn sm" id="receipt-save">Save Receipt</button></div></div><div class="receipt-preview-frame">${receiptSheetMarkup(receipt, verification)}</div></section>`;
   $('#receipt-share').onclick = async () => { const el = $('#receipt-share'); el.disabled = true; try { await shareReceipt(receipt, verification); } catch (e) { fail(e); } finally { el.disabled = false; } };
-  $('#receipt-save').onclick = () => openReceiptPdf(receipt, verification);
+  $('#receipt-save').onclick = () => openReceiptSaveMenu(receipt, verification);
 }
 async function receiptVerificationPage(token) {
   const robots = document.createElement('meta'); robots.id = 'receipt-verification-robots'; robots.name = 'robots'; robots.content = 'noindex,nofollow'; document.head.querySelector('#receipt-verification-robots')?.remove(); document.head.appendChild(robots);
