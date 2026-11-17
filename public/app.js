@@ -1399,7 +1399,7 @@ function receiptExportDocument(r, verification) {
 async function receiptImageBlob(r, verification, format) {
   const { style, markup } = receiptExportDocument(r, verification);
   const width = 560, height = 792, scale = 2;
-  const safeStyle = style.replace(/<\\/style/gi, '<\\/style');
+  const safeStyle = style.replace(/<\/style/gi, '<\\/style');
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${safeStyle}</style><div style="margin:0;padding:0;background:#fff">${markup}</div></div></foreignObject></svg>`;
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const objectUrl = URL.createObjectURL(svgBlob);
