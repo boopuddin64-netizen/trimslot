@@ -1396,28 +1396,36 @@ function receiptExportDocument(r, verification) {
   sheet.style.boxShadow = 'none';
   return { style, markup: sheet.outerHTML };
 }
+let htmlToImageReady = null;
+function loadHtmlToImage() {
+  if (window.htmlToImage) return Promise.resolve(window.htmlToImage);
+  if (!htmlToImageReady) htmlToImageReady = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/vendor/html-to-image.js';
+    script.onload = () => window.htmlToImage ? resolve(window.htmlToImage) : reject(new Error('Image export is unavailable in this browser.'));
+    script.onerror = () => { htmlToImageReady = null; reject(new Error('The image tool could not load. Check your connection and try again.')); };
+    document.head.appendChild(script);
+  });
+  return htmlToImageReady;
+}
+/* The receipt stylesheet carries page-level html/body rules meant for the print view; drop them so they cannot restyle the app. */
+function receiptScopedStyle(style) {
+  return style.replace(/html,body\{[^}]*\}/g, '').replace(/(^|[{};])body\{[^}]*\}/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
+}
 async function receiptImageBlob(r, verification, format) {
+  const lib = await loadHtmlToImage();
   const { style, markup } = receiptExportDocument(r, verification);
-  const width = 560, height = 792, scale = 2;
-  const safeStyle = style.replace(/<\/style/gi, '<\\/style');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}"><foreignObject x="0" y="0" width="${width}" height="${height}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${safeStyle}</style><div style="margin:0;padding:0;background:#fff">${markup}</div></div></foreignObject></svg>`;
-  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-  const objectUrl = URL.createObjectURL(svgBlob);
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:560px;background:#fff;pointer-events:none;';
+  host.innerHTML = `<style>${receiptScopedStyle(style)}</style>${markup}`;
+  document.body.appendChild(host);
   try {
-    const image = new Image();
-    image.decoding = 'sync';
-    image.src = objectUrl;
-    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = () => reject(new Error('Your browser could not render this receipt image.')); });
-    const canvas = document.createElement('canvas');
-    canvas.width = width * scale; canvas.height = height * scale;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Image export is unavailable in this browser.');
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
-    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the receipt image.')), mime, format === 'jpeg' ? 0.94 : undefined));
-    return blob;
-  } finally { URL.revokeObjectURL(objectUrl); }
+    const node = host.querySelector('.rs-sheet');
+    if (!node) throw new Error('Receipt layout is unavailable.');
+    const canvas = await lib.toCanvas(node, { width: 560, height: 792, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
+    return await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the receipt image.')), format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? 0.94 : undefined));
+  } finally { host.remove(); }
 }
 async function shareReceiptFile(blob, filename) {
   const file = new File([blob], filename, { type: blob.type });
@@ -1430,6 +1438,13 @@ async function shareReceiptFile(blob, filename) {
   link.href = url; link.download = filename; link.style.display = 'none';
   document.body.appendChild(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 120000);
+}
+/* Backup 1: the server-built PDF, which needs no browser rendering. */
+async function downloadReceiptPdf(receipt, base) {
+  const res = await fetch(`/api/me/receipts/${Number(receipt.payment_id)}/pdf`, { credentials: 'same-origin', cache: 'no-store' });
+  if (!res.ok) throw new Error('The PDF could not be downloaded.');
+  const blob = await res.blob();
+  await shareReceiptFile(new Blob([blob], { type: 'application/pdf' }), base + '.pdf');
 }
 async function exportReceipt(r, verification, format, pdfWindow) {
   const button = $('#receipt-save');
@@ -1447,8 +1462,32 @@ async function exportReceipt(r, verification, format, pdfWindow) {
       setTimeout(() => { try { popup.focus(); popup.print(); } catch { toast('Use the browser Share or Print option to save this receipt.', true); } }, 500);
       return;
     }
-    const blob = await receiptImageBlob(receipt, material.verification, format);
-    await shareReceiptFile(blob, base + (format === 'jpeg' ? '.jpg' : '.png'));
+    /* Primary: JPEG or PNG image. */
+    let saved = false;
+    try {
+      const blob = await receiptImageBlob(receipt, material.verification, format);
+      await shareReceiptFile(blob, base + (format === 'jpeg' ? '.jpg' : '.png'));
+      saved = true;
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      console.warn('Receipt image export failed', e);
+    }
+    /* Backup 1: the server PDF. */
+    if (!saved) {
+      try {
+        await downloadReceiptPdf(receipt, base);
+        saved = true;
+        toast('The image could not be made here, so your receipt was saved as a PDF.');
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
+        console.warn('Receipt PDF fallback failed', e);
+      }
+    }
+    /* Backup 2: share the verification link so the receipt is still available. */
+    if (!saved) {
+      await shareReceipt(receipt, material.verification);
+      toast('We could not save a file, so we shared your receipt link instead.');
+    }
   } catch (e) {
     if (e?.name !== 'AbortError') toast(e?.message || 'We could not save this receipt. Please try again.', true);
   } finally {
