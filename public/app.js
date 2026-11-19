@@ -1388,8 +1388,8 @@ function receiptExportDocument(r, verification) {
   const sheet = parsed.querySelector('.rs-sheet');
   if (!sheet) throw new Error('Receipt layout is unavailable.');
   sheet.style.width = '560px';
-  sheet.style.minHeight = '792px';
-  sheet.style.height = '792px';
+  sheet.style.minHeight = '';
+  sheet.style.height = 'auto';
   sheet.style.margin = '0';
   sheet.style.border = '0';
   sheet.style.borderRadius = '0';
@@ -1423,7 +1423,8 @@ async function receiptImageBlob(r, verification, format) {
   try {
     const node = host.querySelector('.rs-sheet');
     if (!node) throw new Error('Receipt layout is unavailable.');
-    const canvas = await lib.toCanvas(node, { width: 560, height: 792, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
+    const height = Math.ceil(node.getBoundingClientRect().height) || node.scrollHeight;
+    const canvas = await lib.toCanvas(node, { width: 560, height, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
     return await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the receipt image.')), format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? 0.94 : undefined));
   } finally { host.remove(); }
 }
@@ -1446,7 +1447,7 @@ async function downloadReceiptPdf(receipt, base) {
   const blob = await res.blob();
   await shareReceiptFile(new Blob([blob], { type: 'application/pdf' }), base + '.pdf');
 }
-async function exportReceipt(r, verification, format, pdfWindow) {
+async function exportReceipt(r, verification, format) {
   const button = $('#receipt-save');
   if (button) { button.disabled = true; button.textContent = 'Preparing…'; }
   try {
@@ -1454,12 +1455,12 @@ async function exportReceipt(r, verification, format, pdfWindow) {
     const receipt = material.receipt;
     const base = 'TrimSlot-' + String(receipt.receipt_number || 'receipt').replace(/[^A-Za-z0-9_-]/g, '-');
     if (format === 'pdf') {
-      const popup = pdfWindow;
-      if (!popup) throw new Error('Allow pop-ups for TrimSlot, then try saving the PDF again.');
-      popup.document.open();
-      popup.document.write(receiptDocument(receipt, material.verification));
-      popup.document.close();
-      setTimeout(() => { try { popup.focus(); popup.print(); } catch { toast('Use the browser Share or Print option to save this receipt.', true); } }, 500);
+      try {
+        await downloadReceiptPdf(receipt, base);
+      } catch (e) {
+        if (e?.name === 'AbortError') return;
+        throw new Error('We could not make the PDF. Try the JPEG or PNG option instead.');
+      }
       return;
     }
     /* Primary: JPEG or PNG image. */
@@ -1511,8 +1512,7 @@ function openReceiptSaveMenu(r, verification) {
   menu.addEventListener('click', event => { if (event.target === menu) close(); });
   menu.querySelectorAll('[data-format]').forEach(option => option.addEventListener('click', () => {
     const format = option.dataset.format; close();
-    const pdfWindow = format === 'pdf' ? window.open('about:blank', '_blank') : null;
-    exportReceipt(r, verification, format, pdfWindow);
+    exportReceipt(r, verification, format);
   }));
   document.body.appendChild(menu);
 }
