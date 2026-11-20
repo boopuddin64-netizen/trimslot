@@ -7,7 +7,7 @@ type Receipt = {
   payment_provider?: string | null; reference?: string | null; appointment_date?: string | null; appointment_time?: string | null;
   sessions_total?: number | null; validity_days?: number | null; expires_at?: string | null;
 };
-const PAGE_W = 420, PAGE_H = 595;
+const PAGE_W = 420, BASE_PAGE_H = 595;
 const clean = (value: unknown) => Array.from(String(value ?? '—').replace('₦', 'NGN ')).map(ch => { const n = ch.charCodeAt(0); return n >= 32 && n <= 126 ? ch : '?'; }).join('');
 const pdfText = (value: unknown) => clean(value).split(String.fromCharCode(92)).join(String.fromCharCode(92, 92)).split('(').join(String.fromCharCode(92) + '(').split(')').join(String.fromCharCode(92) + ')');
 const money = (kobo: number) => 'NGN ' + (Number(kobo || 0) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15,11 +15,11 @@ const money = (kobo: number) => 'NGN ' + (Number(kobo || 0) / 100).toLocaleStrin
 /** Dependency-free A5 PDF renderer. QR modules are native vector squares. */
 export async function buildReceiptPdf(receipt: Receipt, verificationUrl: string): Promise<Buffer> {
   const commands: string[] = [];
-  const y = (top: number) => PAGE_H - top;
+  const y = (top: number) => BASE_PAGE_H - top;
   const text = (value: unknown, x: number, top: number, size = 9, bold = false, color = '0.09 0.15 0.25') =>
     commands.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${color} rg 1 0 0 1 ${x} ${y(top)} Tm (${pdfText(value)}) Tj ET`);
   const rect = (x: number, top: number, w: number, h: number, fill: string, stroke?: string) =>
-    commands.push(`${fill} rg ${stroke ? stroke + ' RG 0.8 w ' : ''}${x} ${PAGE_H - top - h} ${w} ${h} re ${stroke ? 'B' : 'f'}`);
+    commands.push(`${fill} rg ${stroke ? stroke + ' RG 0.8 w ' : ''}${x} ${BASE_PAGE_H - top - h} ${w} ${h} re ${stroke ? 'B' : 'f'}`);
   const line = (x1: number, top: number, x2: number) => commands.push(`0.86 0.89 0.93 RG 0.7 w ${x1} ${y(top)} m ${x2} ${y(top)} l S`);
   const label = (value: string, x: number, top: number) => text(value.toUpperCase(), x, top, 7, true, '0.29 0.40 0.58');
   const row = (name: string, value: unknown, top: number) => {
@@ -28,7 +28,7 @@ export async function buildReceiptPdf(receipt: Receipt, verificationUrl: string)
     text(v, Math.max(205, 382 - Math.min(v.length, 42) * size * 0.48), top, size, true);
     line(38, top + 5, 382);
   };
-  rect(0, 0, PAGE_W, PAGE_H, '1 1 1');
+  rect(0, 0, PAGE_W, BASE_PAGE_H, '1 1 1');
   rect(0, 0, PAGE_W, 156, '0.03 0.08 0.17');
   rect(26, 24, 36, 36, '0.25 0.40 0.86');
   text('TS', 35, 47, 15, true, '1 1 1'); text('TrimSlot', 72, 49, 20, true, '1 1 1');
@@ -60,25 +60,28 @@ export async function buildReceiptPdf(receipt: Receipt, verificationUrl: string)
   row('Payment provider', receipt.payment_provider, top); top += 13;
   row('Payment status', receipt.status, top); top += 13;
   row('Transaction reference', receipt.reference, top); top += 13;
+  const footerTop = Math.max(top + 12, 478);
+  const pageH = footerTop + 98 + 18;
+  const pageShift = pageH - BASE_PAGE_H;
   const qr = QRCode.create(verificationUrl, { errorCorrectionLevel: 'M' });
-  const qrSize = 88, cell = qrSize / qr.modules.size, qx = 38, qtop = 486;
-  rect(28, 478, 364, 98, '0.96 0.97 0.99', '0.86 0.89 0.93');
+  const qrSize = 88, cell = qrSize / qr.modules.size, qx = 38, qtop = footerTop + 8;
+  rect(28, footerTop, 364, 98, '0.96 0.97 0.99', '0.86 0.89 0.93');
   commands.push('0.03 0.10 0.23 rg');
   for (let r = 0; r < qr.modules.size; r++) for (let c = 0; c < qr.modules.size; c++) {
     if (qr.modules.data[r * qr.modules.size + c]) {
-      const xx = qx + c * cell, yy = PAGE_H - qtop - (r + 1) * cell;
+      const xx = qx + c * cell, yy = BASE_PAGE_H - qtop - (r + 1) * cell;
       commands.push(`${xx.toFixed(2)} ${yy.toFixed(2)} ${(cell + 0.08).toFixed(2)} ${(cell + 0.08).toFixed(2)} re f`);
     }
   }
-  text('Thank you for choosing TrimSlot.', 145, 510, 10, true);
-  text('Scan to verify this receipt and its current payment status.', 145, 529, 7.5, false, '0.36 0.43 0.54');
-  text('No customer contact or transaction details are shown publicly.', 145, 541, 7, false, '0.36 0.43 0.54');
-  text('trimslot.com.ng', 145, 559, 8, true, '0.19 0.34 0.66');
-  const stream = commands.join('\n');
+  text('Thank you for choosing TrimSlot.', 145, footerTop + 32, 10, true);
+  text('Scan to verify this receipt and its current payment status.', 145, footerTop + 51, 7.5, false, '0.36 0.43 0.54');
+  text('No customer contact or transaction details are shown publicly.', 145, footerTop + 63, 7, false, '0.36 0.43 0.54');
+  text('trimslot.com.ng', 145, footerTop + 81, 8, true, '0.19 0.34 0.66');
+  const stream = `${pageShift ? `1 0 0 1 0 ${pageShift} cm\n` : ''}${commands.join('\n')}`;
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${pageH}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
     `<< /Length ${Buffer.byteLength(stream, 'ascii')} >>\nstream\n${stream}\nendstream`,

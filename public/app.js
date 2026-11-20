@@ -1388,8 +1388,9 @@ function receiptExportDocument(r, verification) {
   const sheet = parsed.querySelector('.rs-sheet');
   if (!sheet) throw new Error('Receipt layout is unavailable.');
   sheet.style.width = '560px';
-  sheet.style.minHeight = '';
+  sheet.style.minHeight = '0';
   sheet.style.height = 'auto';
+  sheet.style.overflow = 'visible';
   sheet.style.margin = '0';
   sheet.style.border = '0';
   sheet.style.borderRadius = '0';
@@ -1417,14 +1418,15 @@ async function receiptImageBlob(r, verification, format) {
   const { style, markup } = receiptExportDocument(r, verification);
   const host = document.createElement('div');
   host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:560px;background:#fff;pointer-events:none;';
+  host.style.cssText = 'position:fixed;left:-10000px;top:0;width:560px;background:#fff;pointer-events:none;overflow:visible;';
   host.innerHTML = `<style>${receiptScopedStyle(style)}</style>${markup}`;
   document.body.appendChild(host);
   try {
     const node = host.querySelector('.rs-sheet');
     if (!node) throw new Error('Receipt layout is unavailable.');
-    const height = Math.ceil(node.getBoundingClientRect().height) || node.scrollHeight;
-    const canvas = await lib.toCanvas(node, { width: 560, height, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const height = Math.max(Math.ceil(node.getBoundingClientRect().height), node.scrollHeight, node.offsetHeight);
+    const canvas = await lib.toCanvas(node, { canvasWidth: 560, canvasHeight: height, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
     return await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the receipt image.')), format === 'jpeg' ? 'image/jpeg' : 'image/png', format === 'jpeg' ? 0.94 : undefined));
   } finally { host.remove(); }
 }
