@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import crypto from 'crypto';
 import { config } from './config';
+import { posthogLogs } from './posthogLogs';
 
 const LEVELS: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 const SENSITIVE = /pass|secret|token|authorization|cookie|signature|api[-_]?key|sk_(live|test)/i;
@@ -41,6 +42,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
     const ms = Number(process.hrtime.bigint() - start) / 1e6;
     const lvl = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
     emit(lvl, 'request', { rid, method: req.method, path: req.originalUrl.split('?')[0].slice(0, 200), status: res.statusCode, ms: Math.round(ms * 10) / 10, ip: req.ip, uid: req.user?.id ?? null });
+    if (res.statusCode >= 500) posthogLogs.error('http_request_failed', { method: req.method, status_code: res.statusCode });
   });
   next();
 }

@@ -59,6 +59,12 @@ export const config = {
   /** Optional global email checks by one-time code (customer first booking and emergency action). New barbers always verify before shop approval; their one-time codes are not disabled by this customer switch. Read on every call. */
   get emailVerificationRequired() { return /^(1|true|yes|on)$/i.test((process.env.EMAIL_VERIFICATION_REQUIRED || '').trim()); },
   get paystackKey() { return process.env.PAYSTACK_SECRET_KEY || ''; },
+  /** Public browser configuration; omit analytics when either value is not configured. */
+  get posthog() {
+    const key = process.env.POSTHOG_KEY || '';
+    const host = process.env.POSTHOG_HOST || '';
+    return key && host ? { key, host } : null;
+  },
   /** MOCK payments: only ever possible outside production, and only when no Paystack key is set. */
   get mockMode() { return !this.isProd && !process.env.PAYSTACK_SECRET_KEY; },
   get paystackMode(): 'MOCK' | 'TEST' | 'LIVE' {

@@ -9,6 +9,23 @@ const DAYFULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const state = { user: null, cfg: null, unread: 0, wiz: null, poll: null, open: new Set(), setup: null };
 
+/* Identify once when the authenticated session becomes available. The numeric database id is the stable distinct id; PII stays on the person profile. */
+let posthogUserId = null;
+function identifyPostHogUser(user) {
+  if (!user || user.id == null) return;
+  const distinctId = String(user.id);
+  if (posthogUserId === distinctId) return;
+  if (posthogUserId) window.posthog?.reset();
+  const properties = { name: user.name, role: user.role };
+  if (user.email) properties.email = user.email;
+  window.posthog?.identify(distinctId, properties);
+  posthogUserId = distinctId;
+}
+window.resetPostHogUser = () => {
+  if (posthogUserId) window.posthog?.reset();
+  posthogUserId = null;
+};
+
 /* outline icon set (24px grid, stroke = currentColor) */
 const ICONS = {
   more: '<circle cx="5" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.8" fill="currentColor" stroke="none"/>',
@@ -87,7 +104,7 @@ async function apiNet(path, opts = {}) {
     const fallback = r.status === 429 ? 'Too many tries. Wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Try again in a moment.' : 'That did not work. Try again.';
     const e = new Error(j.error?.message || fallback); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details;
     if (r.status === 401 && e.code === 'UNAUTHENTICATED' && state.user && !path.startsWith('/auth/')) {   // login expired while the app was open
-      state.user = null; state.unread = 0; e.message = 'Your log-in has ended. Please log in again.';
+      window.resetPostHogUser(); state.user = null; state.unread = 0; e.message = 'Your log-in has ended. Please log in again.';
       try { sessionStorage.setItem('trimslot_next', location.hash); } catch { /* private mode */ }
       gcache.clear(); location.hash = '#/login';
     }
@@ -153,7 +170,7 @@ function toggleTheme() {
     setTimeout(() => document.documentElement.classList.remove('theme-anim'), 400);
   }
 }
-async function signOut() { try { await Notify.detach(); } catch { /* ignore */ } await api('/auth/logout', { method: 'POST' }); state.user = null; state.setup = null; state.open = new Set(); location.hash = '#/'; route(); }
+async function signOut() { try { await Notify.detach(); } catch { /* ignore */ } await api('/auth/logout', { method: 'POST' }); window.resetPostHogUser(); state.user = null; state.setup = null; state.open = new Set(); location.hash = '#/'; route(); }
 function chrome() {
   const u = state.user;
   $('#mockbar').classList.toggle('hidden', !(state.cfg && state.cfg.mock));
@@ -204,6 +221,7 @@ async function route() {
     const [cfg, me] = await Promise.all([stale ? api('/config').catch((e) => { if (state.cfg) return state.cfg; throw e; }) : state.cfg, api('/auth/me')]);
     if (stale) state.cfgAt = Date.now();
     state.cfg = cfg; state.user = me.user; state.unread = me.unread || 0;
+    identifyPostHogUser(state.user);
     chrome();
     if (state.user) { if (state.notifFor !== state.user.id) { state.notifFor = state.user.id; Notify.start(); Notify.resync(); } } else if (state.notifFor) { state.notifFor = null; Notify.stop(); }
     skeletonIfSlow();
@@ -349,8 +367,8 @@ function authPage(mode, roleQ) {
       }
       const btn = ev.target.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = signup ? 'Making your account…' : 'Logging in…';
       try {
-        if (signup) { const payload = { ...fd }; delete payload.confirm_password; await api('/auth/signup', { method: 'POST', body: { ...payload, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } }); }
-        else { await api('/auth/login', { method: 'POST', body: fd }); await successTakeoff(); }
+        if (signup) { const payload = { ...fd }; delete payload.confirm_password; await api('/auth/signup', { method: 'POST', body: { ...payload, role, accept_terms: fd.accept_terms === 'on', accept_barber_agreement: fd.accept_barber_agreement === 'on' } }); window.posthog?.capture('account_registered', { role }); }
+        else { await api('/auth/login', { method: 'POST', body: fd }); window.posthog?.capture('user_logged_in'); await successTakeoff(); }
         let nx = null; try { nx = sessionStorage.getItem('trimslot_next'); sessionStorage.removeItem('trimslot_next'); } catch { /* private mode */ }
         const dest = nx && /^#\/[a-z]/.test(nx) && !/^#\/(login|signup)/.test(nx) ? nx : '#/';
         if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
@@ -395,7 +413,7 @@ function passwordReset(initialEmail = '') {
       const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
       try {
         await api('/auth/password/reset', { method: 'POST', body: { email: f.email.value, code: f.code.value, new_password: f.new_password.value } });
-        state.user = null; state.unread = 0; Notify.stop(); toast('Password reset. Log in with your new password.'); go('#/login');
+        window.resetPostHogUser(); state.user = null; state.unread = 0; Notify.stop(); toast('Password reset. Log in with your new password.'); go('#/login');
       } catch (e2) { msg = e2.message || 'We could not reset your password.'; draw(); }
     };
   };
@@ -543,7 +561,7 @@ async function customerHome(poll = false) {
   document.querySelectorAll('[data-cancelpay]').forEach((el) => el.onclick = async () => {
     if (!confirm('Cancel this booking?\n\nYour time is released. Nothing was paid, so there is nothing to refund.')) return;
     el.disabled = true;
-    try { await api('/bookings/' + el.dataset.cancelpay + '/cancel', { method: 'POST' }); toast('Booking cancelled'); customerHome(); }
+    try { await api('/bookings/' + el.dataset.cancelpay + '/cancel', { method: 'POST' }); window.posthog?.capture('booking_cancelled'); toast('Booking cancelled'); customerHome(); }
     catch (e) { fail(e); el.disabled = false; }
   });
   document.querySelectorAll('[data-unwait]').forEach((el) => el.onclick = async () => { el.disabled = true; try { await api('/waitlist/' + el.dataset.unwait, { method: 'DELETE' }); toast('Taken off the waitlist'); customerHome(); } catch (e) { fail(e); el.disabled = false; } });
@@ -632,7 +650,7 @@ async function bookWizard(barberId) {
         $('#slots').innerHTML = r.slots.length
           ? `<div class="small muted" style="margin-bottom:8px">${esc(w.service.name)} · ${w.service.duration_min} min · ${dateLabel(w.date)}</div><div class="chips">${r.slots.map((s) => `<button class="chip ${w.time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>`
           : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>${!r.closed_reason && (state.cfg.features || {}).waitlist ? `<div class="btns center"><button class="btn sm" id="joinwait">${ic('bell', 'sm')} Tell me when a time is free</button></div>` : ''}`;
-        const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); jw.outerHTML = `<div class="ok small">You are on the waitlist. We will tell you as soon as a time is free.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
+        const jw = $('#joinwait'); if (jw) jw.onclick = async () => { jw.disabled = true; try { await api('/waitlist', { method: 'POST', body: { barber_id: barberId, service_id: w.service.id, date: w.date } }); window.posthog?.capture('waitlist_joined'); jw.outerHTML = `<div class="ok small">You are on the waitlist. We will tell you as soon as a time is free.</div>`; } catch (e) { fail(e); jw.disabled = false; } };
         document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { w.time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#next').disabled = false; });
       } catch (e) {
         if (seq !== w.slotSeq) return;
@@ -674,8 +692,10 @@ async function bookWizard(barberId) {
           state.wiz = null;
           if (w.pay === 'ONLINE') {
             const p = await api(`/bookings/${r.booking.id}/pay`, { method: 'POST' });
+            window.posthog?.capture('booking_payment_started');
             location.href = p.authorization_url; return;
           }
+          window.posthog?.capture('booking_confirmed', { payment_option: w.pay });
           toast('Booking confirmed'); if (window.haptics) haptics.success(); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
           if (e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
@@ -1116,7 +1136,7 @@ function wireRefundBox(root, role, reload) {
 async function buyPlan(id, el) {
   if (!confirm('Buy this plan? You will go to Paystack to pay. Sessions you do not use end when the plan ends. We do not refund them.')) return;
   el.disabled = true;
-  try { const r = await api(`/plans/${id}/buy`, { method: 'POST' }); location.href = r.authorization_url; } catch (e) { fail(e); el.disabled = false; }
+  try { const r = await api(`/plans/${id}/buy`, { method: 'POST' }); window.posthog?.capture('plan_checkout_started'); location.href = r.authorization_url; } catch (e) { fail(e); el.disabled = false; }
 }
 const expTxt = (iso) => dateLabel(String(iso).slice(0, 10));
 const walletPlanStats = (w) => {
@@ -1666,12 +1686,12 @@ async function bookingDetail(id, payResult, quiet) {
   on('#shareReceipt', async () => shareReceipt(receipt));
   on('#saveReceipt', async () => openReceiptPdf(receipt));
   let stars_ = 0; document.querySelectorAll('[data-star]').forEach((el) => el.onclick = () => { stars_ = Number(el.dataset.star); document.querySelectorAll('[data-star]').forEach((x) => { const on = Number(x.dataset.star) <= stars_; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(Number(x.dataset.star) === stars_)); }); $('#rvsend').disabled = false; });
-  on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); toast('Thank you for your review'); route(); });
-  on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); location.href = p.authorization_url; });
+  on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); window.posthog?.capture('review_submitted', { rating: stars_ }); toast('Thank you for your review'); route(); });
+  on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); window.posthog?.capture('booking_payment_started'); location.href = p.authorization_url; });
   on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); const done = r.booking.status === 'CONFIRMED'; toast(done ? 'Payment confirmed' : ['slot_taken', 'late_refund', 'refund_due'].includes(r.result) ? 'That time was taken. We are refunding you' : r.result === 'duplicate_refund' ? 'Already paid. We are returning the extra payment' : r.result === 'amount_mismatch' ? (r.booking.payment_issue && r.booking.payment_issue.refund === 'sent' ? 'We have sent your payment back' : r.booking.payment_issue && r.booking.payment_issue.refund === 'coming' ? 'We are sending your payment back' : 'Payment received. Our team will check it') : 'We have not got your payment yet', !done && r.result !== 'duplicate_refund'); route(); });
   on('#helpsend', async () => { const note = ($('#helpnote').value || '').trim(); if (note.length < 3) throw new Error('Write a few words about what happened.'); await api(`/bookings/${id}/help`, { method: 'POST', body: { note } }); toast('We told your barber'); route(); });
-  on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); toast("You are checked in"); route(); });
-  on('#cancel', async () => { if (!confirm('Cancel this booking?')) { $('#cancel').disabled = false; return; } await api(`/bookings/${id}/cancel`, { method: 'POST' }); toast('Booking cancelled'); route(); });
+  on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); window.posthog?.capture('customer_checked_in'); toast("You are checked in"); route(); });
+  on('#cancel', async () => { if (!confirm('Cancel this booking?')) { $('#cancel').disabled = false; return; } await api(`/bookings/${id}/cancel`, { method: 'POST' }); window.posthog?.capture('booking_cancelled'); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
 }
 
@@ -1696,7 +1716,7 @@ async function moveBooking(id) {
       $('#slots').innerHTML = r.slots.length ? `<div class="small muted" style="margin-bottom:8px">${dateLabel(date)} · ${b.duration_min} min</div><div class="chips">${r.slots.map((s) => `<button class="chip ${time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>` : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>`;
       document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#save').disabled = false; });
     } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
-    $('#save').onclick = async () => { const btn = $('#save'); btn.disabled = true; try { await api(`/bookings/${id}/reschedule`, { method: 'POST', body: { date, time } }); toast('Your booking is moved'); go('#/booking/' + id); } catch (e) { fail(e); btn.disabled = false; } };
+    $('#save').onclick = async () => { const btn = $('#save'); btn.disabled = true; try { await api(`/bookings/${id}/reschedule`, { method: 'POST', body: { date, time } }); window.posthog?.capture('booking_rescheduled'); toast('Your booking is moved'); go('#/booking/' + id); } catch (e) { fail(e); btn.disabled = false; } };
   };
   draw();
 }
@@ -1761,7 +1781,7 @@ async function notifications() {
 const relBadge = (r) => r ? `<span class="badge rel-${r.tone}" title="${r.completed} completed, ${r.no_shows} no-show${r.no_shows === 1 ? '' : 's'}">${esc(r.label)}</span>` : '';
 function custLine(b) { return `${cav(b.customer, 'in')}<b>${esc(b.customer.name)}</b> ${relBadge(b.customer.reliability)} <span class="muted small">${esc(b.service_name)} · ${naira(b.price_kobo)}</span>`; }
 async function act(id, action, body) {
-  try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); await barberToday(true); } catch (e) { fail(e); }
+  try { await api(`/barber/bookings/${id}/${action}`, { method: 'POST', body: body || {} }); window.posthog?.capture('barber_booking_updated', { action }); await barberToday(true); } catch (e) { fail(e); }
 }
 const emailBanner = () => {
   const u = state.user; if (!emailCheckOn() || !u || u.email_verified !== false) return '';
@@ -1815,7 +1835,7 @@ async function barberToday(keepScroll) {
     <h2>WAITING (${d.waiting.length})</h2>${d.waiting.map((b) => `<div class="card">${personRow(b, !ns && false)}</div>`).join('') || '<p class="muted small">No one else is in line.</p>'}
     ${d.done.length ? `<h2>Done today</h2>${clist(d.done.map((b) => crowA({ t: cav(b.customer) + esc(b.customer.name), p: statusBadge(b.status) + payBadge(b), m: `${esc(b.start_label)} · ${esc(b.service_name)}`, r: naira(b.price_kobo) }, '#/b/' + b.id)))}` : ''}`;
   $('#refresh').onclick = () => barberToday();
-  document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you are ${el.dataset.delay} more minutes late?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); toast(`You are ${r.delay_min} min late · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
+  document.querySelectorAll('[data-delay]').forEach((el) => el.onclick = async () => { if (!confirm(`Tell today's waiting customers you are ${el.dataset.delay} more minutes late?`)) return; el.disabled = true; try { const r = await api('/barber/queue/delay', { method: 'POST', body: { minutes: Number(el.dataset.delay) } }); window.posthog?.capture('barber_queue_delay_sent', { delay_minutes: r.delay_min, notified_count: r.notified }); toast(`You are ${r.delay_min} min late · ${r.notified} customer${r.notified === 1 ? '' : 's'} told`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-tpl]').forEach((el) => el.onclick = async () => { if (!confirm(`Send "${el.textContent}" to everyone waiting today?`)) return; el.disabled = true; try { const r = await api('/barber/queue/message', { method: 'POST', body: { template: el.dataset.tpl } }); toast(`Sent to ${r.sent} customer${r.sent === 1 ? '' : 's'}`); } catch (e) { fail(e); } el.disabled = false; });
   document.querySelectorAll('[data-a]').forEach((el) => el.onclick = () => {
     const a = el.dataset.a;

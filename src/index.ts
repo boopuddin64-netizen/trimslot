@@ -2,6 +2,7 @@
 import { closeDb } from './db';
 import { config } from './config';
 import { logger } from './logger';
+import { flushPostHogLogs, posthogLogs } from './posthogLogs';
 import { expireHolds } from './bookingService';
 import { reconcileRecentPayments } from './paystack';
 import { bootChecks, prepareDb } from './runtime';
@@ -36,12 +37,14 @@ async function main() {
     if (closing) return;
     closing = true;
     logger.info('shutdown_start', { signal: sig });
+    posthogLogs.info('application_shutdown_started', { signal: sig });
     if (sweeper) clearInterval(sweeper);
     const force = setTimeout(() => { logger.error('shutdown_forced'); process.exit(1); }, 10_000);
     force.unref();
     server.close(async (err) => {
       try { await closeDb(); } catch { /* ignore */ }
       logger.info('shutdown_complete', { error: err ? String(err.message) : undefined });
+      await flushPostHogLogs();
       process.exit(err ? 1 : 0);
     });
     (server as any).closeIdleConnections?.();

@@ -34,6 +34,7 @@ import { registerAdmin3 } from './admin3';
 import { registerAdminDelete } from './adminDelete';
 import { ledgerBlocked, outstandingKobo } from './ledger';
 import { logger, requestLogger } from './logger';
+import { posthogLogs } from './posthogLogs';
 import { registerSmart, backgroundAfterResponse } from './smartRoutes';
 import { barberAccessGuard, newShareCode, photoAllowed, registerShareLinks, myBarbersWithLinks, shareLinkFor } from './shareLinks';
 import { vapidPublicKey, pushAvailable, flushPush } from './push';
@@ -206,7 +207,12 @@ export function barberTimeline(rows: any[]) {
 
 export function createApp(db: Db) {
   const app = express();
+  if (!config.posthog && !config.isProd) {
+    const variable = process.env.POSTHOG_KEY ? 'POSTHOG_HOST' : 'POSTHOG_KEY';
+    console.warn(`${variable} variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once ${variable} is configured`);
+  }
   const limits = makeLimits(db);
+  posthogLogs.info('application_initialized', { runtime: config.isVercel ? 'serverless' : 'long_running' });
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
   app.use((req, _res, next) => { req.db = db; next(); });
@@ -217,10 +223,11 @@ export function createApp(db: Db) {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://va.vercel-scripts.com'],   // same sources as vercel.json
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://va.vercel-scripts.com', 'https://*.posthog.com'],   // same sources as vercel.json
         styleSrc: ["'self'", "'unsafe-inline'"], // the SPA uses inline style="" attributes
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],    // barber photo URLs are arbitrary https images
-        connectSrc: ["'self'", 'https://vitals.vercel-insights.com', 'https://va.vercel-analytics.com'],
+        connectSrc: ["'self'", 'https://vitals.vercel-insights.com', 'https://va.vercel-analytics.com', 'https://*.posthog.com'],
+        workerSrc: ["'self'", 'blob:', 'data:'],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
         baseUri: ["'self'"],
@@ -344,6 +351,7 @@ export function createApp(db: Db) {
   api.get('/public-settings', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'public, max-age=60'); res.json({ settings: await loadPublicSettings(db) }); }));
   api.get('/config', wrap(async (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({
     payment_mode: config.paystackMode, mock: config.mockMode, email_verification: config.emailVerificationRequired, email_dev_code: fixedDevCode(), demo: config.demoEnabled, currency: 'NGN', timezone: TIMEZONE,
+    posthog: config.posthog, posthog_environment: config.isProd ? 'production' : 'development',
     cancel_cutoff_min: (await getSettings(db)).cancel_cutoff_min, booking_window_days: (await getSettings(db)).booking_window_days, plans: (await getSettings(db)).feature_plans, today: lagosDate(), now: clock.now().toISOString(),
     ...(await (async () => { const st = await getSettings(db); return { maintenance: st.maintenance_mode ? st.maintenance_message : null, features: { online_payments: st.feature_online_payments, plans: st.feature_plans, credits: st.feature_credits, pay_on_arrival: st.feature_pay_on_arrival, favourites: st.feature_favourites, rebook: st.feature_rebook, reminders: st.feature_reminders, waitlist: st.feature_waitlist, reviews: st.feature_reviews, barber_notes: st.feature_barber_notes, quick_actions: st.feature_quick_actions, reliability: st.feature_reliability, daily_summary: st.feature_daily_summary, booking_note: st.feature_booking_note, loyalty: st.feature_loyalty, push: st.feature_push && pushAvailable() }, loyalty: st.feature_loyalty ? { every_n: st.loyalty_every_n, reward_kobo: st.loyalty_credit_kobo } : null, vapid_public_key: st.feature_push ? vapidPublicKey() || null : null }; })()),
   }); }));

@@ -83,8 +83,8 @@ function deleteDialog(u) {
     try {
       const r = await api('/me/delete', { method: 'POST', body: { password: f.password.value, confirm: f.confirm.value.trim(), acknowledge_forfeit: !!(f.forfeit && f.forfeit.checked) } });
       done();
-      if (r && r.requested) { state.user.deletion_requested = true; toast('Request sent. TrimSlot will contact you.'); route(); }
-      else { state.user = null; toast('Your account is deleted'); go('#/login'); }
+      if (r && r.requested) { window.posthog?.capture('account_deletion_requested'); state.user.deletion_requested = true; toast('Request sent. TrimSlot will contact you.'); route(); }
+      else { window.resetPostHogUser?.(); state.user = null; toast('Your account is deleted'); go('#/login'); }
     } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); b.disabled = false; }
   };
 }
