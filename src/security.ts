@@ -4,6 +4,9 @@ import rateLimit, { Options } from 'express-rate-limit';
 import { Db } from './db';
 import { config } from './config';
 import { logger } from './logger';
+import { AppError } from './errors';
+
+export const ADMIN_COOKIE = 'trimslot_admin';
 
 const off = () => process.env.NODE_ENV === 'test';
 const tooMany = (res: Response, message: string, retryAfterSec: number) => {
@@ -13,8 +16,8 @@ const tooMany = (res: Response, message: string, retryAfterSec: number) => {
 
 /**
  * DB-BACKED fixed-window limiter (table rate_limits), shared by ALL serverless instances - used for the endpoints where
- * abuse matters (signup, login, payments). One atomic upsert per request. If the limiter itself fails (DB hiccup) it FAILS OPEN
- * and logs, so a limiter problem never takes the site down (the request would fail on its own DB access anyway if the DB is really down).
+ * abuse matters (signup, login, payments). One atomic upsert per request. If the limiter itself fails, sensitive requests fail closed
+ * with 503 rather than silently bypassing abuse protection.
  */
 export function dbLimiter(db: Db, o: { name: string; windowMs: number; limit: number; message: string; key?: (req: Request) => string }) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -27,7 +30,10 @@ export function dbLimiter(db: Db, o: { name: string; windowMs: number; limit: nu
         `INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1)
          ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1 RETURNING hits`, [key, windowStart]);
       if (r.hits > o.limit) return tooMany(res, o.message, Math.ceil((new Date(windowStart).getTime() + o.windowMs - now) / 1000));
-    } catch (e: any) { logger.warn('rate_limiter_failed_open', { name: o.name, err: e.message }); }
+    } catch (e: any) {
+      logger.error('rate_limiter_unavailable', { name: o.name, err: e.message });
+      return res.status(503).json({ error: { code: 'RATE_LIMITER_UNAVAILABLE', message: 'Security checks are temporarily unavailable. Please try again shortly.' } });
+    }
     next();
   };
 }
@@ -41,14 +47,19 @@ export async function assertLoginNotLocked(db: Db, identifier: string): Promise<
   try {
     const r = await db.maybeOne<{ hits: number }>('SELECT hits FROM rate_limits WHERE key=$1 AND window_start=$2', [acctKey(identifier), acctWindow()]);
     if (r && r.hits >= ACCOUNT_LIMIT) return Math.ceil((new Date(acctWindow()).getTime() + ACCOUNT_WINDOW_MS - Date.now()) / 1000);
-  } catch (e: any) { logger.warn('rate_limiter_failed_open', { name: 'login_fail', err: e.message }); }
-  return null;
+  } catch (e: any) {
+    logger.error('login_lock_check_unavailable', { err: e.message });
+    throw new AppError(503, 'SECURITY_CHECK_UNAVAILABLE', 'Security checks are temporarily unavailable. Please try again shortly.');
+  }
 }
 export async function recordFailedLogin(db: Db, identifier: string) {
   if (off()) return;
   try {
     await db.query(`INSERT INTO rate_limits (key, window_start, hits) VALUES ($1,$2,1) ON CONFLICT (key, window_start) DO UPDATE SET hits = rate_limits.hits + 1`, [acctKey(identifier), acctWindow()]);
-  } catch (e: any) { logger.warn('rate_limiter_failed_open', { name: 'login_fail', err: e.message }); }
+  } catch (e: any) {
+    logger.error('login_failure_record_unavailable', { err: e.message });
+    throw new AppError(503, 'SECURITY_CHECK_UNAVAILABLE', 'Security checks are temporarily unavailable. Please try again shortly.');
+  }
 }
 export const LOGIN_LOCK_MESSAGE = 'Too many wrong log-in tries on this account. Wait 15 minutes, then try again.';
 
@@ -120,6 +131,6 @@ export function cronAuth(req: Request): boolean {
 }
 /** Admin portal / API: accepts only the dedicated ADMIN_KEY. A scheduler secret must never grant interactive admin privileges. */
 export function adminAuth(req: Request): boolean {
-  const got = bearer(req), ak = config.adminKey;
+  const got = req.cookies?.[ADMIN_COOKIE] || bearer(req), ak = config.adminKey;
   return !!ak && safeEqual(got, ak);
 }
