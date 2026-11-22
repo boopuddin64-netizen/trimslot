@@ -1,4 +1,4 @@
-/** Admin portal API. Every route sits behind `adminGuard` (Bearer ADMIN_KEY or the CRON_SECRET fallback, constant-time compare, failed attempts rate-limited). All writes are audited (actor_role='admin'). */
+/** Admin portal API. Every protected route sits behind `adminGuard` (dedicated ADMIN_KEY or its HttpOnly browser cookie; CRON_SECRET is never accepted). All writes are audited (actor_role='admin'). */
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
@@ -18,7 +18,7 @@ const num = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Nu
 const dateOk = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
-  /** Exchange the admin key for a tab-scoped HttpOnly cookie; browser JavaScript never stores or reads the key. */
+  /** Exchange the admin key for a short-lived HttpOnly cookie; browser JavaScript never stores or reads the key. */
   api.post('/admin/login', guard, wrap(async (_req, res) => {
     res.cookie(ADMIN_COOKIE, config.adminKey, {
       httpOnly: true, secure: config.isProd, sameSite: 'strict',
