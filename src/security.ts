@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { timingSafeEqual } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit, { Options } from 'express-rate-limit';
 import { Db } from './db';
 import { config } from './config';
@@ -7,6 +7,33 @@ import { logger } from './logger';
 import { AppError } from './errors';
 
 export const ADMIN_COOKIE = 'trimslot_admin';
+
+const ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60;
+export function createAdminSessionToken(secret: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(JSON.stringify({
+    v: 1, iat: now, exp: now + ADMIN_SESSION_TTL_SECONDS,
+    nonce: randomBytes(16).toString('base64url'),
+  })).toString('base64url');
+  const signature = createHmac('sha256', secret).update(payload).digest('base64url');
+  return payload + '.' + signature;
+}
+export function verifyAdminSessionToken(token: string, secret: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return false;
+    const expected = createHmac('sha256', secret).update(parts[0]).digest();
+    const actual = Buffer.from(parts[1], 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return false;
+    const payload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    const now = Math.floor(Date.now() / 1000);
+    return payload?.v === 1
+      && Number.isSafeInteger(payload.iat) && payload.iat <= now + 60
+      && Number.isSafeInteger(payload.exp) && payload.exp > now
+      && payload.exp - payload.iat <= ADMIN_SESSION_TTL_SECONDS
+      && typeof payload.nonce === 'string' && payload.nonce.length >= 16;
+  } catch { return false; }
+}
 
 const off = () => process.env.NODE_ENV === 'test';
 const tooMany = (res: Response, message: string, retryAfterSec: number) => {
@@ -132,6 +159,9 @@ export function cronAuth(req: Request): boolean {
 }
 /** Admin portal / API: accepts only the dedicated ADMIN_KEY. A scheduler secret must never grant interactive admin privileges. */
 export function adminAuth(req: Request): boolean {
-  const got = req.cookies?.[ADMIN_COOKIE] || bearer(req), ak = config.adminKey;
+  const ak = config.adminKey;
+  const cookie = req.cookies?.[ADMIN_COOKIE];
+  if (ak && typeof cookie === 'string' && verifyAdminSessionToken(cookie, ak)) return true;
+  const got = bearer(req);
   return !!ak && safeEqual(got, ak);
 }
