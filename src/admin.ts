@@ -10,7 +10,7 @@ import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund 
 import { isoNow, lagosDate } from './time';
 import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
 import { config } from './config';
-import { ADMIN_COOKIE } from './security';
+import { ADMIN_COOKIE, adminAuth } from './security';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -18,6 +18,13 @@ const num = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Nu
 const dateOk = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
+  /** Read-only browser session probe. Unlike adminGuard, an absent cookie does not count as a failed key attempt. */
+  api.get('/admin/session', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!adminAuth(req)) return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No active admin session.' } });
+    res.json({ ok: true });
+  });
+
   /** Exchange the admin key for a short-lived HttpOnly cookie; browser JavaScript never stores or reads the key. */
   api.post('/admin/login', guard, wrap(async (_req, res) => {
     res.cookie(ADMIN_COOKIE, config.adminKey, {
