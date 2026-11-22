@@ -443,7 +443,7 @@ $('#lf').onsubmit = async (ev) => {
 };
 window.addEventListener('hashchange', route);
 async function restoreAdminSession() {
-  try { await api('/overview'); adminSession = true; await route(); }
+  try { await api('/session'); adminSession = true; await route(); }
   catch { showLogin(); }
 }
 setTimeout(restoreAdminSession, 0);   // admin2.js registers more sections first
