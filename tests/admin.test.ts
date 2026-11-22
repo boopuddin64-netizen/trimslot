@@ -62,6 +62,13 @@ test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it 
     const token = cookie.slice(cookie.indexOf('=') + 1);
     assert.notEqual(token, KEY, 'browser cookie is not the permanent admin key');
     assert.equal(token.split('.').length, 2, 'browser cookie is a signed session token');
+    const { verifyAdminSessionToken } = await import('../src/security');
+    const { createHmac } = await import('crypto');
+    assert.equal(verifyAdminSessionToken(token, KEY), true, 'signed session verifies with the admin key');
+    assert.equal(verifyAdminSessionToken(token, 'wrong-admin-key'), false, 'session signature rejects another key');
+    const expiredPayload = Buffer.from(JSON.stringify({ v: 1, iat: 1, exp: 2, nonce: '0123456789abcdef' })).toString('base64url');
+    const expiredSignature = createHmac('sha256', KEY).update(expiredPayload).digest('base64url');
+    assert.equal(verifyAdminSessionToken(expiredPayload + '.' + expiredSignature, KEY), false, 'expired sessions are rejected');
     assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 200, 'HttpOnly cookie authenticates admin API');
     const logout = await fetch(s.base + '/api/admin/logout', {
       method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}',
