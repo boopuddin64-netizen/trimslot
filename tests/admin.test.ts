@@ -47,6 +47,9 @@ test('admin API: every route needs the admin key; wrong keys are rejected and ev
 test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it on sign-out', async () => {
   const s = await boot();
   try {
+    const prevNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    for (let i = 0; i < 8; i++) assert.equal((await s.j('/api/admin/session')).status, 401, 'missing session is not a failed key attempt');
     const login = await fetch(s.base + '/api/admin/login', {
       method: 'POST', headers: { ...s.A, 'Content-Type': 'application/json' }, body: '{}',
     });
@@ -71,7 +74,7 @@ test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it 
     assert.doesNotMatch(html, /<script>[\s\S]*?<\/script>/i, 'admin HTML contains no inline script');
     const js = await (await fetch(s.base + '/admin.js')).text();
     assert.doesNotMatch(js, /sessionStorage|trimslot_admin_key/);
-  } finally { s.server.close(); resetNow(); }
+  } finally { process.env.NODE_ENV = 'test'; s.server.close(); resetNow(); }
 });
 
 test('admin overview + lists reflect real data; verify / suspend a barber is audited, notifies the owner and hides the shop', async () => {
