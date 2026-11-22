@@ -16,7 +16,7 @@ export const OTP_SENDS_PER_IP_HOUR = 60;
 const HOUR = 3600_000;
 
 /** Dev/test convenience: a fixed code, only outside production and only when no real mail provider is configured. */
-export const fixedDevCode = () => !config.isProd && !process.env.RESEND_API_KEY;
+export const fixedDevCode = () => config.fixedDevCodes;
 const makeCode = () => (fixedDevCode() ? '123456' : String(randomInt(0, 1_000_000)).padStart(6, '0'));
 /** The code hash uses its own key, derived from the app secret for this one purpose (a leaked code hash tells nothing about the login secret, and the login secret is never used as an HMAC key here). */
 const otpKey = () => createHmac('sha256', config.jwtSecret).update('trimslot:email-otp:v1').digest();

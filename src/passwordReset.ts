@@ -17,7 +17,7 @@ const INVALID_CODE = 'That code could not reset the password. Check it or reques
 const codeKey = () => createHmac('sha256', config.jwtSecret).update('trimslot:password-reset:v1').digest();
 const hashCode = (userId: number, email: string, code: string) => createHmac('sha256', codeKey()).update(`reset:${userId}:${email.toLowerCase()}:${code}`).digest('hex');
 const safeEq = (a: string, b: string) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
-const makeCode = () => (!config.isProd && !process.env.RESEND_API_KEY ? '123456' : String(randomInt(0, 1_000_000)).padStart(6, '0'));
+const makeCode = () => (config.fixedDevCodes ? '123456' : String(randomInt(0, 1_000_000)).padStart(6, '0'));
 const emailSchema = z.string().trim().email().max(254).transform((s) => s.toLowerCase());
 const resetSchema = z.object({
   email: emailSchema,
