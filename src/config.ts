@@ -65,8 +65,12 @@ export const config = {
     const host = process.env.POSTHOG_HOST || '';
     return key && host ? { key, host } : null;
   },
-  /** MOCK payments: only ever possible outside production, and only when no Paystack key is set. */
-  get mockMode() { return !this.isProd && !process.env.PAYSTACK_SECRET_KEY; },
+  /** True only when NODE_ENV is explicitly 'development' or 'test'. An unset or unknown NODE_ENV never counts as local. */
+  get localDevContext() { const e = process.env.NODE_ENV; return !this.isProd && (e === 'development' || e === 'test'); },
+  /** MOCK payments: never in production, never with a Paystack key, and only in an explicit local context or with ALLOW_MOCK_PAYMENTS=1. */
+  get mockMode() { return !this.isProd && !process.env.PAYSTACK_SECRET_KEY && (this.localDevContext || process.env.ALLOW_MOCK_PAYMENTS === '1'); },
+  /** Fixed email/reset code (123456) is only for local development/tests, and only when no email provider key is set. */
+  get fixedDevCodes() { return this.localDevContext && !process.env.RESEND_API_KEY; },
   get paystackMode(): 'MOCK' | 'TEST' | 'LIVE' {
     const k = this.paystackKey;
     if (this.mockMode) return 'MOCK';
