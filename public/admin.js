@@ -3,8 +3,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const naira = (k) => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
-const KEY = 'trimslot_admin_key';
-const getKey = () => { try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; } };
+let adminSession = false;
 const app = $('#app');
 const DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dlabel = (d) => { const x = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
@@ -15,13 +14,13 @@ function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.classNa
 const ic = (d) => `<svg class="i sm" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 
 async function api(path, opts = {}) {
-  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + getKey(), ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', credentials: 'same-origin', headers: { ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   let j = {}; try { j = await r.json(); } catch { /* empty */ }
   if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Your log-in ended. Please sign in again.'); }
   if (!r.ok) { const e = new Error(j.error?.message || 'That did not work. Try again.'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
   return j;
 }
-function signOut(silent) { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } showLogin(silent ? 'Sign in again to go on.' : ''); }
+function signOut(silent) { adminSession = false; fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {}); showLogin(silent ? 'Sign in again to go on.' : ''); }
 
 /* ---------- badges ---------- */
 const bd = (cls, t) => `<span class="badge ${cls}">${esc(t)}</span>`;
@@ -410,7 +409,7 @@ async function audit() {
 /* ---------- shell / routing ---------- */
 const ROUTES = { overview, barbers, bookings, payments, decisions, plans, credits, rules, audit };
 async function route() {
-  if (!getKey()) return showLogin();
+  if (!adminSession) return showLogin();
   const raw = location.hash.replace(/^#\/?/, '') || 'home'; const qi = raw.indexOf('?');
   const k = qi < 0 ? raw : raw.slice(0, qi); window.QS = new URLSearchParams(qi < 0 ? '' : raw.slice(qi + 1));
   const fn = ROUTES[k] || ROUTES.home || overview;
@@ -439,8 +438,12 @@ $('#lf').onsubmit = async (ev) => {
     const r = await fetch('/api/admin/login', { method: 'POST', headers: { Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(r.status === 401 ? 'That key is wrong.' : j.error?.message || 'Could not sign in.');
-    sessionStorage.setItem(KEY, k); $('#key').value = ''; location.hash = '#/home'; route();
+    adminSession = true; $('#key').value = ''; location.hash = '#/home'; route();
   } catch (e) { showLogin(e.message); } finally { b.disabled = false; }
 };
 window.addEventListener('hashchange', route);
-setTimeout(route, 0);   // admin2.js registers more sections first
+async function restoreAdminSession() {
+  try { await api('/overview'); adminSession = true; await route(); }
+  catch { showLogin(); }
+}
+setTimeout(restoreAdminSession, 0);   // admin2.js registers more sections first
