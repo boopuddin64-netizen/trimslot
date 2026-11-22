@@ -9,6 +9,8 @@ import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund } from './paystack';
 import { isoNow, lagosDate } from './time';
 import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
+import { config } from './config';
+import { ADMIN_COOKIE } from './security';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -16,8 +18,20 @@ const num = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Nu
 const dateOk = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
-  /** Cheap credential check used by the login screen. */
-  api.post('/admin/login', guard, wrap(async (_req, res) => res.json({ ok: true })));
+  /** Exchange the admin key for a tab-scoped HttpOnly cookie; browser JavaScript never stores or reads the key. */
+  api.post('/admin/login', guard, wrap(async (_req, res) => {
+    res.cookie(ADMIN_COOKIE, config.adminKey, {
+      httpOnly: true, secure: config.isProd, sameSite: 'strict',
+      maxAge: 8 * 60 * 60 * 1000, path: '/api/admin',
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true });
+  }));
+  api.post('/admin/logout', (_req, res) => {
+    res.clearCookie(ADMIN_COOKIE, { httpOnly: true, secure: config.isProd, sameSite: 'strict', path: '/api/admin' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true });
+  });
 
   api.get('/admin/refunds', guard, wrap(async (_req, res) => res.json({ payments: await db.many(`SELECT reference, amount_kobo, refund_status, refund_reason, refund_error, refund_requested_at, booking_id, plan_purchase_id FROM payments WHERE refund_status IS NOT NULL ORDER BY id DESC LIMIT 100`) })));
 
