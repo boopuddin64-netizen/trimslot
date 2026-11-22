@@ -1,4 +1,4 @@
-/* TrimSlot admin portal. The admin key lives only in sessionStorage (this tab); nothing secret is in the page. All rendering escapes data. */
+/* TrimSlot admin portal. Browser auth is an HttpOnly cookie; the admin key is never persisted in JavaScript storage. All rendering escapes data. */
 'use strict';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -416,7 +416,7 @@ async function route() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   drawTop();
   app.innerHTML = '<div class="sk sk-h"></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
-  try { await fn(); } catch (e) { if (getKey()) { app.innerHTML = `<div class="err">${esc(e.message)}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
+  try { await fn(); } catch (e) { if (adminSession) { app.innerHTML = `<div class="err">${esc(e.message)}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
   window.scrollTo(0, 0);
   if (k !== 'home' && !badges.__loaded) { badges.__loaded = true; api('/home').then((o) => { const m = Object.fromEntries(o.attention.map((a) => [a.key, a.n])); badges.pending = m.barbers || 0; badges.decisions = m.decisions || 0; badges.refunds = m.refunds || 0; badges.reports = m.reports || 0; drawNav(k); }).catch(() => {}); }
 }
