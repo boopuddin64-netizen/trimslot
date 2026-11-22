@@ -59,13 +59,16 @@ test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it 
     assert.match(setCookie, /Path=\/api\/admin/i);
     assert.match(setCookie, /Max-Age=28800/i);
     const cookie = setCookie.split(';')[0];
+    const token = cookie.slice(cookie.indexOf('=') + 1);
+    assert.notEqual(token, KEY, 'browser cookie is not the permanent admin key');
+    assert.equal(token.split('.').length, 2, 'browser cookie is a signed session token');
     assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 200, 'HttpOnly cookie authenticates admin API');
     const logout = await fetch(s.base + '/api/admin/logout', {
       method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}',
     });
     assert.equal(logout.status, 200);
     assert.match(logout.headers.get('set-cookie') || '', /Expires=Thu, 01 Jan 1970/i);
-    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 401, 'cleared cookie no longer authenticates');
+    assert.equal((await fetch(s.base + '/api/admin/overview')).status, 401, 'browser without the cleared cookie is no longer authenticated');
     const html = await (await fetch(s.base + '/admin.html')).text();
     const csp = (await fetch(s.base + '/admin.html')).headers.get('content-security-policy') || '';
     assert.match(csp, /script-src 'self'/);
