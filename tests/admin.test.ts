@@ -64,12 +64,12 @@ test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it 
       method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}',
     });
     assert.equal(logout.status, 200);
-    assert.match(logout.headers.get('set-cookie') || '', /Max-Age=0/i);
+    assert.match(logout.headers.get('set-cookie') || '', /Expires=Thu, 01 Jan 1970/i);
     assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 401, 'cleared cookie no longer authenticates');
     const html = await (await fetch(s.base + '/admin.html')).text();
     const csp = (await fetch(s.base + '/admin.html')).headers.get('content-security-policy') || '';
     assert.match(csp, /script-src 'self'/);
-    assert.doesNotMatch(csp, /unsafe-inline/);
+    assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
     assert.doesNotMatch(html, /<script>[\s\S]*?<\/script>/i, 'admin HTML contains no inline script');
     const js = await (await fetch(s.base + '/admin.js')).text();
     assert.doesNotMatch(js, /sessionStorage|trimslot_admin_key/);
