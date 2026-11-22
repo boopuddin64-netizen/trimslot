@@ -10,7 +10,8 @@ DO $
 BEGIN
   -- Local embedded Postgres test databases do not include Supabase's auth schema.
   -- Keep the identity link when running against Supabase; skip it in local-only databases.
-  IF to_regclass('auth.users') IS NOT NULL AND NOT EXISTS (
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='auth' AND table_name='users')
+     AND NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conname = 'users_auth_user_id_fkey'
       AND conrelid = 'public.users'::regclass
@@ -33,7 +34,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_users_auth_user_id
 DO $
 BEGIN
   -- The admin identity mapping is Supabase Auth-specific; local test Postgres has no auth.users.
-  IF to_regclass('auth.users') IS NOT NULL THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='auth' AND table_name='users') THEN
     EXECUTE $sql$
       CREATE TABLE IF NOT EXISTS public.admin_auth_users (
         auth_user_id UUID PRIMARY KEY
