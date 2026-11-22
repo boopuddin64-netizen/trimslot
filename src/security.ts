@@ -51,6 +51,7 @@ export async function assertLoginNotLocked(db: Db, identifier: string): Promise<
     logger.error('login_lock_check_unavailable', { err: e.message });
     throw new AppError(503, 'SECURITY_CHECK_UNAVAILABLE', 'Security checks are temporarily unavailable. Please try again shortly.');
   }
+  return null;
 }
 export async function recordFailedLogin(db: Db, identifier: string) {
   if (off()) return;
