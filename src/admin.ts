@@ -10,7 +10,7 @@ import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund 
 import { isoNow, lagosDate } from './time';
 import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
 import { config } from './config';
-import { ADMIN_COOKIE, adminAuth } from './security';
+import { ADMIN_COOKIE, adminAuth, createAdminSessionToken } from './security';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -27,7 +27,7 @@ export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => 
 
   /** Exchange the admin key for a short-lived HttpOnly cookie; browser JavaScript never stores or reads the key. */
   api.post('/admin/login', guard, wrap(async (_req, res) => {
-    res.cookie(ADMIN_COOKIE, config.adminKey, {
+    res.cookie(ADMIN_COOKIE, createAdminSessionToken(config.adminKey), {
       httpOnly: true, secure: config.isProd, sameSite: 'strict',
       maxAge: 8 * 60 * 60 * 1000, path: '/api/admin',
     });
