@@ -47,7 +47,6 @@ test('admin API: every route needs the admin key; wrong keys are rejected and ev
 test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it on sign-out', async () => {
   const s = await boot();
   try {
-    const prevNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
     for (let i = 0; i < 8; i++) assert.equal((await s.j('/api/admin/session')).status, 401, 'missing session is not a failed key attempt');
     const login = await fetch(s.base + '/api/admin/login', {
