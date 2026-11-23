@@ -1,4 +1,4 @@
-/** Admin portal API. Every route sits behind `adminGuard` (Bearer ADMIN_KEY or the CRON_SECRET fallback, constant-time compare, failed attempts rate-limited). All writes are audited (actor_role='admin'). */
+/** Admin portal API. Every protected route sits behind `adminGuard` (dedicated ADMIN_KEY or its HttpOnly browser cookie; CRON_SECRET is never accepted). All writes are audited (actor_role='admin'). */
 import { Request, Response, Router } from 'express';
 import { z } from 'zod';
 import { Db } from './db';
@@ -9,6 +9,8 @@ import { getSettings, issueCredit, restoreEntitlement } from './plans';
 import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund } from './paystack';
 import { isoNow, lagosDate } from './time';
 import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
+import { config } from './config';
+import { ADMIN_COOKIE, adminAuth, createAdminSessionToken } from './security';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -16,8 +18,27 @@ const num = (v: unknown, d: number, max: number) => Math.min(max, Math.max(1, Nu
 const dateOk = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
-  /** Cheap credential check used by the login screen. */
-  api.post('/admin/login', guard, wrap(async (_req, res) => res.json({ ok: true })));
+  /** Read-only browser session probe. Unlike adminGuard, an absent cookie does not count as a failed key attempt. */
+  api.get('/admin/session', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!adminAuth(req)) return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No active admin session.' } });
+    res.json({ ok: true });
+  });
+
+  /** Exchange the admin key for a short-lived HttpOnly cookie; browser JavaScript never stores or reads the key. */
+  api.post('/admin/login', guard, wrap(async (_req, res) => {
+    res.cookie(ADMIN_COOKIE, createAdminSessionToken(config.adminKey), {
+      httpOnly: true, secure: config.isProd, sameSite: 'strict',
+      maxAge: 8 * 60 * 60 * 1000, path: '/api/admin',
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true });
+  }));
+  api.post('/admin/logout', (_req, res) => {
+    res.clearCookie(ADMIN_COOKIE, { httpOnly: true, secure: config.isProd, sameSite: 'strict', path: '/api/admin' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true });
+  });
 
   api.get('/admin/refunds', guard, wrap(async (_req, res) => res.json({ payments: await db.many(`SELECT reference, amount_kobo, refund_status, refund_reason, refund_error, refund_requested_at, booking_id, plan_purchase_id FROM payments WHERE refund_status IS NOT NULL ORDER BY id DESC LIMIT 100`) })));
 

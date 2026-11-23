@@ -325,13 +325,15 @@ export function createApp(db: Db) {
 
   /* ---------- admin: platform rules (dedicated Bearer ADMIN_KEY only; never exposed to barbers/customers) ---------- */
   const adminGuard = async (req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Cache-Control', 'no-store');
-    if (!config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not set up on the server yet.' } });
-    const lockKey = 'admin:' + req.ip;
-    const wait = await assertLoginNotLocked(db, lockKey);
-    if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong keys. Try again in a few minutes.' } });
-    if (!adminAuth(req)) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'That admin key is wrong.' } }); }
-    next();
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!config.adminKey) return void res.status(503).json({ error: { code: 'ADMIN_DISABLED', message: 'The admin key is not set up on the server yet.' } });
+      const lockKey = 'admin:' + req.ip;
+      const wait = await assertLoginNotLocked(db, lockKey);
+      if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong keys. Try again in a few minutes.' } });
+      if (!adminAuth(req)) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'That admin key is wrong.' } }); }
+      next();
+    } catch (e) { next(e); }
   };
   api.get('/admin/settings', adminGuard, wrap(async (_req, res) => res.json({ settings: settingsView(await getSettings(db)) })));
   api.put('/admin/settings', adminGuard, wrap(async (req, res) => res.json({ settings: await db.tx((t) => updateSettings(t, req.body)) })));
@@ -923,6 +925,9 @@ export function createApp(db: Db) {
     extensions: ['html'], maxAge: config.isProd ? '5m' : 0, index: 'index.html',
     setHeaders: (res, file) => {
       const name = basename(file);
+      if (name === 'admin.html') {
+        res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self'; worker-src 'self' blob: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+      }
       if (name === 'sw.js') { res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate'); res.setHeader('Service-Worker-Allowed', '/'); }
       else if (name.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
       else if (config.isProd && (/^(?!admin|sw\.js$|mock-checkout).+\.(?:js|css)$/.test(name) || name === 'favicon.svg')) res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=86400');

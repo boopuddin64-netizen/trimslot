@@ -1,10 +1,9 @@
-/* TrimSlot admin portal. The admin key lives only in sessionStorage (this tab); nothing secret is in the page. All rendering escapes data. */
+/* TrimSlot admin portal. Browser auth is an HttpOnly cookie; the admin key is never persisted in JavaScript storage. All rendering escapes data. */
 'use strict';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const naira = (k) => '₦' + (Number(k || 0) / 100).toLocaleString('en-NG', { maximumFractionDigits: 2 });
-const KEY = 'trimslot_admin_key';
-const getKey = () => { try { return sessionStorage.getItem(KEY) || ''; } catch { return ''; } };
+let adminSession = false;
 const app = $('#app');
 const DAYN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dlabel = (d) => { const x = new Date(String(d).slice(0, 10) + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
@@ -15,13 +14,13 @@ function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.classNa
 const ic = (d) => `<svg class="i sm" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 
 async function api(path, opts = {}) {
-  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', headers: { Authorization: 'Bearer ' + getKey(), ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
+  const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', credentials: 'same-origin', headers: { ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   let j = {}; try { j = await r.json(); } catch { /* empty */ }
   if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Your log-in ended. Please sign in again.'); }
   if (!r.ok) { const e = new Error(j.error?.message || 'That did not work. Try again.'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
   return j;
 }
-function signOut(silent) { try { sessionStorage.removeItem(KEY); } catch { /* ignore */ } showLogin(silent ? 'Sign in again to go on.' : ''); }
+function signOut(silent) { adminSession = false; fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {}); showLogin(silent ? 'Sign in again to go on.' : ''); }
 
 /* ---------- badges ---------- */
 const bd = (cls, t) => `<span class="badge ${cls}">${esc(t)}</span>`;
@@ -410,14 +409,14 @@ async function audit() {
 /* ---------- shell / routing ---------- */
 const ROUTES = { overview, barbers, bookings, payments, decisions, plans, credits, rules, audit };
 async function route() {
-  if (!getKey()) return showLogin();
+  if (!adminSession) return showLogin();
   const raw = location.hash.replace(/^#\/?/, '') || 'home'; const qi = raw.indexOf('?');
   const k = qi < 0 ? raw : raw.slice(0, qi); window.QS = new URLSearchParams(qi < 0 ? '' : raw.slice(qi + 1));
   const fn = ROUTES[k] || ROUTES.home || overview;
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   drawTop();
   app.innerHTML = '<div class="sk sk-h"></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
-  try { await fn(); } catch (e) { if (getKey()) { app.innerHTML = `<div class="err">${esc(e.message)}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
+  try { await fn(); } catch (e) { if (adminSession) { app.innerHTML = `<div class="err">${esc(e.message)}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
   window.scrollTo(0, 0);
   if (k !== 'home' && !badges.__loaded) { badges.__loaded = true; api('/home').then((o) => { const m = Object.fromEntries(o.attention.map((a) => [a.key, a.n])); badges.pending = m.barbers || 0; badges.decisions = m.decisions || 0; badges.refunds = m.refunds || 0; badges.reports = m.reports || 0; drawNav(k); }).catch(() => {}); }
 }
@@ -439,8 +438,12 @@ $('#lf').onsubmit = async (ev) => {
     const r = await fetch('/api/admin/login', { method: 'POST', headers: { Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(r.status === 401 ? 'That key is wrong.' : j.error?.message || 'Could not sign in.');
-    sessionStorage.setItem(KEY, k); $('#key').value = ''; location.hash = '#/home'; route();
+    adminSession = true; $('#key').value = ''; location.hash = '#/home'; route();
   } catch (e) { showLogin(e.message); } finally { b.disabled = false; }
 };
 window.addEventListener('hashchange', route);
-setTimeout(route, 0);   // admin2.js registers more sections first
+async function restoreAdminSession() {
+  try { await api('/session'); adminSession = true; await route(); }
+  catch { showLogin(); }
+}
+setTimeout(restoreAdminSession, 0);   // admin2.js registers more sections first

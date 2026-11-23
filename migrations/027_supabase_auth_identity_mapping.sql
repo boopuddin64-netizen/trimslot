@@ -8,7 +8,10 @@ ALTER TABLE public.users
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  -- Local embedded Postgres test databases do not include Supabase's auth schema.
+  -- Keep the identity link when running against Supabase; skip it in local-only databases.
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='auth' AND table_name='users')
+     AND NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conname = 'users_auth_user_id_fkey'
       AND conrelid = 'public.users'::regclass
@@ -28,21 +31,29 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_users_auth_user_id
   WHERE auth_user_id IS NOT NULL;
 
 -- Admin identities are separate from customer/barber records. No public signup path.
-CREATE TABLE IF NOT EXISTS public.admin_auth_users (
-  auth_user_id UUID PRIMARY KEY
-    REFERENCES auth.users(id) ON DELETE RESTRICT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_by_auth_user_id UUID
-    REFERENCES auth.users(id) ON DELETE RESTRICT,
-  revoked_at TIMESTAMPTZ,
-  revoked_by_auth_user_id UUID
-    REFERENCES auth.users(id) ON DELETE RESTRICT,
-  note TEXT CHECK (note IS NULL OR length(note) <= 500),
-  CHECK (
-    (revoked_at IS NULL AND revoked_by_auth_user_id IS NULL)
-    OR revoked_at IS NOT NULL
-  )
-);
-
-ALTER TABLE public.admin_auth_users ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.admin_auth_users FROM anon, authenticated;
+DO $$
+BEGIN
+  -- The admin identity mapping is Supabase Auth-specific; local test Postgres has no auth.users.
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='auth' AND table_name='users') THEN
+    EXECUTE $sql$
+      CREATE TABLE IF NOT EXISTS public.admin_auth_users (
+        auth_user_id UUID PRIMARY KEY
+          REFERENCES auth.users(id) ON DELETE RESTRICT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        created_by_auth_user_id UUID
+          REFERENCES auth.users(id) ON DELETE RESTRICT,
+        revoked_at TIMESTAMPTZ,
+        revoked_by_auth_user_id UUID
+          REFERENCES auth.users(id) ON DELETE RESTRICT,
+        note TEXT CHECK (note IS NULL OR length(note) <= 500),
+        CHECK (
+          (revoked_at IS NULL AND revoked_by_auth_user_id IS NULL)
+          OR revoked_at IS NOT NULL
+        )
+      )
+    $sql$;
+    EXECUTE 'ALTER TABLE public.admin_auth_users ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'REVOKE ALL ON TABLE public.admin_auth_users FROM anon, authenticated';
+  END IF;
+END
+$$;

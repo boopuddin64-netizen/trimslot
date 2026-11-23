@@ -230,9 +230,11 @@ test('DB-backed rate limiter: counts across separate Db instances (i.e. across s
     for (let i = 0; i < 8; i++) await recordFailedLogin(db, 'Victim@x.com');
     assert.ok(await assertLoginNotLocked(other, 'victim@x.com'));       // case-insensitive, visible from the other instance
     assert.equal(await assertLoginNotLocked(other, 'someone-else@x.com'), null);
-    // fail-open: a broken DB must not crash the limiter
+    // Security checks fail closed when the backing database is unavailable.
     const broken = createDb('postgres://postgres:postgres@127.0.0.1:1/none', { max: 1 });
-    assert.equal(await call(broken), 200);
+    assert.equal(await call(broken), 503);
+    await assert.rejects(assertLoginNotLocked(broken, 'admin:1.2.3.4'), /Security checks are temporarily unavailable/);
+    await assert.rejects(recordFailedLogin(broken, 'admin:1.2.3.4'), /Security checks are temporarily unavailable/);
     await broken.close().catch(() => {});
   } finally { process.env.NODE_ENV = prev; await other.close(); }
 });

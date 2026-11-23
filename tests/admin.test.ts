@@ -44,6 +44,48 @@ test('admin API: every route needs the admin key; wrong keys are rejected and ev
   } finally { s.server.close(); resetNow(); }
 });
 
+test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it on sign-out', async () => {
+  const s = await boot();
+  try {
+    process.env.NODE_ENV = 'development';
+    for (let i = 0; i < 8; i++) assert.equal((await s.j('/api/admin/session')).status, 401, 'missing session is not a failed key attempt');
+    const login = await fetch(s.base + '/api/admin/login', {
+      method: 'POST', headers: { ...s.A, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(login.status, 200);
+    const setCookie = login.headers.get('set-cookie') || '';
+    assert.match(setCookie, /HttpOnly/i);
+    assert.match(setCookie, /SameSite=Strict/i);
+    assert.match(setCookie, /Path=\/api\/admin/i);
+    assert.match(setCookie, /Max-Age=28800/i);
+    const cookie = setCookie.split(';')[0];
+    const token = cookie.slice(cookie.indexOf('=') + 1);
+    assert.notEqual(token, KEY, 'browser cookie is not the permanent admin key');
+    assert.equal(token.split('.').length, 2, 'browser cookie is a signed session token');
+    const { verifyAdminSessionToken } = await import('../src/security');
+    const { createHmac } = await import('crypto');
+    assert.equal(verifyAdminSessionToken(token, KEY), true, 'signed session verifies with the admin key');
+    assert.equal(verifyAdminSessionToken(token, 'wrong-admin-key'), false, 'session signature rejects another key');
+    const expiredPayload = Buffer.from(JSON.stringify({ v: 1, iat: 1, exp: 2, nonce: '0123456789abcdef' })).toString('base64url');
+    const expiredSignature = createHmac('sha256', KEY).update(expiredPayload).digest('base64url');
+    assert.equal(verifyAdminSessionToken(expiredPayload + '.' + expiredSignature, KEY), false, 'expired sessions are rejected');
+    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 200, 'HttpOnly cookie authenticates admin API');
+    const logout = await fetch(s.base + '/api/admin/logout', {
+      method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: '{}',
+    });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get('set-cookie') || '', /Expires=Thu, 01 Jan 1970/i);
+    assert.equal((await fetch(s.base + '/api/admin/overview')).status, 401, 'browser without the cleared cookie is no longer authenticated');
+    const html = await (await fetch(s.base + '/admin.html')).text();
+    const csp = (await fetch(s.base + '/admin.html')).headers.get('content-security-policy') || '';
+    assert.match(csp, /script-src 'self'/);
+    assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
+    assert.doesNotMatch(html, /<script>[\s\S]*?<\/script>/i, 'admin HTML contains no inline script');
+    const js = await (await fetch(s.base + '/admin.js')).text();
+    assert.doesNotMatch(js, /sessionStorage|trimslot_admin_key/);
+  } finally { process.env.NODE_ENV = 'test'; s.server.close(); resetNow(); }
+});
+
 test('admin overview + lists reflect real data; verify / suspend a barber is audited, notifies the owner and hides the shop', async () => {
   const s = await boot();
   try {
