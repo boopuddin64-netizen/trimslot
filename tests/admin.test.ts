@@ -76,6 +76,14 @@ test('admin portal exchanges the key for a scoped HttpOnly cookie and clears it 
     assert.equal(logout.status, 200);
     assert.match(logout.headers.get('set-cookie') || '', /Expires=Thu, 01 Jan 1970/i);
     assert.equal((await fetch(s.base + '/api/admin/overview')).status, 401, 'browser without the cleared cookie is no longer authenticated');
+    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: cookie } })).status, 401, 'a copied cookie is dead after logout (server-side revocation)');
+    const l2 = await fetch(s.base + '/api/admin/login', { method: 'POST', headers: { ...s.A, 'Content-Type': 'application/json' }, body: '{}' });
+    const c2 = (l2.headers.get('set-cookie') || '').split(';')[0];
+    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: c2 } })).status, 200);
+    const all = await fetch(s.base + '/api/admin/logout-all', { method: 'POST', headers: { ...s.A, 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(all.status, 200);
+    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { Cookie: c2 } })).status, 401, 'sign-out-everywhere revokes other sessions');
+    assert.equal((await fetch(s.base + '/api/admin/overview', { headers: { ...s.A } })).status, 200, 'the admin key itself still works');
     const html = await (await fetch(s.base + '/admin.html')).text();
     const csp = (await fetch(s.base + '/admin.html')).headers.get('content-security-policy') || '';
     assert.match(csp, /script-src 'self'/);
