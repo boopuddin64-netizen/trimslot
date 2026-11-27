@@ -223,7 +223,7 @@ export function createApp(db: Db) {
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://va.vercel-scripts.com', 'https://*.posthog.com'],   // same sources as vercel.json
+        scriptSrc: ["'self'", 'https://va.vercel-scripts.com', 'https://*.posthog.com'],   // same sources as vercel.json; no inline scripts (style stays inline for the SPA's style="" attributes)
         styleSrc: ["'self'", "'unsafe-inline'"], // the SPA uses inline style="" attributes
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],    // barber photo URLs are arbitrary https images
         connectSrc: ["'self'", 'https://vitals.vercel-insights.com', 'https://va.vercel-analytics.com', 'https://*.posthog.com'],
@@ -935,13 +935,22 @@ export function createApp(db: Db) {
   }));
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof AppError) return res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
+    if (err instanceof AppError) {
+      if (err.status >= 500) logger.error('app_error', { rid: (_req as any).rid, path: _req.path, code: err.code, status: err.status, detail: err.details ?? null });
+      return res.status(err.status).json({ error: { code: err.code, message: err.message, details: publicDetails(err.details) } });
+    }
     if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: { code: 'BAD_JSON', message: 'We could not read that request. Try again.' } });
     if (err?.type === 'entity.too.large') return res.status(413).json({ error: { code: 'TOO_LARGE', message: 'That request is too big. Send less.' } });
     logger.error('unhandled_error', { rid: (_req as any).rid, path: _req.path, err: String(err?.message || err), code: err?.code, stack: config.isProd ? undefined : String(err?.stack || '').split('\n').slice(0, 5).join(' | ') });
     res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong on our side. Please try again.' } });
   });
   return app;
+}
+
+/** Keys that only server code reads (gateway responses, internal flags) never go to the browser. */
+function publicDetails(d: unknown): unknown {
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return d;
+  return Object.fromEntries(Object.entries(d as Record<string, unknown>).filter(([k]) => !/^(gateway_|test_mode$)/.test(k)));
 }
 
 function fmtScheduleRow(r: any) {

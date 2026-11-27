@@ -16,7 +16,7 @@ const ic = (d) => `<svg class="i sm" viewBox="0 0 24 24" aria-hidden="true">${d}
 async function api(path, opts = {}) {
   const r = await fetch('/api/admin' + path, { method: opts.method || 'GET', credentials: 'same-origin', headers: { ...(opts.headers || {}), ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined });
   let j = {}; try { j = await r.json(); } catch { /* empty */ }
-  if (r.status === 401 && path !== '/login') { signOut(true); throw new Error('Your log-in ended. Please sign in again.'); }
+  if (r.status === 401 && path !== '/login') { signOut(true); throw userError('Your log-in ended. Please sign in again.'); }
   if (!r.ok) { const e = new Error(j.error?.message || 'That did not work. Try again.'); e.status = r.status; e.code = j.error?.code; e.details = j.error?.details; throw e; }
   return j;
 }
@@ -116,7 +116,7 @@ function wireActions(root, handlers) {
   root.querySelectorAll('[data-do]').forEach((b) => b.onclick = async () => {
     const h = handlers[b.dataset.do]; if (!h) return;
     b.disabled = true;
-    try { await h(b.dataset); } catch (e) { toast(e.message, true); b.disabled = false; }
+    try { await h(b.dataset); } catch (e) { toast(userMessage(e), true); b.disabled = false; }
   });
 }
 
@@ -195,7 +195,7 @@ async function barberDetail(id, reload) {
       try {
         await api('/settings', { method: 'PUT', body: { default_service_limit: Number(form.elements.default_service_limit.value), default_plan_limit: Number(form.elements.default_plan_limit.value), catalog_limits_enabled: form.elements.catalog_limits_enabled.checked, plan_approval_required: form.elements.plan_approval_required.checked } });
         f.close(); m.close(); toast('Plan and service controls saved'); await reload();
-      } catch (e) { error.textContent = e.message; error.classList.remove('hidden'); button.disabled = false; }
+      } catch (e) { error.textContent = userMessage(e); error.classList.remove('hidden'); button.disabled = false; }
     };
   };
   const openPlanApproval = (p) => {
@@ -206,7 +206,7 @@ async function barberDetail(id, reload) {
     const applyApproval = async (status, reason) => {
       const button = review.el.querySelector(`[data-plan-action="${status === 'APPROVED' ? 'approve' : 'reject'}"]`); if (button) button.disabled = true;
       try { await api(`/plans/${p.id}/approval`, { method: 'POST', body: { status, ...(reason ? { reason } : {}) } }); review.close(); toast(status === 'APPROVED' ? 'Plan approved' : 'Plan rejected'); await reload(); }
-      catch (e) { toast(e.message, true); if (button) button.disabled = false; }
+      catch (e) { toast(userMessage(e), true); if (button) button.disabled = false; }
     };
     review.el.querySelector('[data-plan-action="approve"]')?.addEventListener('click', () => applyApproval('APPROVED'));
     review.el.querySelector('[data-plan-action="reject"]')?.addEventListener('click', () => { review.close(); ADM2.formModal({ title: 'Reject ' + p.name, help: 'The barber sees this reason and can update the plan before sending it for review again.', go: 'Reject plan', cls: 'red', fields: [ADM2.REASON('Reason (the barber sees this)')], submit: async (v) => { await api(`/plans/${p.id}/approval`, { method: 'POST', body: { status: 'REJECTED', reason: v.reason } }); return 'Plan rejected'; }, after: reload }); });
@@ -222,8 +222,8 @@ async function barberDetail(id, reload) {
     if (k === 'fee') { m.close(); ADM2.barberFee({ ...b, id }, reload); return; }
     if (k === 'ledger') { m.close(); ADM2.ledgerSheet(id, reload); return; }
     if (k === 'delete') { m.close(); ADM4.deleteDialog({ type: 'barber', id, name: b.shop_name, after: reload }); return; }
-    if (k === 'approve') { x.disabled = true; try { await call('approve'); await done('Barber approved'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
-    if (k === 'reinstate') { x.disabled = true; try { await call('reinstate'); await done('Barber reinstated'); } catch (e) { toast(e.message, true); x.disabled = false; } return; }
+    if (k === 'approve') { x.disabled = true; try { await call('approve'); await done('Barber approved'); } catch (e) { toast(userMessage(e), true); x.disabled = false; } return; }
+    if (k === 'reinstate') { x.disabled = true; try { await call('reinstate'); await done('Barber reinstated'); } catch (e) { toast(userMessage(e), true); x.disabled = false; } return; }
     const cfg = {
       reject: { title: 'Reject ' + b.shop_name, help: 'The barber sees this reason. They can fix things and send their details again.', label: 'Reason (the barber sees this)', ph: 'For example: Please add a clear shop photo and your real address.', go: 'Reject shop', cls: 'red', path: 'reject', key: 'reason', ok: 'Barber rejected' },
       info: { title: 'Ask ' + b.shop_name + ' for more information', help: 'The barber gets an alert with your message. They can send their details again after they update them.', label: 'Message to the barber', ph: 'For example: Please add at least one service with a price.', go: 'Send request', path: 'request-info', key: 'message', ok: 'Request sent' },
@@ -244,7 +244,7 @@ async function barberDetail(id, reload) {
           $('#keepb', f.el).onclick = () => send({ bookings: 'keep' });
           $('#cancelb', f.el).onclick = () => { if (confirm(`Cancel ${n} booking${n === 1 ? '' : 's'}? We tell the customers. Paid ones get a refund.`)) send({ bookings: 'cancel' }); };
           go.classList.add('hidden');
-        } else { const er = $('#rerr', f.el); er.textContent = e.message; er.classList.remove('hidden'); }
+        } else { const er = $('#rerr', f.el); er.textContent = userMessage(e); er.classList.remove('hidden'); }
       }
     };
     $('#rfm', f.el).onsubmit = (ev) => { ev.preventDefault(); send(); };
@@ -319,7 +319,7 @@ async function payments() {
   wireActions(app, {
     flag: async (d) => { const on = d.on === '1'; if (!on) { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return payments(); } ADM2.formModal({ title: 'Flag payment as disputed', help: 'A private mark so you remember to follow up (for example a chargeback or a customer claim). It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${encodeURIComponent(d.ref)}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: payments }); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); },
     retry: async (d) => { const x = await api(`/payments/${encodeURIComponent(d.ref)}/retry-refund`, { method: 'POST', body: {} }); toast(x.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (x.refund_error || 'try again later'), x.result !== 'requested'); await payments(); },
-    mark: async (d) => { if (!confirm('Mark this payment as refunded? Do this only after you paid the customer back.')) throw new Error('Not changed'); await api(`/payments/${encodeURIComponent(d.ref)}/mark-refunded`, { method: 'POST', body: {} }); toast('Marked as refunded'); await payments(); },
+    mark: async (d) => { if (!confirm('Mark this payment as refunded? Do this only after you paid the customer back.')) throw userError('Not changed'); await api(`/payments/${encodeURIComponent(d.ref)}/mark-refunded`, { method: 'POST', body: {} }); toast('Marked as refunded'); await payments(); },
   });
 }
 
@@ -336,7 +336,7 @@ async function decisions() {
   wireReload(decisions);
   wireActions(app, {
     credit: async (d) => { await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'credit' } }); toast('Converted to a session credit'); await decisions(); },
-    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions(); },
+    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw userError('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions(); },
   });
 }
 
@@ -394,7 +394,7 @@ async function rules() {
     ev.preventDefault(); const out = {}; const f = ev.target.elements;
     for (const [k, , t] of FIELDS) out[k] = t === 'checkbox' ? f[k].checked : t === 'number' ? Number(f[k].value) : f[k].value;
     const b = ev.target.querySelector('button'); b.disabled = true;
-    try { await api('/settings', { method: 'PUT', body: out }); toast('Rules saved'); await rules(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    try { await api('/settings', { method: 'PUT', body: out }); toast('Rules saved'); await rules(); } catch (e) { toast(userMessage(e), true); b.disabled = false; }
   };
 }
 
@@ -416,7 +416,7 @@ async function route() {
   $('#login').classList.add('hidden'); $('#shell').classList.remove('hidden');
   drawTop();
   app.innerHTML = '<div class="sk sk-h"></div><div class="card"><div class="sk sk-l"></div><div class="sk sk-l s"></div></div>';
-  try { await fn(); } catch (e) { if (adminSession) { app.innerHTML = `<div class="err">${esc(e.message)}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
+  try { await fn(); } catch (e) { if (adminSession) { app.innerHTML = `<div class="err">${esc(userMessage(e))}<div style="margin-top:12px"><button class="btn sec" id="retry-page">Retry</button></div></div>`; const retry = $('#retry-page'); if (retry) retry.onclick = () => route(); } }
   window.scrollTo(0, 0);
   if (k !== 'home' && !badges.__loaded) { badges.__loaded = true; api('/home').then((o) => { const m = Object.fromEntries(o.attention.map((a) => [a.key, a.n])); badges.pending = m.barbers || 0; badges.decisions = m.decisions || 0; badges.refunds = m.refunds || 0; badges.reports = m.reports || 0; drawNav(k); }).catch(() => {}); }
 }
@@ -437,9 +437,9 @@ $('#lf').onsubmit = async (ev) => {
   try {
     const r = await fetch('/api/admin/login', { method: 'POST', headers: { Authorization: 'Bearer ' + k, 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(r.status === 401 ? 'That key is wrong.' : j.error?.message || 'Could not sign in.');
+    if (!r.ok) throw userError(r.status === 401 ? 'That key is wrong.' : j.error?.message || 'Could not sign in.');
     adminSession = true; $('#key').value = ''; location.hash = '#/home'; route();
-  } catch (e) { showLogin(e.message); } finally { b.disabled = false; }
+  } catch (e) { showLogin(userMessage(e)); } finally { b.disabled = false; }
 };
 window.addEventListener('hashchange', route);
 async function restoreAdminSession() {

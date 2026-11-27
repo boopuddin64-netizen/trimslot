@@ -8,7 +8,7 @@ const el = (html) => { const t = document.createElement('template'); t.innerHTML
 
 /** Decode the chosen file (see imgdecode.js): upright, long side <= 1600 px, returned as a canvas that is both shown in the preview and drawn from on Save. */
 async function loadImage(file) {
-  if (!window.ImgDecode) throw new Error('We could not open that photo. Please reload the page and try again.');
+  if (!window.ImgDecode) throw userError('We could not open that photo. Please reload the page and try again.');
   const r = await window.ImgDecode.load(file, { maxSide: 1600 });
   return { im: r.canvas, W: r.width, H: r.height };
 }
@@ -25,7 +25,7 @@ async function encode(im, rect) {
     if (blob && blob.type === 'image/jpeg' && blob.size <= MAX_BYTES) return blob;
     a = CM.nextAttempt(a.px, a.q);
   }
-  throw new Error('That photo is too big. Try a different one.');
+  throw userError('That photo is too big. Try a different one.');
 }
 
 async function open(file, save) {
@@ -105,7 +105,7 @@ async function open(file, save) {
     bSave.onclick = async () => {
       if (busy) return; showErr(''); setBusy(true);
       try { const blob = await encode(im, CM.cropRect(W, H, V, st)); await save(blob); close(true); }
-      catch (e) { setBusy(false); showErr((e && e.message) || 'We could not save it. Try again.'); }
+      catch (e) { setBusy(false); showErr((e && userMessage(e)) || 'We could not save it. Try again.'); }
     };
     const onKey = (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!busy) close(false); return; }

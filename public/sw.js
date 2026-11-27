@@ -6,13 +6,13 @@
 'use strict';
 
 /* >>> Bump this ONE value to make every device drop its saved app files and download fresh ones (old caches are deleted on activate). <<< */
-const CACHE_VERSION = 'v14';
+const CACHE_VERSION = 'v15';
 const CACHE_PREFIX = 'trimslot-static-';
 const STATIC_CACHE = CACHE_PREFIX + CACHE_VERSION;
 const SHELL = '/';
 /* Saved at install (the page shell must succeed; the rest is best effort, anything missing is saved the first time it is used). */
 const PRECACHE = [
-  '/style.css', '/avatars.css', '/theme.js', '/forms.js', '/offline-cache.js', '/net-banner.js', '/imgdecode.js', '/app.js', '/cropmath.js', '/avatar-crop.js', '/account.js', '/notify.js', '/haptics.js', '/pull-refresh.js', '/polish.css', '/polish.js',
+  '/style.css', '/avatars.css', '/theme.js', '/va-init.js', '/errmsg.js', '/forms.js', '/offline-cache.js', '/net-banner.js', '/imgdecode.js', '/app.js', '/cropmath.js', '/avatar-crop.js', '/account.js', '/notify.js', '/haptics.js', '/pull-refresh.js', '/polish.css', '/polish.js',
   '/manifest.webmanifest', '/favicon.svg', '/icons/icon-192.png', '/icons/apple-touch-icon.png', '/icons/badge-96.png',
 ];
 /* Never touched by the cache: API, admin, payment pages, health check, share-link redirect, this file itself. */

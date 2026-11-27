@@ -36,7 +36,7 @@ function pinSetupDialog() {
     $('#psf', m.el).onsubmit = async (e) => {
       e.preventDefault(); go.disabled = true;
       try { await _api('/pin/setup', { method: 'POST', body: { pin: a.value } }); toast('Admin PIN saved'); fin(true); }
-      catch (er) { const x = $('#pserr', m.el); x.textContent = er.message; x.classList.remove('hidden'); go.disabled = false; }
+      catch (er) { const x = $('#pserr', m.el); x.textContent = userMessage(er); x.classList.remove('hidden'); go.disabled = false; }
     };
   });
 }
@@ -46,13 +46,13 @@ window.api = async function apiWithPin(path, opts = {}) {
     if (path.startsWith('/pin/') || !['PIN_REQUIRED', 'PIN_WRONG', 'PIN_NOT_SET'].includes(err.code)) throw err;
     let code = err.code, msg = '';
     for (let tries = 0; tries < 8; tries++) {
-      if (code === 'PIN_NOT_SET') { if (!(await pinSetupDialog())) throw new Error('Cancelled. Nothing was changed.'); code = 'PIN_REQUIRED'; }
+      if (code === 'PIN_NOT_SET') { if (!(await pinSetupDialog())) throw userError('Cancelled. Nothing was changed.'); code = 'PIN_REQUIRED'; }
       const pin = await pinDialog(msg);
-      if (pin == null) throw new Error('Cancelled. Nothing was changed.');
+      if (pin == null) throw userError('Cancelled. Nothing was changed.');
       try { return await _api(path, { ...opts, headers: { ...(opts.headers || {}), 'X-Admin-Pin': pin } }); }
-      catch (e2) { if (e2.code === 'PIN_WRONG' || e2.code === 'PIN_REQUIRED') { code = 'PIN_REQUIRED'; msg = e2.message; continue; } throw e2; }   // PIN_LOCKED & everything else surface as-is
+      catch (e2) { if (e2.code === 'PIN_WRONG' || e2.code === 'PIN_REQUIRED') { code = 'PIN_REQUIRED'; msg = userMessage(e2); continue; } throw e2; }   // PIN_LOCKED & everything else surface as-is
     }
-    throw new Error('Too many attempts.');
+    throw userError('Too many attempts.');
   }
 };
 
@@ -99,7 +99,7 @@ async function pinPage() {
       if (st.set) await _api('/pin/change', { method: 'POST', body: { old_pin: $('#p0').value, new_pin: $('#p1').value } });
       else await _api('/pin/setup', { method: 'POST', body: { pin: $('#p1').value } });
       toast(st.set ? 'PIN changed' : 'PIN saved'); pinPage();
-    } catch (x) { er.textContent = x.message; er.classList.remove('hidden'); go.disabled = false; }
+    } catch (x) { er.textContent = userMessage(x); er.classList.remove('hidden'); go.disabled = false; }
   };
 }
 
@@ -128,7 +128,7 @@ async function testDataPage() {
       ${p.sample.length ? `<p class="small muted" style="margin:8px 0 0">e.g. ${p.sample.map(esc).join(', ')}</p>` : '<p class="small muted">No test data found.</p>'}
       <div class="btns end"><button class="btn red" id="tdgo" ${p.users ? '' : 'disabled'}>Delete test data…</button></div></div>`;
   wireReload(testDataPage);
-  const b = $('#tdgo'); if (b) b.onclick = () => formModal({ title: `Delete ${p.users} test account${p.users === 1 ? '' : 's'} forever`, help: `This also deletes ${p.bookings} booking${p.bookings === 1 ? '' : 's'} and their payments. Type DELETE TEST DATA to confirm. Then we ask for your PIN.`, go: 'Delete test data', cls: 'red', fields: [{ name: 'confirm', label: 'Type DELETE TEST DATA', required: true }], submit: async (v) => { if (v.confirm !== 'DELETE TEST DATA') throw new Error('Type DELETE TEST DATA exactly.'); const r = await post('/testdata/purge', { confirm: v.confirm }); return `Deleted ${r.users} account(s) and ${r.bookings} booking(s)`; }, after: testDataPage });
+  const b = $('#tdgo'); if (b) b.onclick = () => formModal({ title: `Delete ${p.users} test account${p.users === 1 ? '' : 's'} forever`, help: `This also deletes ${p.bookings} booking${p.bookings === 1 ? '' : 's'} and their payments. Type DELETE TEST DATA to confirm. Then we ask for your PIN.`, go: 'Delete test data', cls: 'red', fields: [{ name: 'confirm', label: 'Type DELETE TEST DATA', required: true }], submit: async (v) => { if (v.confirm !== 'DELETE TEST DATA') throw userError('Type DELETE TEST DATA exactly.'); const r = await post('/testdata/purge', { confirm: v.confirm }); return `Deleted ${r.users} account(s) and ${r.bookings} booking(s)`; }, after: testDataPage });
 }
 
 IC.pin = PIN_IC; IC.deleted = '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'; IC.testdata = '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>';
