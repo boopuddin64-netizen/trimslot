@@ -331,7 +331,7 @@ export function createApp(db: Db) {
       const lockKey = 'admin:' + req.ip;
       const wait = await assertLoginNotLocked(db, lockKey);
       if (wait) return void res.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many wrong keys. Try again in a few minutes.' } });
-      if (!adminAuth(req)) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'That admin key is wrong.' } }); }
+      if (!(await adminAuth(req, db))) { await recordFailedLogin(db, lockKey); return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'That admin key is wrong.' } }); }
       next();
     } catch (e) { next(e); }
   };

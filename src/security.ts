@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import rateLimit, { Options } from 'express-rate-limit';
 import { Db } from './db';
 import { config } from './config';
@@ -9,14 +9,19 @@ import { AppError } from './errors';
 export const ADMIN_COOKIE = 'trimslot_admin';
 
 const ADMIN_SESSION_TTL_SECONDS = 8 * 60 * 60;
-export function createAdminSessionToken(secret: string): string {
+export const adminSessionId = (nonce: string) => createHash('sha256').update(nonce).digest('hex');
+export function createAdminSession(secret: string): { token: string; id: string; expiresAt: Date } {
   const now = Math.floor(Date.now() / 1000);
-  const payload = Buffer.from(JSON.stringify({
-    v: 1, iat: now, exp: now + ADMIN_SESSION_TTL_SECONDS,
-    nonce: randomBytes(16).toString('base64url'),
-  })).toString('base64url');
+  const nonce = randomBytes(16).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ v: 1, iat: now, exp: now + ADMIN_SESSION_TTL_SECONDS, nonce })).toString('base64url');
   const signature = createHmac('sha256', secret).update(payload).digest('base64url');
-  return payload + '.' + signature;
+  return { token: payload + '.' + signature, id: adminSessionId(nonce), expiresAt: new Date((now + ADMIN_SESSION_TTL_SECONDS) * 1000) };
+}
+export const createAdminSessionToken = (secret: string): string => createAdminSession(secret).token;
+/** Session id (hash of the nonce) of a validly signed, unexpired token; null otherwise. */
+export function adminSessionIdFromToken(token: string, secret: string): string | null {
+  if (!verifyAdminSessionToken(token, secret)) return null;
+  try { return adminSessionId(JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')).nonce); } catch { return null; }
 }
 export function verifyAdminSessionToken(token: string, secret: string): boolean {
   try {
@@ -157,11 +162,15 @@ export function cronAuth(req: Request): boolean {
   const secret = config.cronSecret;
   return !!secret && safeEqual(bearer(req), secret);
 }
-/** Admin portal / API: accepts only the dedicated ADMIN_KEY. A scheduler secret must never grant interactive admin privileges. */
-export function adminAuth(req: Request): boolean {
+/** Admin portal / API: accepts only the dedicated ADMIN_KEY (Bearer) or a signed session cookie that still exists, unrevoked, in admin_sessions.
+ *  A scheduler secret must never grant interactive admin privileges. A DB failure throws (fail closed). */
+export async function adminAuth(req: Request, db: Db): Promise<boolean> {
   const ak = config.adminKey;
+  if (!ak) return false;
   const cookie = req.cookies?.[ADMIN_COOKIE];
-  if (ak && typeof cookie === 'string' && verifyAdminSessionToken(cookie, ak)) return true;
-  const got = bearer(req);
-  return !!ak && safeEqual(got, ak);
+  if (typeof cookie === 'string') {
+    const id = adminSessionIdFromToken(cookie, ak);
+    if (id && await db.maybeOne('SELECT 1 FROM admin_sessions WHERE id=$1 AND revoked_at IS NULL AND expires_at > now()', [id])) return true;
+  }
+  return safeEqual(bearer(req), ak);
 }

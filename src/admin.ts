@@ -10,7 +10,7 @@ import { requestRefund, processReference, MISMATCH_REASON, notifyMismatchRefund 
 import { isoNow, lagosDate } from './time';
 import { assertBarberEmailVerifiedForGoLive } from './emailOtp';
 import { config } from './config';
-import { ADMIN_COOKIE, adminAuth, createAdminSessionToken } from './security';
+import { ADMIN_COOKIE, adminAuth, adminSessionIdFromToken, createAdminSession } from './security';
 
 const ADMIN = { id: null as number | null, role: 'admin' as const };
 type H = (req: Request, res: Response) => Promise<any>;
@@ -19,26 +19,35 @@ const dateOk = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.te
 
 export function registerAdmin(api: Router, db: Db, guard: any, wrap: (fn: H) => any) {
   /** Read-only browser session probe. Unlike adminGuard, an absent cookie does not count as a failed key attempt. */
-  api.get('/admin/session', (req, res) => {
+  api.get('/admin/session', wrap(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    if (!adminAuth(req)) return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No active admin session.' } });
+    if (!(await adminAuth(req, db))) return void res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'No active admin session.' } });
     res.json({ ok: true });
-  });
+  }));
 
-  /** Exchange the admin key for a short-lived HttpOnly cookie; browser JavaScript never stores or reads the key. */
-  api.post('/admin/login', guard, wrap(async (_req, res) => {
-    res.cookie(ADMIN_COOKIE, createAdminSessionToken(config.adminKey), {
-      httpOnly: true, secure: config.isProd, sameSite: 'strict',
-      maxAge: 8 * 60 * 60 * 1000, path: '/api/admin',
-    });
+  /** Exchange the admin key for a short-lived HttpOnly cookie; the session is recorded server-side so it can be revoked. */
+  api.post('/admin/login', guard, wrap(async (req, res) => {
+    const s = createAdminSession(config.adminKey);
+    await db.query('INSERT INTO admin_sessions (id, expires_at, ip) VALUES ($1,$2,$3)', [s.id, s.expiresAt, req.ip || null]);
+    await db.query(`DELETE FROM admin_sessions WHERE expires_at < now() - interval '1 day'`);
+    res.cookie(ADMIN_COOKIE, s.token, { httpOnly: true, secure: config.isProd, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000, path: '/api/admin' });
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true });
   }));
-  api.post('/admin/logout', (_req, res) => {
+  api.post('/admin/logout', wrap(async (req, res) => {
+    const c = req.cookies?.[ADMIN_COOKIE];
+    const id = typeof c === 'string' && config.adminKey ? adminSessionIdFromToken(c, config.adminKey) : null;
+    if (id) await db.query('UPDATE admin_sessions SET revoked_at = now() WHERE id=$1 AND revoked_at IS NULL', [id]);
     res.clearCookie(ADMIN_COOKIE, { httpOnly: true, secure: config.isProd, sameSite: 'strict', path: '/api/admin' });
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true });
-  });
+  }));
+  /** Sign out everywhere: revoke every active admin session (use if a cookie may have been copied). */
+  api.post('/admin/logout-all', guard, wrap(async (_req, res) => {
+    const r = await db.query('UPDATE admin_sessions SET revoked_at = now() WHERE revoked_at IS NULL AND expires_at > now()');
+    res.clearCookie(ADMIN_COOKIE, { httpOnly: true, secure: config.isProd, sameSite: 'strict', path: '/api/admin' });
+    res.json({ ok: true, revoked: (r as any).rowCount ?? null });
+  }));
 
   api.get('/admin/refunds', guard, wrap(async (_req, res) => res.json({ payments: await db.many(`SELECT reference, amount_kobo, refund_status, refund_reason, refund_error, refund_requested_at, booking_id, plan_purchase_id FROM payments WHERE refund_status IS NOT NULL ORDER BY id DESC LIMIT 100`) })));
 
