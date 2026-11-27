@@ -37,7 +37,7 @@ html[data-theme=dark] #splash .sb i{background:#6f8ff0}
 <link rel="stylesheet" href="/style.css">
 <link rel="stylesheet" href="/avatars.css">
 <link rel="stylesheet" href="/polish.css">
-<script src="/theme.js"></script>
+<script src="/theme.js"></script><script src="/errmsg.js"></script>
 <script src="/posthog.js"></script>
 <script src="/forms.js" defer></script>
 </head>
@@ -61,9 +61,7 @@ html[data-theme=dark] #splash .sb i{background:#6f8ff0}
 <script src="/haptics.js" defer></script>
 <script src="/pull-refresh.js" defer></script>
 <script src="/polish.js" defer></script>
-<script>
-  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-</script>
+<script src="/va-init.js"></script>
 <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

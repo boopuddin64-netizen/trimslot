@@ -74,10 +74,10 @@ async function decisions5() {
     (r.legacy.length ? `<h2 style="margin-top:24px">Older cancellations (before refunds became automatic)</h2><p class="muted small">These were cancelled under the old rule. They still need a decision: a credit or a refund.</p>` + table(legacyCols, r.legacy, '') : '');
   wireReload(decisions5);
   wireActions(app, {
-    approve: async (d) => { if (!confirm('Approve this refund and send it to Paystack now?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/refund-decision`, { method: 'POST', body: { action: 'approve' } }); toast(x.refund === 'failed' ? 'Approved. Paystack did not take the request. Try again in Payments.' : 'Refund approved and sent'); await decisions5(); },
+    approve: async (d) => { if (!confirm('Approve this refund and send it to Paystack now?')) throw userError('Not changed'); const x = await api(`/bookings/${d.id}/refund-decision`, { method: 'POST', body: { action: 'approve' } }); toast(x.refund === 'failed' ? 'Approved. Paystack did not take the request. Try again in Payments.' : 'Refund approved and sent'); await decisions5(); },
     reject: async (d) => { A.formModal({ title: 'Reject refund #' + d.id, help: 'The customer gets no refund and no credit. They see your reason. Use this only if the service was done or the claim is wrong.', go: 'Reject refund', cls: 'red', fields: [A.REASON('Reason (the customer sees this)')], submit: async (v) => { await A.post(`/bookings/${d.id}/refund-decision`, { action: 'reject', reason: v.reason }); return 'Refund rejected'; }, after: decisions5 }); const b = app.querySelector(`[data-do="reject"][data-id="${d.id}"]`); if (b) b.disabled = false; },
     credit: async (d) => { await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'credit' } }); toast('Converted to a session credit'); await decisions5(); },
-    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw new Error('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions5(); },
+    refund: async (d) => { if (!confirm('Send this payment back to the customer?')) throw userError('Not changed'); const x = await api(`/bookings/${d.id}/resolve`, { method: 'POST', body: { action: 'refund' } }); toast(x.refund === 'failed' ? 'Marked for refund. Paystack did not take the request. Try again in Payments.' : 'Refund requested'); await decisions5(); },
   });
 }
 ROUTES.decisions = decisions5;
@@ -87,9 +87,9 @@ const b64 = (s) => { const p = '='.repeat((4 - s.length % 4) % 4); const r = ato
 const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 async function deviceSub() { if (!pushOk()) return null; const reg = await navigator.serviceWorker.getRegistration('/'); return reg ? reg.pushManager.getSubscription() : null; }
 async function enablePush(key) {
-  if (!pushOk() || !key) throw new Error('Push does not work on this device, or the server has no push keys.');
+  if (!pushOk() || !key) throw userError('Push does not work on this device, or the server has no push keys.');
   const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Alerts are blocked. Allow them in your browser settings. Then try again.');
+  if (perm !== 'granted') throw userError('Alerts are blocked. Allow them in your browser settings. Then try again.');
   const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
   const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
   await api('/alerts/subscribe', { method: 'POST', body: sub.toJSON() });
@@ -110,18 +110,18 @@ async function alertsPage() {
       <div class="btns cta"><button class="btn" type="submit">Save preferences</button></div></form></div>
     <div class="card"><h2 style="margin-top:0">Push on this device</h2><p class="muted small">${esc(state)} ${prefs.push.devices} device${prefs.push.devices === 1 ? '' : 's'} registered in total.</p>
       <div class="btns">${sub ? '<button class="btn sec" id="pushoff">Turn off on this device</button><button class="btn sec" id="pushtest">Send a test</button>' : '<button class="btn" id="pushon">Turn on push on this device</button>'}</div></div>`;
-  $('#refresh-alerts').onclick = async () => { const b = $('#refresh-alerts'); b.disabled = true; try { await alertsPage(); } catch (e) { toast(e.message, true); } finally { const again = $('#refresh-alerts'); if (again) again.disabled = false; } };
+  $('#refresh-alerts').onclick = async () => { const b = $('#refresh-alerts'); b.disabled = true; try { await alertsPage(); } catch (e) { toast(userMessage(e), true); } finally { const again = $('#refresh-alerts'); if (again) again.disabled = false; } };
   $('#readall').onclick = async () => { await api('/alerts/read', { method: 'POST', body: { all: true } }); alertsUnread = 0; await alertsPage(); };
   app.querySelectorAll('[data-read]').forEach((a) => a.addEventListener('click', () => { api('/alerts/read', { method: 'POST', body: { id: Number(a.dataset.read) } }).catch(() => {}); }));
   $('#apf').onsubmit = async (ev) => {
     ev.preventDefault(); const f = ev.target.elements; const body = { prefs: {}, quiet: { enabled: f.quiet_on.checked, start: f.quiet_start.value || '22:00', end: f.quiet_end.value || '07:00' } };
     for (const e of prefs.events) body.prefs[e.event] = { in_app: f[e.event + ':in_app'].checked, push: f[e.event + ':push'].checked };
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
-    try { await api('/alerts/prefs', { method: 'PUT', body }); toast('Preferences saved'); } catch (e) { toast(e.message, true); } b.disabled = false;
+    try { await api('/alerts/prefs', { method: 'PUT', body }); toast('Preferences saved'); } catch (e) { toast(userMessage(e), true); } b.disabled = false;
   };
-  const on = $('#pushon'); if (on) on.onclick = async () => { on.disabled = true; try { await enablePush(prefs.push.vapid_public_key); toast('Push turned on'); await alertsPage(); } catch (e) { toast(e.message, true); on.disabled = false; } };
-  const off = $('#pushoff'); if (off) off.onclick = async () => { try { const s = await deviceSub(); if (s) { await api('/alerts/unsubscribe', { method: 'POST', body: { endpoint: s.endpoint } }); await s.unsubscribe(); } toast('Push turned off'); await alertsPage(); } catch (e) { toast(e.message, true); } };
-  const test = $('#pushtest'); if (test) test.onclick = async () => { try { await api('/alerts/test', { method: 'POST', body: {} }); toast('Test sent'); } catch (e) { toast(e.message, true); } };
+  const on = $('#pushon'); if (on) on.onclick = async () => { on.disabled = true; try { await enablePush(prefs.push.vapid_public_key); toast('Push turned on'); await alertsPage(); } catch (e) { toast(userMessage(e), true); on.disabled = false; } };
+  const off = $('#pushoff'); if (off) off.onclick = async () => { try { const s = await deviceSub(); if (s) { await api('/alerts/unsubscribe', { method: 'POST', body: { endpoint: s.endpoint } }); await s.unsubscribe(); } toast('Push turned off'); await alertsPage(); } catch (e) { toast(userMessage(e), true); } };
+  const test = $('#pushtest'); if (test) test.onclick = async () => { try { await api('/alerts/test', { method: 'POST', body: {} }); toast('Test sent'); } catch (e) { toast(userMessage(e), true); } };
 }
 ROUTES.alerts = alertsPage;
 
@@ -241,9 +241,9 @@ async function addNumbersCard() {
     if (!Object.keys(body).length) { toast('Nothing changed'); return; }
     if (body.terms_version || body.privacy_version || body.barber_agreement_version) if (!confirm('A new document version asks every user to accept it again. Go on?')) return;
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
-    try { await api('/settings', { method: 'PUT', body }); toast('Published numbers saved'); await ROUTES.controls(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    try { await api('/settings', { method: 'PUT', body }); toast('Published numbers saved'); await ROUTES.controls(); } catch (e) { toast(userMessage(e), true); b.disabled = false; }
   };
-  $('#runret').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/retention/run', { method: 'POST', body: {} }); const t = Object.values(r.result).reduce((a, n) => a + (Number(n) || 0), 0); toast(`Clean-up done. ${t} item${t === 1 ? '' : 's'} removed.`); } catch (er) { toast(er.message, true); } e.target.disabled = false; };
+  $('#runret').onclick = async (e) => { e.target.disabled = true; try { const r = await api('/retention/run', { method: 'POST', body: {} }); const t = Object.values(r.result).reduce((a, n) => a + (Number(n) || 0), 0); toast(`Clean-up done. ${t} item${t === 1 ? '' : 's'} removed.`); } catch (er) { toast(userMessage(er), true); } e.target.disabled = false; };
 }
 /* The Controls page is long (the Published numbers card alone is ~4,000px tall on a phone), so each group is a collapsible section.
    The open/closed state is kept in memory only, so saving a form (which redraws the page) does not close what you were editing. */
@@ -272,7 +272,7 @@ const _controls = ROUTES.controls;
 ROUTES.controls = async () => {
   await _controls();
   const lab = [...app.querySelectorAll('#cf label')].find((l) => /Commission factor/.test(l.textContent)); if (lab) lab.textContent = 'Commission factor (0–1; also editable below as a %)';
-  try { await addNumbersCard(); } catch (e) { toast(e.message, true); }
+  try { await addNumbersCard(); } catch (e) { toast(userMessage(e), true); }
   collapsify(app.querySelector('#cf')); collapsify(app.querySelector('#nf'));
   try { await addCronCard(); } catch { /* the controls themselves are already usable */ }
 };
@@ -291,7 +291,7 @@ async function addCronCard() {
     <p style="margin:0"><b ${bad ? 'style="color:var(--red)"' : ''}>${bad ? '⚠ ' : ''}${esc(line)}</b>${c.last_run_at ? ` <small class="muted">(${esc(new Date(c.last_run_at).toLocaleString('en-GB', { timeZone: 'Africa/Lagos' }))} Lagos)</small>` : ''}</p>
     ${warn ? `<p class="small" style="margin:6px 0 0">${esc(warn)}</p>` : '<p class="small muted" style="margin:6px 0 0">The timer should hit the app every minute.</p>'}
     <div class="btns"><button class="btn ghost" type="button" id="cronRefresh">Refresh</button></div></div>`);
-  app.querySelector('#cronRefresh').onclick = () => addCronCard().catch((e) => toast(e.message, true));
+  app.querySelector('#cronRefresh').onclick = () => addCronCard().catch((e) => toast(userMessage(e), true));
 }
 
 /* ---------- user + booking sheets: photo, acceptance history ---------- */

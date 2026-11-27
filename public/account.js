@@ -23,12 +23,12 @@ async function squareJpeg(file) {
     if (blob && blob.size <= MAX) return blob;
     if (q > 0.5) q -= 0.1; else px = Math.round(px * 0.8);
   }
-  throw new Error('That photo is too big. Try a different one.');
+  throw userError('That photo is too big. Try a different one.');
 }
 async function putBlob(blob) {
   const r = await fetch('/api/me/avatar', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error?.message || 'The upload did not work');
+  if (!r.ok) throw userError(j.error?.message || 'The upload did not work');
   return j.avatar_url;
 }
 
@@ -44,7 +44,7 @@ function wirePhoto() {
     try {
       if (window.AvatarCrop && window.CropMath) { if (await AvatarCrop.open(f, upload)) { toast('Photo saved'); route(); } }
       else { m.textContent = 'Saving…'; await upload(await squareJpeg(f)); toast('Photo saved'); route(); }
-    } catch (e) { m.textContent = e.message; fail(e); }
+    } catch (e) { m.textContent = userMessage(e); fail(e); }
     finally { if (input) input.value = ''; }   // lets the same picture be chosen again
   };
   ['#av-cam', '#av-file'].forEach((s) => { const el = $(s); if (el) el.onchange = () => go1(el.files[0], el); });
@@ -60,7 +60,7 @@ const dataSection = (u, heading = false) => `${heading ? '<h2>Your data</h2>' : 
 
 async function exportData() {
   const r = await fetch('/api/me/export', { credentials: 'same-origin' });
-  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error?.message || 'We could not get your data ready.'); }
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw userError(j.error?.message || 'We could not get your data ready.'); }
   const blob = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = (/filename="([^"]+)"/.exec(r.headers.get('content-disposition') || '') || [])[1] || 'trimslot-my-data.json';
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -85,7 +85,7 @@ function deleteDialog(u) {
       done();
       if (r && r.requested) { window.posthog?.capture('account_deletion_requested'); state.user.deletion_requested = true; toast('Request sent. TrimSlot will contact you.'); route(); }
       else { window.resetPostHogUser?.(); state.user = null; toast('Your account is deleted'); go('#/login'); }
-    } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); b.disabled = false; }
+    } catch (e) { err.textContent = userMessage(e); err.classList.remove('hidden'); b.disabled = false; }
   };
 }
 function wireData(u) {
@@ -131,7 +131,7 @@ function reaccept() {
   $('#rf').onsubmit = async (ev) => {
     ev.preventDefault(); const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
     try { await api('/me/consent', { method: 'POST', body: { accept: true } }); state.user.consent_required = []; toast('Thank you'); route(); }
-    catch (e) { const er = $('#rferr'); er.textContent = e.message; er.classList.remove('hidden'); b.disabled = false; }
+    catch (e) { const er = $('#rferr'); er.textContent = userMessage(e); er.classList.remove('hidden'); b.disabled = false; }
   };
 }
 

@@ -54,7 +54,7 @@ function listPage(cfg) {
     const onMq = () => { if (!document.body.contains(body)) { MQD.removeEventListener('change', onMq); return; } if (rows.length) drawRows(rows, true); };
     MQD.addEventListener('change', onMq);
     function rowSheet(row) {
-      const acts = colActions(cols, row).map((a) => ({ label: a.label, cls: a.cls, run: () => Promise.resolve(cfg.handlers?.[a.data.act]?.(row, reload, { disabled: false })).catch((er) => toast(er.message, true)) }));
+      const acts = colActions(cols, row).map((a) => ({ label: a.label, cls: a.cls, run: () => Promise.resolve(cfg.handlers?.[a.data.act]?.(row, reload, { disabled: false })).catch((er) => toast(userMessage(er), true)) }));
       openRowSheet(cols, row, { title: cfg.rowTitle ? cfg.rowTitle(row) : null, pills: cfg.row(row).p, acts, reload });
     }
     async function load(reset) {
@@ -64,7 +64,7 @@ function listPage(cfg) {
       for (const [k, v] of Object.entries(st)) if (v !== '' && v != null) p.set(k, v);
       p.set('dir', sortDir); if (cursor) p.set('cursor', cursor);
       let r;
-      try { r = await api(`/l/${cfg.list}?` + p); } catch (e) { if (my === seq) { body.innerHTML = `<div class="err">${esc(e.message)}</div>`; more.innerHTML = '<div class="btns cta"><button class="btn sec" id="lretry">Try again</button></div>'; $('#lretry').onclick = () => load(reset); } return; }
+      try { r = await api(`/l/${cfg.list}?` + p); } catch (e) { if (my === seq) { body.innerHTML = `<div class="err">${esc(userMessage(e))}</div>`; more.innerHTML = '<div class="btns cta"><button class="btn sec" id="lretry">Try again</button></div>'; $('#lretry').onclick = () => load(reset); } return; }
       if (my !== seq) return;
       if (reset) { total = r.total; capped = r.total_capped; }
       const first = rows.length === 0; rows = rows.concat(r.rows); cursor = r.next;
@@ -84,7 +84,7 @@ function listPage(cfg) {
       if (chk) { const id = Number(chk.dataset.sel); const row = rows.find((x) => x.id === id); if (chk.checked) sel.set(id, row); else sel.delete(id); bulkUi(); return; }
       if (e.target.closest('label.selbox')) return;
       const a = e.target.closest('[data-act]');
-      if (a) { e.preventDefault(); const row = rows.find((x) => x.id === Number(a.closest('[data-id]').dataset.id)); const h = cfg.handlers?.[a.dataset.act]; if (h) { a.disabled = true; Promise.resolve(h(row, reload, a)).catch((er) => toast(er.message, true)).finally(() => { a.disabled = false; }); } return; }
+      if (a) { e.preventDefault(); const row = rows.find((x) => x.id === Number(a.closest('[data-id]').dataset.id)); const h = cfg.handlers?.[a.dataset.act]; if (h) { a.disabled = true; Promise.resolve(h(row, reload, a)).catch((er) => toast(userMessage(er), true)).finally(() => { a.disabled = false; }); } return; }
       if (e.target.closest('a,button,input,select')) return;
       const tr = e.target.closest('tr[data-id],.crow[data-id]'); if (!tr) return; const row = rows.find((x) => x.id === Number(tr.dataset.id));
       if (cfg.open) cfg.open(row, reload); else if (tr.classList.contains('crow')) rowSheet(row);
@@ -104,7 +104,7 @@ function listPage(cfg) {
     $('#lsaved').onchange = (e) => { const s = saved()[Number(e.target.value)]; $('#ldel').classList.toggle('hidden', !s); if (!s) return; st = STATE[cfg.key] = { ...base, ...s.params }; sortDir = st.dir || 'desc'; window.QS = new URLSearchParams(); (cfg.reopen || ROUTES[cfg.key])(); };
     $('#ldel').onclick = () => { const i = Number($('#lsaved').value); const s = saved(); s.splice(i, 1); lsSet('adm_sf_' + cfg.key, s); toast('Saved view deleted'); drawSaved(); };
     $('#lsave').onclick = () => formModal({ title: 'Save this view', help: 'Saves your search, filters and sort so you can open them again with one click. It is saved in this browser.', go: 'Save view', fields: [{ name: 'name', label: 'Name', required: true, max: 40, ph: 'e.g. Pending this week' }],
-      submit: async (v) => { if (!v.name) throw new Error('Give it a name.'); const s = saved().filter((x) => x.name !== v.name); s.push({ name: v.name.slice(0, 40), params: { ...st, dir: sortDir } }); lsSet('adm_sf_' + cfg.key, s.slice(-12)); drawSaved(); return 'View saved'; } });
+      submit: async (v) => { if (!v.name) throw userError('Give it a name.'); const s = saved().filter((x) => x.name !== v.name); s.push({ name: v.name.slice(0, 40), params: { ...st, dir: sortDir } }); lsSet('adm_sf_' + cfg.key, s.slice(-12)); drawSaved(); return 'View saved'; } });
     wireReload(() => load(true));
     await load(true);
     if (window.matchMedia('(min-width:720px)').matches && !fromUrl) { /* leave focus alone; "/" jumps to search */ }
@@ -332,11 +332,11 @@ async function paymentSheet(ref, reload) {
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = async () => {
     const k = x.dataset.k;
     if (k === 'bk') { m.close(); return bookingSheet(p.booking_id, reload); }
-    if (k === 'reverify') { x.disabled = true; try { const o = await api(`/payments/${enc}/reverify`, { method: 'POST', body: {} }); const R = { processed: 'Payment confirmed', already_processed: 'Already confirmed', refund_due: 'The time was gone: we asked Paystack for a refund', slot_taken: 'The time was taken: we asked for a refund', late_refund: 'The payment came after the try closed and the time was taken: we asked for a refund', duplicate_refund: 'This was a second payment for a paid booking: we asked for a refund', not_paid: 'Paystack says this was not paid', unverified: 'Paystack has not settled this payment yet. Try again later.', amount_mismatch: 'The amount Paystack got is not the same' }; toast(R[o.result] || o.result, o.result === 'not_paid' || o.result === 'amount_mismatch'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
+    if (k === 'reverify') { x.disabled = true; try { const o = await api(`/payments/${enc}/reverify`, { method: 'POST', body: {} }); const R = { processed: 'Payment confirmed', already_processed: 'Already confirmed', refund_due: 'The time was gone: we asked Paystack for a refund', slot_taken: 'The time was taken: we asked for a refund', late_refund: 'The payment came after the try closed and the time was taken: we asked for a refund', duplicate_refund: 'This was a second payment for a paid booking: we asked for a refund', not_paid: 'Paystack says this was not paid', unverified: 'Paystack has not settled this payment yet. Try again later.', amount_mismatch: 'The amount Paystack got is not the same' }; toast(R[o.result] || o.result, o.result === 'not_paid' || o.result === 'amount_mismatch'); m.close(); await done(); } catch (er) { toast(userMessage(er), true); x.disabled = false; } return; }
     if (k === 'flag') { m.close(); if (p.disputed) { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: false } }); toast('Flag cleared'); return done(); }
       return formModal({ title: 'Flag payment as disputed', help: 'A private mark so you remember to follow up. It does not move money.', go: 'Flag payment', fields: [{ name: 'note', label: 'Note', type: 'textarea', required: true }], submit: async (v) => { await api(`/payments/${enc}/dispute`, { method: 'POST', body: { disputed: true, note: v.note } }); return 'Payment flagged'; }, after: done }); }
     if (k === 'force') { m.close(); return formModal({ title: 'Confirm the booking anyway', help: 'Paystack reported a different amount than we asked for. This keeps the money and confirms the booking (if the time is still free; if not, the customer is refunded). Only do this after you checked the amount.', go: 'Confirm booking', fields: [], submit: async () => { const o = await api(`/payments/${enc}/confirm-anyway`, { method: 'POST', body: {} }); return o.result === 'processed' ? 'Booking confirmed' : o.result === 'slot_taken' || o.result === 'late_refund' ? 'The time was gone: the customer is being refunded' : 'Done: ' + o.result; }, after: done }); }
-    if (k === 'retry') { x.disabled = true; try { const o = await api(`/payments/${enc}/retry-refund`, { method: 'POST', body: {} }); toast(o.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (o.refund_error || 'try again later'), o.result !== 'requested'); m.close(); await done(); } catch (er) { toast(er.message, true); x.disabled = false; } return; }
+    if (k === 'retry') { x.disabled = true; try { const o = await api(`/payments/${enc}/retry-refund`, { method: 'POST', body: {} }); toast(o.result === 'requested' ? 'Refund requested from Paystack' : 'Gateway refused: ' + (o.refund_error || 'try again later'), o.result !== 'requested'); m.close(); await done(); } catch (er) { toast(userMessage(er), true); x.disabled = false; } return; }
     if (k === 'mark') { m.close(); return formModal({ title: 'Mark as refunded', help: 'Do this only after you paid the customer back.', go: 'Mark refunded', fields: [], submit: async () => { await api(`/payments/${enc}/mark-refunded`, { method: 'POST', body: {} }); return 'Marked as refunded'; }, after: done }); }
   });
 }
@@ -392,7 +392,7 @@ function openPalette() {
         ...r.payments.map((p) => ({ sec: 'Payments', label: p.reference, sub: `${naira(p.amount_kobo)} · ${p.status}`, run: () => paymentSheet(p.reference, rl) })),
         ...base];
       idx = 0; draw();
-    } catch (e) { items = [{ sec: 'Error', label: e.message, run: () => {} }]; draw(); }
+    } catch (e) { items = [{ sec: 'Error', label: userMessage(e), run: () => {} }]; draw(); }
   }, 180);
   input.oninput = () => { items = cmds(); idx = 0; draw(); search(); };
   input.onkeydown = (e) => {
@@ -418,7 +418,7 @@ function mountSearch() {
 /* ---------------------------------------------------------------- wire in */
 Object.assign(ROUTES, {
   home, customers: listPage(LISTS.customers), barbers: listPage(LISTS.barbers), bookings: listPage(LISTS.bookings), payments: listPage(LISTS.payments), credits: listPage(LISTS.credits),
-  reports: listPage(LISTS.reports), ledger: async () => { await listPage(LISTS.ledger)(); const b = $('#remind-all'); if (b) b.onclick = async () => { b.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er) { toast(er.message, true); } b.disabled = false; }; },
+  reports: listPage(LISTS.reports), ledger: async () => { await listPage(LISTS.ledger)(); const b = $('#remind-all'); if (b) b.onclick = async () => { b.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er) { toast(userMessage(er), true); } b.disabled = false; }; },
   reviews: listPage(LISTS.reviews), waitlist: listPage(LISTS.waitlist), plans: plansRoute,
 });
 window.ADM2.mountSearch = mountSearch; window.ADM2.paymentSheet = paymentSheet; window.ADM2.LISTS = LISTS;

@@ -9,6 +9,9 @@ const DAYFULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const state = { user: null, cfg: null, unread: 0, wiz: null, poll: null, open: new Set(), setup: null };
 
+/* Delegated handler for the "reload" link in the banks-unavailable message (inline handlers are blocked by the strict script-src). */
+document.addEventListener('click', (ev) => { if (ev.target.closest && ev.target.closest('[data-reload]')) { ev.preventDefault(); location.reload(); } });
+
 /* Identify once when the authenticated session becomes available. The numeric database id is the stable distinct id; PII stays on the person profile. */
 let posthogUserId = null;
 function identifyPostHogUser(user) {
@@ -104,7 +107,7 @@ async function apiNet(path, opts = {}) {
     const fallback = r.status === 429 ? 'Too many tries. Wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Try again in a moment.' : 'That did not work. Try again.';
     const e = new Error(j.error?.message || fallback); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details;
     if (r.status === 401 && e.code === 'UNAUTHENTICATED' && state.user && !path.startsWith('/auth/')) {   // login expired while the app was open
-      window.resetPostHogUser(); state.user = null; state.unread = 0; e.message = 'Your log-in has ended. Please log in again.';
+      window.resetPostHogUser(); state.user = null; state.unread = 0; userMessage(e) = 'Your log-in has ended. Please log in again.';
       try { sessionStorage.setItem('trimslot_next', location.hash); } catch { /* private mode */ }
       gcache.clear(); location.hash = '#/login';
     }
@@ -118,7 +121,7 @@ function toast(msg, bad) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200);
 }
 const emailCheckOn = () => !!(state.cfg && (state.cfg.email_verification || (state.user && state.user.role === 'barber')));   // customers follow the global switch; barbers always verify before going live
-const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && e.message) || 'Something went wrong. Try again.', true); };
+const fail = (e) => { if (e && e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; } toast((e && userMessage(e)) || 'Something went wrong. Try again.', true); };
 const dateLabel = (d) => { const x = new Date(d + 'T00:00:00Z'); return `${DAYN[x.getUTCDay()]} ${x.getUTCDate()} ${MON[x.getUTCMonth()]}`; };
 const t12 = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 const lagosTime = (iso) => iso ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(iso)) : '—';
@@ -232,7 +235,7 @@ async function route() {
     if (parts[0] === 'login') return authPage('login');
     if (parts[0] === 'signup') return authPage('signup', q.get('role'));
     if (parts[0] === 'password-reset') return passwordReset(q.get('email') || '');
-    if (parts[0] === 'b' && /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(e.message)}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
+    if (parts[0] === 'b' && /^(?:[A-Z0-9]{7}|[a-f0-9]{12,32})$/.test(parts[1] || '')) return barberPage(0, parts[1]).catch((e) => { app.innerHTML = `<div class="card center"><h2 style="margin-top:0">This link does not work</h2><p class="err" role="alert">${esc(userMessage(e))}</p><a class="btn" href="#/">${state.user ? 'Go to My barbers' : 'Go to the start page'}</a></div>`; });   // a barber's private share link (opens for guests too)
     if (parts[0] === 'receipt-verify') return receiptVerificationPage(parts[1] || '');
     if (!state.user) { if (parts.length && !['login', 'signup', 'password-reset'].includes(parts[0])) { try { sessionStorage.setItem('trimslot_next', h); } catch { /* private mode */ } } return go('#/login'); }
     if (state.user.consent_required && state.user.consent_required.length && window.Account) return Account.reaccept();
@@ -259,7 +262,7 @@ async function route() {
     }
     go('#/');
   } catch (e) {
-    app.innerHTML = `<div class="err">${esc(e.message)}</div><a class="btn sec" href="#/">Back home</a>`;
+    app.innerHTML = `<div class="err">${esc(userMessage(e))}</div><a class="btn sec" href="#/">Back home</a>`;
   }
 }
 const go = (h) => { if (location.hash === h) route(); else location.hash = h; };
@@ -374,8 +377,8 @@ function authPage(mode, roleQ) {
         if (signup && fd.email && (emailCheckOn() || role === 'barber')) return go('#/verify-email?next=' + encodeURIComponent(dest));   // new barbers check email before going live; this is not a sign-in code
         go(dest);
       } catch (e) {
-        if (!signup && (e.status === 401 || /invalid|incorrect|wrong password|credentials/i.test(e.message || ''))) wrongPasswordFeedback();
-        saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(e.message);
+        if (!signup && (e.status === 401 || /invalid|incorrect|wrong password|credentials/i.test(userMessage(e, '')))) wrongPasswordFeedback();
+        saved = { ...fd }; delete saved.password; delete saved.confirm_password; draw(userMessage(e));
       }
     };
   };
@@ -403,7 +406,7 @@ function passwordReset(initialEmail = '') {
       email = String(value || '').trim(); if (!email) { msg = 'Enter your email address.'; draw(); return; }
       const button = document.querySelector('#prs button[type=submit], #pr-resend'); if (button) button.disabled = true;
       try { const r = await api('/auth/password/reset/send', { method: 'POST', body: { email } }); sent = true; msg = r.message; draw(); }
-      catch (e) { msg = e.message || 'We could not send a reset code.'; draw(); }
+      catch (e) { msg = userMessage(e, 'We could not send a reset code.'); draw(); }
     };
     const req = $('#prs'); if (req) req.onsubmit = (e) => { e.preventDefault(); request(new FormData(req).get('email')); };
     const resend = $('#pr-resend'); if (resend) resend.onclick = (e) => { e.preventDefault(); request($('#prf [name=email]').value); };
@@ -414,7 +417,7 @@ function passwordReset(initialEmail = '') {
       try {
         await api('/auth/password/reset', { method: 'POST', body: { email: f.email.value, code: f.code.value, new_password: f.new_password.value } });
         window.resetPostHogUser(); state.user = null; state.unread = 0; Notify.stop(); toast('Password reset. Log in with your new password.'); go('#/login');
-      } catch (e2) { msg = e2.message || 'We could not reset your password.'; draw(); }
+      } catch (e2) { msg = userMessage(e2, 'We could not reset your password.'); draw(); }
     };
   };
   draw();
@@ -440,7 +443,7 @@ async function verifyEmail(next) {
       state.user = { ...state.user, ...r.user };
       toast('Your email is checked'); go(target);
     } catch (e) {
-      verifying = false; msg = e.message || 'That code could not be verified.';
+      verifying = false; msg = userMessage(e, 'That code could not be verified.');
       draw();
       const retry = $('#vf [name=code]'); if (retry) { retry.focus(); retry.select(); }
     }
@@ -450,7 +453,7 @@ async function verifyEmail(next) {
     const intro = u.role === 'barber' ? 'Verify your email once before your shop goes live. You will still sign in with your password.' : 'We check your email once, before your first booking. It keeps your account safe.';
     if (!u.email) {
       app.innerHTML = `<h1>Add your email</h1><p class="muted">${intro}</p><form id="ef"><label>Email</label><input name="email" type="email" autocomplete="email" placeholder="you@example.com" required>${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}<div class="btns cta"><button class="btn" type="submit">Send me a code</button></div></form><p class="center small"><a href="${esc(target)}">Do this later</a></p>`;
-      $('#ef').onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/me', { method: 'PATCH', body: { email: new FormData(ev.target).get('email') } }); state.user = { ...state.user, ...r.user }; Object.assign(u, r.user); msg = ''; await send(); } catch (e) { msg = e.message; draw(); } };
+      $('#ef').onsubmit = async (ev) => { ev.preventDefault(); const btn = ev.target.querySelector('button'); btn.disabled = true; try { const r = await api('/me', { method: 'PATCH', body: { email: new FormData(ev.target).get('email') } }); state.user = { ...state.user, ...r.user }; Object.assign(u, r.user); msg = ''; await send(); } catch (e) { msg = userMessage(e); draw(); } };
       return;
     }
     app.innerHTML = `<h1>Check your email</h1><p class="muted">${intro}</p>${devHint}
@@ -476,7 +479,7 @@ async function verifyEmail(next) {
       vf.onsubmit = (ev) => { ev.preventDefault(); updateCode(); verifyCode(); };
     }
   };
-  const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = e.message; } draw(); };
+  const send = async () => { try { const r = await api('/auth/email/send', { method: 'POST' }); if (r.already_verified) { state.user.email_verified = true; toast('Your email is already checked'); return go(target); } sent = true; masked = r.email; msg = ''; } catch (e) { msg = userMessage(e); } draw(); };
   draw();
 }
 
@@ -655,8 +658,8 @@ async function bookWizard(barberId) {
       } catch (e) {
         if (seq !== w.slotSeq) return;
         // The window changed on the server: take the new window and redraw the strip, rather than showing the error for a day that is no longer offered.
-        if (/^You can book up to /.test(e.message)) { const before = state.cfg.booking_window_days; await freshConfig(); if (state.cfg.booking_window_days !== before) return draw(); }
-        $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`;
+        if (/^You can book up to /.test(userMessage(e))) { const before = state.cfg.booking_window_days; await freshConfig(); if (state.cfg.booking_window_days !== before) return draw(); }
+        $('#slots').innerHTML = `<div class="err">${esc(userMessage(e))}</div>`;
       }
     } else {
       const cr = creditFor(), pls = plansFor(), pl = planFor();
@@ -699,7 +702,7 @@ async function bookWizard(barberId) {
           toast('Booking confirmed'); if (window.haptics) haptics.success(); location.hash = '#/booking/' + r.booking.id;
         } catch (e) {
           if (e.code === 'EMAIL_NOT_VERIFIED' && emailCheckOn()) { go('#/verify-email?next=' + encodeURIComponent(location.hash)); return; }
-          if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(e.message); } else draw(e.message);
+          if (e.code === 'SLOT_UNAVAILABLE') { w.time = null; w.step = 2; draw(userMessage(e)); } else draw(userMessage(e));
         }
       };
     }
@@ -820,7 +823,7 @@ async function profile(editing) {
     if (f.new_password.value !== f.confirm_password.value) { er.textContent = 'Those new passwords do not match.'; er.classList.remove('hidden'); return; }
     btn.disabled = true;
     try { await api('/auth/password/change', { method: 'POST', body: { current_password: f.current_password.value, new_password: f.new_password.value } }); ev.target.reset(); toast('Password changed. Other devices will need to log in again.'); }
-    catch (e) { er.textContent = e.message || 'We could not change your password.'; er.classList.remove('hidden'); }
+    catch (e) { er.textContent = userMessage(e, 'We could not change your password.'); er.classList.remove('hidden'); }
     finally { btn.disabled = false; }
   };
 }
@@ -912,7 +915,7 @@ async function barberProfile() {
     if (f.new_password.value !== f.confirm_password.value) { er.textContent = 'Those new passwords do not match.'; er.classList.remove('hidden'); return; }
     btn.disabled = true;
     try { await api('/auth/password/change', { method: 'POST', body: { current_password: f.current_password.value, new_password: f.new_password.value } }); ev.target.reset(); toast('Password changed. Other devices will need to log in again.'); }
-    catch (e) { er.textContent = e.message || 'We could not change your password.'; er.classList.remove('hidden'); }
+    catch (e) { er.textContent = userMessage(e, 'We could not change your password.'); er.classList.remove('hidden'); }
     finally { btn.disabled = false; }
   };
 }
@@ -929,7 +932,7 @@ async function barberPayouts() {
         <div class="btns" style="margin-top:10px"><button class="btn sm sec" id="chg">Change account</button></div></div>`
       : `<div class="warn notice">${ic('warn')}<div><b>Payouts are not set up.</b> Until you add your bank account, customers cannot pay you online. They only see “Pay on arrival”.</div></div>`}
     <form id="pof" class="card ${active ? 'hidden' : ''}" novalidate>
-      ${bl.source === 'fallback' || bl.source === 'stale' ? '<div class="info small">We could not load the full bank list, so this list is short. If your bank is not here, reload in a minute.</div>' : ''}${!bl.banks.length ? '<div class="err">We could not load the banks. Check your internet and <a href="#/payouts" onclick="event.preventDefault();location.reload()">reload</a>.</div>' : ''}
+      ${bl.source === 'fallback' || bl.source === 'stale' ? '<div class="info small">We could not load the full bank list, so this list is short. If your bank is not here, reload in a minute.</div>' : ''}${!bl.banks.length ? '<div class="err">We could not load the banks. Check your internet and <a href="#/payouts" data-reload>reload</a>.</div>' : ''}
       <label for="pobank">Bank</label>
       <select id="pobank" name="bank_code" required><option value="">Choose your bank…</option>${bl.banks.map((b) => `<option value="${esc(b.code)}">${esc(b.name)}</option>`).join('')}</select>
       <label for="poacct">Account number</label>
@@ -955,9 +958,9 @@ async function barberPayouts() {
       if (my !== seq) return;
       if (e.code === 'RESOLVE_UNAVAILABLE') {   // the automatic name lookup is down / limited: let the barber type the name instead
         nameEl.innerHTML = '<span class="muted">We could not check the account name for you.</span>';
-        $('#pomnote').textContent = e.message + ' We will mark the name as not checked.'; manual.classList.remove('hidden');
-      } else if (e.code === 'NETWORK') nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span> <button type="button" class="linkbtn" id="poagain">Try again</button>`;
-      else nameEl.innerHTML = `<span class="errt">${esc(e.message)}</span>`;
+        $('#pomnote').textContent = userMessage(e) + ' We will mark the name as not checked.'; manual.classList.remove('hidden');
+      } else if (e.code === 'NETWORK') nameEl.innerHTML = `<span class="errt">${esc(userMessage(e))}</span> <button type="button" class="linkbtn" id="poagain">Try again</button>`;
+      else nameEl.innerHTML = `<span class="errt">${esc(userMessage(e))}</span>`;
       const ag = $('#poagain'); if (ag) ag.onclick = resolve;
     }
     sync();
@@ -1028,7 +1031,7 @@ async function barberPlans() {
       refreshInfo.onkeydown = (ev) => { if (ev.key === 'Escape') { summary.classList.remove('is-refresh-open'); refreshInfo.setAttribute('aria-expanded', 'false'); } };
     }
     const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
-    const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(e.message, true); } };
+    const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { await fn(ev); await barberPlans(); msg(okmsg); } catch (e) { msg(userMessage(e), true); } };
     wirePlans(po, guard);
     wireRefundBox(app, 'BARBER', barberPlans);
   };
@@ -1406,7 +1409,7 @@ function receiptExportDocument(r, verification) {
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   const style = parsed.querySelector('style')?.textContent || '';
   const sheet = parsed.querySelector('.rs-sheet');
-  if (!sheet) throw new Error('Receipt layout is unavailable.');
+  if (!sheet) throw userError('Receipt layout is unavailable.');
   sheet.style.width = '560px';
   sheet.style.minHeight = '0';
   sheet.style.height = 'auto';
@@ -1443,7 +1446,7 @@ async function receiptImageBlob(r, verification, format) {
   document.body.appendChild(host);
   try {
     const node = host.querySelector('.rs-sheet');
-    if (!node) throw new Error('Receipt layout is unavailable.');
+    if (!node) throw userError('Receipt layout is unavailable.');
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const height = Math.max(Math.ceil(node.getBoundingClientRect().height), node.scrollHeight, node.offsetHeight);
     const canvas = await lib.toCanvas(node, { canvasWidth: 560, canvasHeight: height, pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
@@ -1465,7 +1468,7 @@ async function shareReceiptFile(blob, filename) {
 /* Backup 1: the server-built PDF, which needs no browser rendering. */
 async function downloadReceiptPdf(receipt, base) {
   const res = await fetch(`/api/me/receipts/${Number(receipt.payment_id)}/pdf`, { credentials: 'same-origin', cache: 'no-store' });
-  if (!res.ok) throw new Error('The PDF could not be downloaded.');
+  if (!res.ok) throw userError('The PDF could not be downloaded.');
   const blob = await res.blob();
   await shareReceiptFile(new Blob([blob], { type: 'application/pdf' }), base + '.pdf');
 }
@@ -1481,7 +1484,7 @@ async function exportReceipt(r, verification, format) {
         await downloadReceiptPdf(receipt, base);
       } catch (e) {
         if (e?.name === 'AbortError') return;
-        throw new Error('We could not make the PDF. Try the JPEG or PNG option instead.');
+        throw userError('We could not make the PDF. Try the JPEG or PNG option instead.');
       }
       return;
     }
@@ -1595,7 +1598,7 @@ async function receiptVerificationPage(token) {
   app.innerHTML = `<section class="receipt-verify" role="status" aria-live="polite"><div class="receipt-verify-mark">${ic('shield')}</div><div class="receipt-screen-kicker">TRIMSLOT RECEIPT CHECK</div><h1>Checking receipt…</h1><p>This page shows only a limited verification result.</p></section>`;
   try {
     const result = await api('/receipts/verify', { method: 'POST', body: { token } });
-    if (!result.verified) throw new Error('not verified');
+    if (!result.verified) throw userError('not verified');
     const type = result.type === 'PLAN' ? 'Plan payment' : 'Booking payment';
     app.innerHTML = `<section class="receipt-verify"><div class="receipt-verify-mark receipt-verify-mark--ok">${ic('check')}</div><div class="receipt-screen-kicker">TRIMSLOT RECEIPT CHECK</div><h1>Receipt verified</h1><p>This payment receipt matches a TrimSlot payment record.</p><div class="receipt-verify-facts"><div><span>Receipt number</span><b>${esc(result.receipt_number)}</b></div><div><span>Receipt type</span><b>${esc(type)}</b></div><div><span>Current status</span><b>${esc(result.status)}</b></div><div><span>Receipt date</span><b>${esc(receiptDateTime(result.paid_at))}</b></div></div><p class="receipt-verify-privacy">For privacy, this public check does not display the customer’s contact details, purchase amount, or transaction reference.</p><a class="btn sec" href="#/">Go to TrimSlot</a></section>`;
   } catch {
@@ -1689,7 +1692,7 @@ async function bookingDetail(id, payResult, quiet) {
   on('#rvsend', async () => { await api(`/bookings/${id}/review`, { method: 'POST', body: { rating: stars_, comment: $('#rvtext').value } }); window.posthog?.capture('review_submitted', { rating: stars_ }); toast('Thank you for your review'); route(); });
   on('#payNow', async () => { const p = await api(`/bookings/${id}/pay`, { method: 'POST' }); window.posthog?.capture('booking_payment_started'); location.href = p.authorization_url; });
   on('#verify', async () => { const r = await api(`/bookings/${id}/verify`, { method: 'POST' }); const done = r.booking.status === 'CONFIRMED'; toast(done ? 'Payment confirmed' : ['slot_taken', 'late_refund', 'refund_due'].includes(r.result) ? 'That time was taken. We are refunding you' : r.result === 'duplicate_refund' ? 'Already paid. We are returning the extra payment' : r.result === 'amount_mismatch' ? (r.booking.payment_issue && r.booking.payment_issue.refund === 'sent' ? 'We have sent your payment back' : r.booking.payment_issue && r.booking.payment_issue.refund === 'coming' ? 'We are sending your payment back' : 'Payment received. Our team will check it') : 'We have not got your payment yet', !done && r.result !== 'duplicate_refund'); route(); });
-  on('#helpsend', async () => { const note = ($('#helpnote').value || '').trim(); if (note.length < 3) throw new Error('Write a few words about what happened.'); await api(`/bookings/${id}/help`, { method: 'POST', body: { note } }); toast('We told your barber'); route(); });
+  on('#helpsend', async () => { const note = ($('#helpnote').value || '').trim(); if (note.length < 3) throw userError('Write a few words about what happened.'); await api(`/bookings/${id}/help`, { method: 'POST', body: { note } }); toast('We told your barber'); route(); });
   on('#here', async () => { await api(`/bookings/${id}/check-in`, { method: 'POST' }); window.posthog?.capture('customer_checked_in'); toast("You are checked in"); route(); });
   on('#cancel', async () => { if (!confirm('Cancel this booking?')) { $('#cancel').disabled = false; return; } await api(`/bookings/${id}/cancel`, { method: 'POST' }); window.posthog?.capture('booking_cancelled'); toast('Booking cancelled'); route(); });
   if (['PENDING_PAYMENT', 'CONFIRMED', 'ARRIVED', 'IN_SERVICE'].includes(b.status)) startPoll(async () => { if (location.hash.startsWith('#/booking/')) await bookingDetail(id, payResult, true); });
@@ -1715,7 +1718,7 @@ async function moveBooking(id) {
       $('#slots').className = 'card';
       $('#slots').innerHTML = r.slots.length ? `<div class="small muted" style="margin-bottom:8px">${dateLabel(date)} · ${b.duration_min} min</div><div class="chips">${r.slots.map((s) => `<button class="chip ${time === s.time ? 'on' : ''}" data-t="${s.time}">${t12(s.time)}</button>`).join('')}</div>` : `<p class="muted center">${esc(r.closed_reason || 'No free times left this day.')}<br>Pick another date.</p>`;
       document.querySelectorAll('[data-t]').forEach((el) => el.onclick = () => { time = el.dataset.t; document.querySelectorAll('[data-t]').forEach((x) => x.classList.toggle('on', x === el)); $('#save').disabled = false; });
-    } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    } catch (e) { $('#slots').innerHTML = `<div class="err">${esc(userMessage(e))}</div>`; }
     $('#save').onclick = async () => { const btn = $('#save'); btn.disabled = true; try { await api(`/bookings/${id}/reschedule`, { method: 'POST', body: { date, time } }); window.posthog?.capture('booking_rescheduled'); toast('Your booking is moved'); go('#/booking/' + id); } catch (e) { fail(e); btn.disabled = false; } };
   };
   draw();
@@ -1736,7 +1739,7 @@ document.addEventListener('click', (ev) => {
   $('#rform').onsubmit = async (e) => {
     e.preventDefault(); const sb = e.target.querySelector('button'); sb.disabled = true;
     try { const d = Object.fromEntries(new FormData(e.target)); const payload = { ...d }; if (id > 0) payload.booking_id = id; await api('/reports', { method: 'POST', body: payload }); box.innerHTML = `<div class="ok">Thank you. The TrimSlot team got your report.</div>`; }
-    catch (err) { sb.disabled = false; toast(err.message || 'We could not send it', true); }
+    catch (err) { sb.disabled = false; toast(userMessage(err, 'We could not send it'), true); }
   };
 });
 
@@ -1804,7 +1807,7 @@ document.addEventListener('click', async (ev) => {
   const b = ev.target.closest && ev.target.closest('[data-resubmit]'); if (!b) return;
   b.disabled = true;
   try { const r = await api('/barber/resubmit', { method: 'POST', body: {} }); state.user = { ...state.user, review_status: r.review_status, review_reason: r.review_reason, verified: r.verified }; toast('Sent for review'); route(); }
-  catch (e) { b.disabled = false; toast(e.message || 'We could not send it again', true); }
+  catch (e) { b.disabled = false; toast(userMessage(e, 'We could not send it again'), true); }
 });
 const payoutBanner = () => {
   const u = state.user; if (!u || u.role !== 'barber' || u.verified === false || u.payout_ok !== false) return '';
@@ -1940,13 +1943,13 @@ async function compressImage(file) {
     if (blob && blob.size <= 280 * 1024) return blob;
     if (q > 0.55) q -= 0.1; else scale *= 0.8;
   }
-  throw new Error('That photo is too big. Try a different one.');
+  throw userError('That photo is too big. Try a different one.');
 }
 async function uploadPhoto(file) {
   const blob = await compressImage(file);
   const r = await fetch('/api/barber/photo', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error?.message || 'The upload did not work');
+  if (!r.ok) throw userError(j.error?.message || 'The upload did not work');
   return j.photo_url;
 }
 /** A confirmation sheet listing bookings that a change would strand. Resolves true when the barber confirms. */
@@ -1968,7 +1971,7 @@ function confirmSheet(e) {
 async function withConfirm(doSave) {
   try { return await doSave(false); } catch (e) {
     if (e.code !== 'AVAILABILITY_CONFLICT') throw e;
-    if (!(await confirmSheet(e))) throw new Error('Not saved. Nothing changed.');
+    if (!(await confirmSheet(e))) throw userError('Not saved. Nothing changed.');
     return await doSave(true);
   }
 }
@@ -1982,7 +1985,7 @@ const photoBlock = (p) => `<div class="photo-up">${avatar({ photo_url: p.photo_u
     <label class="btn sec sm" style="margin:0;cursor:pointer">${ic('image', 'sm')} Choose<input id="ph-file" type="file" accept="image/*"></label></div>
     <div class="small muted" style="margin-top:6px" id="ph-msg">${p.photo_url ? 'Tap to change your shop photo.' : 'Add a photo so customers know your shop.'}</div></div></div>`;
 function wirePhoto(p, onDone) {
-  const go1 = async (f) => { if (!f) return; const m = $('#ph-msg'); m.textContent = 'Making it smaller and uploading…'; try { p.photo_url = await uploadPhoto(f); toast('Photo saved'); onDone && onDone(); } catch (e) { m.textContent = e.message; fail(e); } };
+  const go1 = async (f) => { if (!f) return; const m = $('#ph-msg'); m.textContent = 'Making it smaller and uploading…'; try { p.photo_url = await uploadPhoto(f); toast('Photo saved'); onDone && onDone(); } catch (e) { m.textContent = userMessage(e); fail(e); } };
   ['#ph-cam', '#ph-file'].forEach((sel) => { const el = $(sel); if (el) el.onchange = () => go1(el.files[0]); });
 }
 const svcLine = (s) => `<div class="svcline" data-id="${s.id}"><div><b>${esc(s.name)}</b><div class="small muted">${s.duration_min} min · ${naira(s.price_kobo)}</div></div>
@@ -2081,7 +2084,7 @@ function wirePlans(po, guard) {
     }
     f.onsubmit = guard(() => api('/barber/plans/' + f.dataset.id, { method: 'PUT', body: body(f) }), 'Plan saved');
     const del = l.querySelector('.del');
-    if (del) del.onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw new Error('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');
+    if (del) del.onclick = guard(async () => { if (!confirm('Stop selling this plan? People who already bought it keep their sessions.')) throw userError('Cancelled'); await api('/barber/plans/' + f.dataset.id, { method: 'DELETE' }); }, 'Plan is no longer for sale');
   });
 }
 const acc = (id, icon, title, sub, body) => `<details class="acc" data-k="${id}" ${state.open.has(id) ? 'open' : ''}><summary><span class="ico">${ic(icon)}</span><span>${title}<span class="sub">${sub}</span></span><span class="chev">${ic('chev')}</span></summary><div class="body">${body}</div></details>`;
@@ -2106,7 +2109,7 @@ async function settings() {
   document.querySelectorAll('.acc').forEach((d) => d.addEventListener('toggle', () => { d.open ? state.open.add(d.dataset.k) : state.open.delete(d.dataset.k); }));
   const msg = (t, bad) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="${bad ? 'err' : 'ok'}">${esc(t)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const refreshMe = async () => { const me = await api('/auth/me'); state.user = me.user; };
-  const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { const out = await fn(ev); await refreshMe(); const extra = out && out.notified_bookings ? ` We told ${out.notified_bookings} customer${out.notified_bookings === 1 ? '' : 's'}.` : ''; await settings(); msg(okmsg + extra); } catch (e) { msg(e.message, true); } };
+  const guard = (fn, okmsg) => async (ev) => { ev && ev.preventDefault && ev.preventDefault(); try { const out = await fn(ev); await refreshMe(); const extra = out && out.notified_bookings ? ` We told ${out.notified_bookings} customer${out.notified_bookings === 1 ? '' : 's'}.` : ''; await settings(); msg(okmsg + extra); } catch (e) { msg(userMessage(e), true); } };
   if (shr) {
     wireShareCard($('#sharecard'), shr.url, p.shop_name);
     $('#regen').onclick = async () => { if (!confirm('Make a new link? The old link and QR code stop working at once. Customers who already added you keep you in My barbers.')) return; const b = $('#regen'); b.disabled = true; try { await api('/barber/share/regenerate', { method: 'POST', body: {} }); toast('New link ready. Share the new QR code.'); settings(); } catch (e) { fail(e); b.disabled = false; } };
@@ -2117,7 +2120,7 @@ async function settings() {
   document.querySelectorAll('.svcline:not(.plnline)').forEach((l) => {
     l.querySelector('.ed').onclick = () => l.classList.toggle('editing');
     l.querySelector('.svcf').onsubmit = guard(() => api('/barber/services/' + l.dataset.id, { method: 'PUT', body: Object.fromEntries(new FormData(l.querySelector('.svcf'))) }), 'Service saved');
-    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Remove this service? Bookings you already have stay.')) throw new Error('Cancelled'); await api('/barber/services/' + l.dataset.id, { method: 'DELETE' }); }, 'Service removed');
+    l.querySelector('.del').onclick = guard(async () => { if (!confirm('Remove this service? Bookings you already have stay.')) throw userError('Cancelled'); await api('/barber/services/' + l.dataset.id, { method: 'DELETE' }); }, 'Service removed');
   });
   $('#addsvc').onsubmit = guard(() => api('/barber/services', { method: 'POST', body: Object.fromEntries(new FormData($('#addsvc'))) }), 'Service added');
   $('#savesch').onclick = guard(() => withConfirm((confirmed) => api('/barber/schedule', { method: 'PUT', body: { days: readSchedule(app), ...(confirmed ? { confirm: true } : {}) } })), 'Hours saved.');
@@ -2131,7 +2134,7 @@ function setupFlow(r) {
   const p = r.profile;
   const dots = `<div class="dots">${[1, 2, 3].map((i) => `<i class="${i <= st.step ? 'on' : ''}"></i>`).join('')}</div>`;
   const head = (t, sub) => `${pendingBanner()}<div class="setup-head"><div class="logo">${ic(st.step === 1 ? 'store' : st.step === 2 ? 'tag' : 'clock')}</div><div><div class="small muted">Step ${st.step} of 3</div><h1 style="margin:0;font-size:21px">${t}</h1></div></div>${dots}<p class="muted small" style="margin:0 0 4px">${sub}</p><div id="msg"></div>`;
-  const err = (e) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="err">${esc(e.message)}</div>`; };
+  const err = (e) => { const m = $('#msg'); if (m) m.innerHTML = `<div class="err">${esc(userMessage(e))}</div>`; };
   if (st.step === 1) {
     app.innerHTML = `${head('Your shop', 'Just the basics. You can change it all later.')}<div class="card setup-card"><form id="pf">${photoBlock(p)}
       <label>Shop name</label><input name="shop_name" value="${esc(p.shop_name)}" required><label>Location</label><input name="location" value="${esc(p.location || '')}" placeholder="Street, area, city">

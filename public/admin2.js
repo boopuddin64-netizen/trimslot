@@ -25,7 +25,7 @@ function formModal(o) {
     ev.preventDefault(); const go = $('#fgo', m.el); go.disabled = true; $('#ferr', m.el).classList.add('hidden');
     const v = {}; for (const f of (o.fields || [])) { const e = ev.target.elements[f.name]; v[f.name] = f.type === 'checkbox' ? e.checked : f.type === 'number' ? (e.value === '' ? null : Number(e.value)) : e.value.trim(); }
     try { const msg = await o.submit(v); m.close(); if (msg) toast(msg); if (o.after) await o.after(); }
-    catch (e) { go.disabled = false; const er = $('#ferr', m.el); er.textContent = e.message; er.classList.remove('hidden'); }
+    catch (e) { go.disabled = false; const er = $('#ferr', m.el); er.textContent = userMessage(e); er.classList.remove('hidden'); }
   };
   return m;
 }
@@ -33,7 +33,7 @@ const REASON = (label, ph) => ({ name: 'reason', label: label || 'Reason (saved 
 const post = (p, body) => api(p, { method: 'POST', body: body || {} });
 async function downloadCsv(path, name) {
   const r = await fetch('/api/admin' + path, { headers: { Authorization: 'Bearer ' + getKey() } });
-  if (!r.ok) throw new Error('Export failed');
+  if (!r.ok) throw userError('Export failed');
   const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 const acctBadge = (s) => bd({ ACTIVE: 'b-green', SUSPENDED: 'b-amber', BANNED: 'b-red' }[s] || 'b-gray', s);
@@ -149,7 +149,7 @@ async function earnings() {
     table(cols, r.barbers, 'No barbers yet.') +
     `<h2>Export CSV</h2><div class="btns"><button class="btn sm sec" data-x="bookings">Bookings</button><button class="btn sm sec" data-x="payments">Payments</button><button class="btn sm sec" data-x="barbers">Barbers</button></div><p class="small muted">Bookings and payments use the dates above. We keep a record of every export.</p>`;
   $('#e-go').onclick = () => { er = { from: $('#e-from').value || er.from, to: $('#e-to').value || er.to }; earnings(); };
-  app.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { b.disabled = true; try { const n = b.dataset.x; await downloadCsv(`/export/${n}.csv?from=${er.from}&to=${er.to}`, `trimslot-${n}.csv`); toast('Export ready'); } catch (e) { toast(e.message, true); } b.disabled = false; });
+  app.querySelectorAll('[data-x]').forEach((b) => b.onclick = async () => { b.disabled = true; try { const n = b.dataset.x; await downloadCsv(`/export/${n}.csv?from=${er.from}&to=${er.to}`, `trimslot-${n}.csv`); toast('Export ready'); } catch (e) { toast(userMessage(e), true); } b.disabled = false; });
   wireReload(earnings);
 }
 
@@ -167,7 +167,7 @@ async function ledger() {
       <div class="tile"><span>Barber keeps at least</span><b>${ru.min_payout_percent}%</b><small>of each netted payment</small></div><div class="tile"><span>Pay-on-arrival limit</span><b>${ru.max_debt_kobo ? naira(ru.max_debt_kobo) : 'None'}</b><small>${ru.max_age_days ? 'or ' + ru.max_age_days + ' days old' : 'no age limit'} · <a href="#/controls">change</a></small></div></div>
     <div class="btns"><button class="btn sm sec" id="remind-all">Send reminders now</button></div>` + table(cols, r.barbers, 'No commission yet.');
   wireReload(ledger);
-  $('#remind-all').onclick = async (e) => { e.target.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er2) { toast(er2.message, true); } e.target.disabled = false; };
+  $('#remind-all').onclick = async (e) => { e.target.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er2) { toast(userMessage(er2), true); } e.target.disabled = false; };
   wireActions(app, { open: async (d) => { await ledgerSheet(Number(d.id), ledger); app.querySelectorAll('[data-do]').forEach((x) => x.disabled = false); } });
 }
 async function ledgerSheet(id, reload) {
@@ -182,7 +182,7 @@ async function ledgerSheet(id, reload) {
     <div class="btns end sticky"><button class="btn sm sec" data-k="remind">Remind</button><button class="btn sm sec" data-k="adjust">Add adjustment</button><button class="btn sm sec" data-k="waive">Waive</button><button class="btn sm" data-k="settle">Mark settled</button></div>`);
   m.el.querySelectorAll('[data-k]').forEach((x) => x.onclick = async () => {
     const k = x.dataset.k;
-    if (k === 'remind') { x.disabled = true; try { const o = await post('/ledger/remind', { barber_id: id }); toast(o.reminded ? 'Reminder sent' : 'Nothing owed'); } catch (e) { toast(e.message, true); } x.disabled = false; return; }
+    if (k === 'remind') { x.disabled = true; try { const o = await post('/ledger/remind', { barber_id: id }); toast(o.reminded ? 'Reminder sent' : 'Nothing owed'); } catch (e) { toast(userMessage(e), true); } x.disabled = false; return; }
     m.close();
     const amt = { name: 'amount_naira', label: 'Amount (₦)', type: 'number', step: 'any', min: 0.01, ph: 'Leave empty to use the whole balance' };
     const copy = {
@@ -191,7 +191,7 @@ async function ledgerSheet(id, reload) {
       adjust: ['Add adjustment', 'Adds money the barber owes (for example to fix a mistake, or a fee).', 'Add to balance', ''],
     }[k];
     formModal({ title: copy[0] + ' — ' + (b.shop_name || ''), help: copy[1], go: copy[2], cls: copy[3], fields: [amt, REASON()], after: async () => { if (reload) await reload(); },
-      submit: async (v) => { const body = { reason: v.reason }; if (v.amount_naira) body.amount_naira = v.amount_naira; else if (k === 'adjust') throw new Error('Enter the amount to add.'); else body.all = true; const o = await post(`/ledger/${id}/${k}`, body); return `${naira(o.applied_kobo)} ${k === 'adjust' ? 'added' : k === 'settle' ? 'settled' : 'waived'} · now owed ${naira(o.owed_kobo)}`; } });
+      submit: async (v) => { const body = { reason: v.reason }; if (v.amount_naira) body.amount_naira = v.amount_naira; else if (k === 'adjust') throw userError('Enter the amount to add.'); else body.all = true; const o = await post(`/ledger/${id}/${k}`, body); return `${naira(o.applied_kobo)} ${k === 'adjust' ? 'added' : k === 'settle' ? 'settled' : 'waived'} · now owed ${naira(o.owed_kobo)}`; } });
   });
 }
 
@@ -210,7 +210,7 @@ async function broadcast() {
     if (!confirm(`Send this announcement to ${n}?`)) return;
     const b = f.querySelector('button'); b.disabled = true; $('#berr').classList.add('hidden');
     try { const body = { audience: v.audience, title: v.title, body: v.body }; if (v.audience === 'user') body.user_id = Number(v.user_id); const o = await post('/broadcast', body); toast(`Sent to ${o.recipients} user${o.recipients === 1 ? '' : 's'}`); await broadcast(); }
-    catch (e) { const er2 = $('#berr'); er2.textContent = e.message; er2.classList.remove('hidden'); b.disabled = false; }
+    catch (e) { const er2 = $('#berr'); er2.textContent = userMessage(e); er2.classList.remove('hidden'); b.disabled = false; }
   };
 }
 
@@ -317,7 +317,7 @@ async function controls() {
     for (const k of ['loyalty_every_n', 'loyalty_credit_naira', 'commission_factor', 'min_barber_payout_percent', 'ledger_max_debt_naira', 'ledger_max_age_days']) body[k] = Number(f[k].value);
     if (body.maintenance_mode && !s.maintenance_mode && !confirm('Turn maintenance mode ON? Customers cannot book until you turn it off.')) return;
     const b = ev.target.querySelector('button[type=submit]'); b.disabled = true;
-    try { await api('/settings', { method: 'PUT', body }); toast('Controls saved'); await controls(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    try { await api('/settings', { method: 'PUT', body }); toast('Controls saved'); await controls(); } catch (e) { toast(userMessage(e), true); b.disabled = false; }
   };
 }
 
@@ -351,7 +351,7 @@ function mountSearch() {
       box.querySelectorAll('[data-su]').forEach((a) => a.onclick = (e) => { e.preventDefault(); hide(); userSheet(Number(a.dataset.su), route); });
       box.querySelectorAll('[data-sb]').forEach((a) => a.onclick = (e) => { e.preventDefault(); hide(); barberDetail(Number(a.dataset.sb), route); });
       box.querySelectorAll('[data-sk]').forEach((a) => a.onclick = (e) => { e.preventDefault(); hide(); if (a.dataset.sk) bookingSheet(Number(a.dataset.sk), route); else { location.hash = '#/payments'; } });
-    } catch (e) { box.innerHTML = `<div class="none">${esc(e.message)}</div>`; box.classList.remove('hidden'); }
+    } catch (e) { box.innerHTML = `<div class="none">${esc(userMessage(e))}</div>`; box.classList.remove('hidden'); }
   }, 300); };
   document.addEventListener('click', (e) => { if (!e.target.closest('.gsearch')) hide(); });
   window.addEventListener('hashchange', () => { hide(); $('#gsearch').value = ''; });

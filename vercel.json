@@ -55,7 +55,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://*.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://vitals.vercel-insights.com https://va.vercel-analytics.com https://*.posthog.com; worker-src 'self' blob: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
+          "value": "default-src 'self'; script-src 'self' https://va.vercel-scripts.com https://*.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://vitals.vercel-insights.com https://va.vercel-analytics.com https://*.posthog.com; worker-src 'self' blob: data:; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
         }
       ]
     },
@@ -82,7 +82,7 @@
       ]
     },
     {
-      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|favicon\\.svg|account\\.js|forms\\.js|cropmath\\.js|avatar-crop\\.js|legal-live\\.js|offline-cache\\.js|net-banner\\.js|imgdecode\\.js|haptics\\.js|avatars\\.css)",
+      "source": "/(app\\.js|notify\\.js|style\\.css|theme\\.js|va-init\\.js|errmsg\\.js|favicon\\.svg|account\\.js|forms\\.js|cropmath\\.js|avatar-crop\\.js|legal-live\\.js|offline-cache\\.js|net-banner\\.js|imgdecode\\.js|haptics\\.js|avatars\\.css)",
       "headers": [
         {
           "key": "Cache-Control",

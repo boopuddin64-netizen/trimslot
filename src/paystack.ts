@@ -76,7 +76,7 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
     throw new AppError(502, 'PAYSTACK_UNREACHABLE', 'We could not reach Paystack. Check your internet and try again.', { transient: true, gateway_message: String(e?.name || 'network') });
   }
   const json: any = await res.json().catch(() => ({}));
-  if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', `Paystack error: ${json.message || res.statusText}`, { gateway_status: res.status, gateway_message: String(json.message || res.statusText || '').slice(0, 200), transient: res.status >= 500 || res.status === 429 });
+  if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', 'The payment provider did not accept that. Try again in a moment.', { gateway_status: res.status, gateway_message: String(json.message || res.statusText || '').slice(0, 200), transient: res.status >= 500 || res.status === 429 });
   return json;
 }
 

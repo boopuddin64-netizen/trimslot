@@ -109,9 +109,9 @@ const Notify = (() => {
   async function currentSub() { const reg = await registerSW(); if (!reg) return null; await navigator.serviceWorker.ready; return reg.pushManager.getSubscription(); }
   async function subscribe() {
     const key = state.cfg && state.cfg.vapid_public_key;
-    if (!pushSupported() || !key) throw new Error('Push alerts do not work on this phone or browser.');
+    if (!pushSupported() || !key) throw userError('Push alerts do not work on this phone or browser.');
     const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Alerts are blocked. Turn them on in your browser or phone settings. Then try again.' : 'Alerts were not turned on.');
+    if (perm !== 'granted') throw userError(perm === 'denied' ? 'Alerts are blocked. Turn them on in your browser or phone settings. Then try again.' : 'Alerts were not turned on.');
     const reg = await registerSW(); await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(key) });
@@ -149,7 +149,7 @@ const Notify = (() => {
     if (t.hasAttribute('data-snooze')) { LS.set('trimslot_prompt_snooze', String(Date.now() + 7 * 86400000)); const c = document.getElementById('notifcard'); if (c) c.remove(); return; }
     t.disabled = true;
     try { await subscribe(); toast('Alerts are on'); const c = document.getElementById('notifcard'); if (c) c.remove(); }
-    catch (e) { t.disabled = false; toast(e.message, true); }
+    catch (e) { t.disabled = false; toast(userMessage(e), true); }
   });
 
   /** Profile rows: push switch (+ status), sound & vibration switch, test button. */
@@ -168,10 +168,10 @@ const Notify = (() => {
     if (s) s.onclick = () => { const v = !feedbackOn(); LS.set('trimslot_alerts', v ? '1' : '0'); s.setAttribute('aria-checked', String(v)); if (v) { unlock(); chime(false); } };
     if (p) p.onclick = async () => {
       const turningOn = p.getAttribute('aria-checked') !== 'true'; p.disabled = true;
-      try { if (turningOn) { await subscribe(); toast('Push alerts on'); } else { await unsubscribe(); toast('Push alerts off'); } } catch (e) { toast(e.message, true); }
+      try { if (turningOn) { await subscribe(); toast('Push alerts on'); } else { await unsubscribe(); toast('Push alerts off'); } } catch (e) { toast(userMessage(e), true); }
       p.disabled = false; route();
     };
-    if (t) t.onclick = async () => { t.disabled = true; try { await api('/push/test', { method: 'POST' }); toast('Test sent. It should show up in a moment.'); } catch (e) { toast(e.message, true); } t.disabled = false; };
+    if (t) t.onclick = async () => { t.disabled = true; try { await api('/push/test', { method: 'POST' }); toast('Test sent. It should show up in a moment.'); } catch (e) { toast(userMessage(e), true); } t.disabled = false; };
   }
   return { start, stop, poll, paintUnread, promptCard, prefsRows, wirePrefs, resync, detach, iconFor, urlOf, chime, isIOS, standalone, pushSupported, registerSW };
 })();
