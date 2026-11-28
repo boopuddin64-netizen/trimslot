@@ -76,7 +76,12 @@ export async function paystackFetch(path: string, init: RequestInit = {}) {
     throw new AppError(502, 'PAYSTACK_UNREACHABLE', 'We could not reach Paystack. Check your internet and try again.', { transient: true, gateway_message: String(e?.name || 'network') });
   }
   const json: any = await res.json().catch(() => ({}));
-  if (!res.ok || json.status === false) throw new AppError(502, 'PAYSTACK_ERROR', 'The payment provider did not accept that. Try again in a moment.', { gateway_status: res.status, gateway_message: String(json.message || res.statusText || '').slice(0, 200), transient: res.status >= 500 || res.status === 429 });
+  if (!res.ok || json.status === false) {
+    const gm = String(json.message || res.statusText || '');
+    // The barber's payout account (subaccount) is not on this Paystack account, e.g. it was created under the other key.
+    if (/subaccount/i.test(gm)) throw new AppError(409, 'PAYOUT_NOT_SETUP', 'This barber cannot take online payments right now. Choose Pay on arrival, or pick another barber.', { gateway_status: res.status, gateway_message: gm.slice(0, 200) });
+    throw new AppError(502, 'PAYSTACK_ERROR', 'The payment provider did not accept that. Try again in a moment.', { gateway_status: res.status, gateway_message: gm.slice(0, 200), transient: res.status >= 500 || res.status === 429 });
+  }
   return json;
 }
 
