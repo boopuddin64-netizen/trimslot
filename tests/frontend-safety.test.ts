@@ -35,6 +35,13 @@ test('public pages and scripts have no inline event-handler attributes', () => {
   }
 });
 
+test('no helper call is used as an assignment target (e.g. userMessage(e) = ...)', () => {
+  for (const f of jsFiles) {
+    const bad = read(f).match(/\b(userMessage|userError)\([^)]*\)\s*=(?!=)/g) || [];
+    assert.equal(bad.length, 0, `${path.basename(f)} assigns to a function call: ${bad.join(', ')}`);
+  }
+});
+
 test('the error helper exists on every page that shows errors', () => {
   for (const f of htmlFiles) {
     const s = read(f);
@@ -44,7 +51,7 @@ test('the error helper exists on every page that shows errors', () => {
 
 test('no API error text is shown raw: pages use userMessage(), not e.message', () => {
   for (const f of jsFiles.filter((f) => !f.endsWith('errmsg.js'))) {
-    const bad = read(f).match(/\b(e|e2|er|er2|err|ex|x)\.message\b(?! ?(\|\||===|!==|\?))/g) || [];
+    const bad = read(f).match(/\b(e|e2|er|er2|err|ex|x)\.message\b(?! ?(\|\||===|!==|\?|=(?!=)))/g) || [];
     const shown = bad.filter((m) => m !== 'x.message');
     assert.equal(shown.length, 0, `${path.basename(f)} shows raw error text: ${shown.join(', ')}`);
   }

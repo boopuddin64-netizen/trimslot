@@ -107,7 +107,7 @@ async function apiNet(path, opts = {}) {
     const fallback = r.status === 429 ? 'Too many tries. Wait a minute and try again.' : r.status >= 500 ? 'Something went wrong on our side. Try again in a moment.' : 'That did not work. Try again.';
     const e = new Error(j.error?.message || fallback); e.code = j.error?.code; e.status = r.status; e.details = j.error?.details;
     if (r.status === 401 && e.code === 'UNAUTHENTICATED' && state.user && !path.startsWith('/auth/')) {   // login expired while the app was open
-      window.resetPostHogUser(); state.user = null; state.unread = 0; userMessage(e) = 'Your log-in has ended. Please log in again.';
+      window.resetPostHogUser(); state.user = null; state.unread = 0; e.message = 'Your log-in has ended. Please log in again.';
       try { sessionStorage.setItem('trimslot_next', location.hash); } catch { /* private mode */ }
       gcache.clear(); location.hash = '#/login';
     }
