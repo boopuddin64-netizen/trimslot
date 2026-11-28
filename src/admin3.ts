@@ -183,6 +183,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
         (SELECT COUNT(*) FROM payments WHERE refund_status IN ('NEEDS_REFUND','REFUND_REQUESTED'))::int AS refunds_open,
         (SELECT COUNT(*) FROM bookings WHERE payment_status IN ('CREDIT_PENDING','REFUND_PENDING'))::int AS awaiting_decision,
         (SELECT COUNT(*) FROM reports WHERE status='OPEN' AND deleted_at IS NULL)::int AS reports_open,
+        (SELECT COUNT(*) FROM plan_refund_requests WHERE status IN ('OPEN','CONFIRMED'))::int AS plan_refunds_open,
         (SELECT COUNT(DISTINCT barber_id) FROM commission_ledger WHERE status='ACCRUED' AND created_at < now() - interval '14 days')::int AS ledger_overdue,
         (SELECT COALESCE(SUM(remaining_kobo),0) FROM commission_ledger WHERE status='ACCRUED')::bigint AS ledger_owed_kobo,
         (SELECT maintenance_mode FROM platform_settings WHERE id=1) AS maintenance_mode`, [today]);
@@ -190,7 +191,7 @@ export function registerAdmin3(api: Router, db: Db, guard: any, wrap: (fn: H) =>
       { key: 'barbers', label: 'Shops waiting for review', n: r.barbers_pending, href: '#/barbers?status=PENDING', tone: 'amber' },
       { key: 'refunds', label: 'Refunds that need action', n: r.refunds_open, href: '#/payments?filter=needs_refund', tone: 'red' },
       { key: 'decisions', label: 'Cancellations that need a decision', n: r.awaiting_decision, href: '#/decisions', tone: 'amber' },
-      { key: 'reports', label: 'Open reports', n: r.reports_open, href: '#/reports?status=OPEN', tone: 'red' },
+      { key: 'reports', label: 'Open reports and plan refunds', n: r.reports_open + r.plan_refunds_open, href: '#/reports?status=OPEN', tone: 'red' },
       { key: 'ledger', label: 'Barbers who are late paying', n: r.ledger_overdue, href: '#/ledger?overdue=1', tone: 'amber', sub: Number(r.ledger_owed_kobo) },
     ];
     const v = { today, numbers: { customers: r.customers, barbers_live: r.barbers_live, bookings_today: r.bookings_today, revenue_30d_kobo: Number(r.revenue_30d_kobo) }, attention, maintenance_mode: r.maintenance_mode, generated_at: isoNow() };
