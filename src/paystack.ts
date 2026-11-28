@@ -134,7 +134,25 @@ export function snapshotOf(priceKobo: number, r: { booking_fee_kobo: number; ps_
 }
 
 /** Shared by booking payments and plan purchases: same Paystack initialize call, subaccount split and payments row. The customer is charged `bd.total_kobo` (price + booking fee). */
+/** Tells the barber what to do the moment a customer's checkout fails because their payout account is missing. At most one per barber every 6 hours. */
+async function notifyBarberPayoutProblem(db: Db, barberId: number) {
+  const b = await db.maybeOne<any>('SELECT user_id FROM barbers WHERE id=$1', [barberId]);
+  if (!b) return;
+  const recent = await db.maybeOne<any>(`SELECT 1 AS x FROM notifications WHERE user_id=$1 AND type='PAYOUT_PROBLEM' AND created_at > now() - interval '6 hours' LIMIT 1`, [b.user_id]);
+  if (recent) return;
+  await notify(db, b.user_id, 'PAYOUT_PROBLEM', 'Customers cannot pay you online', "Your online payments aren't linked yet. Open Payout settings and save your bank details again. Customers can't pay online until you do.", null);
+}
+
 async function startCheckout(db: Db, o: { reference: string; bd: FeeBreakdown; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
+  try {
+    return await startCheckoutInner(db, o);
+  } catch (e) {
+    if (e instanceof AppError && e.code === 'PAYOUT_NOT_SETUP') await notifyBarberPayoutProblem(db, o.barberId).catch(() => {});
+    throw e;
+  }
+}
+
+async function startCheckoutInner(db: Db, o: { reference: string; bd: FeeBreakdown; barberId: number; email: string; metadata: any; target: { booking_id?: number; plan_purchase_id?: number } }) {
   const { reference, bd } = o;
   const amount = bd.total_kobo;
   const barber = await db.one<any>('SELECT id, paystack_subaccount, fee_percent_override, fee_flat_kobo_override FROM barbers WHERE id=$1', [o.barberId]);
