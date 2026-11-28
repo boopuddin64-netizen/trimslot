@@ -6,6 +6,7 @@ import { Conn, Db } from './db';
 import { config } from './config';
 import { AppError, badRequest } from './errors';
 import { clock } from './time';
+import { renderEmail } from './emailTemplate';
 import { sendMail } from './mailer';
 import { audit } from './helpers';
 
@@ -49,7 +50,15 @@ export async function requestPasswordReset(db: Db, rawEmail: unknown, ip: string
   await db.query(`UPDATE users SET password_reset_hash=$1, password_reset_expires_at=$2, password_reset_attempts=0 WHERE id=$3`,
     [digest, new Date(clock.now().getTime() + CODE_TTL_MIN * 60_000).toISOString(), u.id]);
   try {
-    await sendMail({ to: u.email, subject: 'Reset your TrimSlot password', text: `We received a request to reset your TrimSlot password.\n\nYour 6-digit code is ${code}. It works for ${CODE_TTL_MIN} minutes. Do not share it with anyone.\n\nIf you did not ask for this, you can ignore this email.` });
+    const { text, html } = renderEmail({
+      eyebrow: 'PASSWORD RESET',
+      title: 'Reset your password',
+      intro: 'We received a request to reset your TrimSlot password. Enter this code in the app to choose a new one.',
+      code,
+      expiry: `This code expires in ${CODE_TTL_MIN} minutes.`,
+      note: 'If you did not ask for this, you can ignore this email. Your password will not change.',
+    });
+    await sendMail({ to: u.email, subject: 'Reset your TrimSlot password', text, html });
   } catch {
     await db.query('UPDATE users SET password_reset_hash=NULL, password_reset_expires_at=NULL, password_reset_attempts=0 WHERE id=$1 AND password_reset_hash=$2', [u.id, digest]);
     // Keep the same response for unknown addresses and mail delivery failures.
