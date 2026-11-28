@@ -418,7 +418,7 @@ function mountSearch() {
 /* ---------------------------------------------------------------- wire in */
 Object.assign(ROUTES, {
   home, customers: listPage(LISTS.customers), barbers: listPage(LISTS.barbers), bookings: listPage(LISTS.bookings), payments: listPage(LISTS.payments), credits: listPage(LISTS.credits),
-  reports: listPage(LISTS.reports), ledger: async () => { await listPage(LISTS.ledger)(); const b = $('#remind-all'); if (b) b.onclick = async () => { b.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er) { toast(userMessage(er), true); } b.disabled = false; }; },
+  ledger: async () => { await listPage(LISTS.ledger)(); const b = $('#remind-all'); if (b) b.onclick = async () => { b.disabled = true; try { const x = await post('/ledger/remind'); toast(x.reminded + ' reminder' + (x.reminded === 1 ? '' : 's') + ' sent'); } catch (er) { toast(userMessage(er), true); } b.disabled = false; }; },
   reviews: listPage(LISTS.reviews), waitlist: listPage(LISTS.waitlist), plans: plansRoute,
 });
 window.ADM2.mountSearch = mountSearch; window.ADM2.paymentSheet = paymentSheet; window.ADM2.LISTS = LISTS;
