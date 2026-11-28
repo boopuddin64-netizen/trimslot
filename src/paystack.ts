@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Db } from './db';
 import { config, MOCK_SECRET } from './config';
 import { AppError, notFound } from './errors';
+import { sendBookingReceipt, sendPlanReceipt } from './receiptEmails';
 import { applyVerifiedPayment, assertPayoutReady, getBooking, PaymentOutcome, HoldVerdict } from './bookingService';
 import { applyPlanPayment, getSettings, Settings } from './plans';
 import { isoNow, clock } from './time';
@@ -312,6 +313,12 @@ export async function processReference(db: Db, reference: string, o: { force?: b
   }
   const needsRefund = outcome === 'slot_taken' || outcome === 'late_payment' || outcome === 'already_paid' || outcome === 'already_active';
   if (needsRefund) await requestRefund(db, reference);
+  else if (outcome === 'confirmed' || outcome === 'activated') {
+    // Receipts go out only now, after the payment has committed. Failures are logged and never change the payment result.
+    const pay = await db.maybeOne<any>('SELECT booking_id, plan_purchase_id FROM payments WHERE reference=$1', [reference]);
+    if (pay?.booking_id) void sendBookingReceipt(db, pay.booking_id);
+    if (pay?.plan_purchase_id) void sendPlanReceipt(db, pay.plan_purchase_id);
+  }
   const result: ProcessResult = outcome === 'slot_taken' ? 'slot_taken' : outcome === 'late_payment' ? 'late_refund' : outcome === 'already_paid' ? 'duplicate_refund' : needsRefund ? 'refund_due' : 'processed';
   return { result, ...ids };
 }

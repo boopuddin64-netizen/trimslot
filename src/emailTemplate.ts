@@ -1,37 +1,50 @@
-/** One design for every TrimSlot email. Values are escaped; the text version is always included. */
+/** One design for every TrimSlot email, matching the app's loading screen (light page, brand blue, wordmark).
+ *  Values are escaped. Every email also gets a plain-text version. */
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>)[c]);
 
+const BRAND = '#3358d4';
+const INK = '#0f172a';
+const MUTED = '#64748b';
+const LOGO_URL = 'https://trimslot.com.ng/icons/email-logo.png';   // the loading-screen logo, hosted on the site
+
 export interface EmailParts {
-  eyebrow: string;        // small caps label above the title, e.g. "SECURITY VERIFICATION"
-  title: string;          // main heading
-  intro: string;          // one sentence under the heading
-  code?: string;          // optional one-time code shown in a box
-  expiry?: string;        // bold line under the code, e.g. "This code expires in 10 minutes."
-  note: string;           // closing line, e.g. "If you did not request this, you can ignore this email."
+  eyebrow: string;                 // small label above the title, e.g. "BOOKING CONFIRMED"
+  title: string;                   // main heading
+  intro: string;                   // one sentence under the heading
+  code?: string;                   // optional one-time code in a box
+  rows?: Array<[string, string]>;  // optional details table, e.g. [["Service", "Haircut"], ["Total paid", "₦301.62"]]
+  expiry?: string;                 // bold line under the code, e.g. "This code expires in 10 minutes."
+  note: string;                    // closing line
 }
 
 export function renderEmail(p: EmailParts): { text: string; html: string } {
-  const text = [p.title, '', p.intro, p.code ? `\nYour code: ${p.code}` : '', p.expiry ?? '', '', p.note, '', 'TrimSlot · https://trimslot.com.ng']
-    .filter((l, i, a) => !(l === '' && a[i - 1] === '')).join('\n').trim() + '\n';
-  const codeBlock = p.code ? `<div style="background:#f1f6ff;border:1px solid #d8e6ff;border-radius:12px;padding:20px;text-align:center;margin:0 0 6px">
-<div style="font-size:34px;line-height:1.3;font-weight:700;letter-spacing:9px;color:#2459c5">${esc(p.code)}</div></div>` : '';
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:28px 12px;background:#f3f6fb;font-family:Arial,Helvetica,sans-serif;color:#17243b">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e5eaf2;border-radius:18px;overflow:hidden">
-<tr><td style="background:#0b1730;padding:26px 30px;text-align:center">
-<a href="https://trimslot.com.ng" style="text-decoration:none;color:#fff">
-<img src="https://trimslot.com.ng/icons/apple-touch-icon.png" width="48" height="48" alt="TrimSlot" style="display:block;width:48px;height:48px;margin:0 auto 12px;border:0">
-<span style="font-size:23px;font-weight:700;letter-spacing:.2px;color:#fff">Trim<span style="color:#66a5ff">Slot</span></span>
+  const rowsText = (p.rows ?? []).map(([k, v]) => `${k}: ${v}`);
+  const text = [p.title, '', p.intro, p.code ? `\nYour code: ${p.code}` : '', ...(rowsText.length ? ['', ...rowsText] : []), p.expiry ? `\n${p.expiry}` : '', '', p.note, '', '— TrimSlot · https://trimslot.com.ng']
+    .join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+
+  const codeBlock = p.code ? `<div style="background:#eef3ff;border:1px solid #d6e2ff;border-radius:14px;padding:20px;text-align:center;margin:0">
+<div style="font-size:34px;line-height:1.3;font-weight:700;letter-spacing:9px;color:${BRAND}">${esc(p.code)}</div></div>` : '';
+
+  const rowsBlock = p.rows?.length ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0;border-top:1px solid #e6ebf3">${p.rows.map(([k, v]) =>
+    `<tr><td style="padding:12px 0;border-bottom:1px solid #e6ebf3;color:${MUTED};font-size:14px">${esc(k)}</td><td align="right" style="padding:12px 0;border-bottom:1px solid #e6ebf3;color:${INK};font-size:14px;font-weight:600">${esc(v)}</td></tr>`).join('')}</table>` : '';
+
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>
+<body style="margin:0;padding:32px 14px;background:#f6f7fb;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:${INK}">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto">
+<tr><td align="center" style="padding:0 0 22px">
+<a href="https://trimslot.com.ng" style="text-decoration:none;color:${INK};font-size:24px;font-weight:700;letter-spacing:-.3px">
+<img src="${LOGO_URL}" width="48" height="48" alt="TrimSlot" style="display:inline-block;vertical-align:middle;width:48px;height:48px;border:0;margin-right:10px"><span style="vertical-align:middle">Trim<span style="color:${BRAND}">Slot</span></span>
 </a></td></tr>
-<tr><td style="padding:34px 30px 30px">
-<p style="margin:0 0 8px;color:#55708f;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">${esc(p.eyebrow)}</p>
-<h1 style="margin:0 0 12px;font-size:25px;line-height:1.25;color:#14213a">${esc(p.title)}</h1>
-<p style="margin:0 0 22px;color:#526178;font-size:15px;line-height:1.6">${esc(p.intro)}</p>
+<tr><td style="background:#ffffff;border:1px solid #e6ebf3;border-radius:18px;padding:32px 30px">
+<p style="margin:0 0 8px;color:${BRAND};font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase">${esc(p.eyebrow)}</p>
+<h1 style="margin:0 0 10px;font-size:24px;line-height:1.25;color:${INK}">${esc(p.title)}</h1>
+<p style="margin:0 0 22px;color:${MUTED};font-size:15px;line-height:1.6">${esc(p.intro)}</p>
 ${codeBlock}
-${p.expiry ? `<p style="margin:20px 0 0;color:#33445d;font-size:14px;line-height:1.6"><strong>${esc(p.expiry)}</strong> Do not share it with anyone, including TrimSlot staff.</p>` : ''}
-<p style="margin:18px 0 0;color:#718096;font-size:13px;line-height:1.6">${esc(p.note)}</p>
+${rowsBlock}
+${p.expiry ? `<p style="margin:20px 0 0;color:${INK};font-size:14px;line-height:1.6"><strong>${esc(p.expiry)}</strong> Do not share it with anyone, including TrimSlot staff.</p>` : ''}
+<p style="margin:22px 0 0;color:${MUTED};font-size:13px;line-height:1.6">${esc(p.note)}</p>
 </td></tr>
-<tr><td style="padding:18px 30px;background:#f7f9fc;border-top:1px solid #e8edf4;text-align:center;color:#7b8798;font-size:12px;line-height:1.6">© TrimSlot · <a href="https://trimslot.com.ng" style="color:#315fc4;text-decoration:none">trimslot.com.ng</a><br>Appointment booking, made simple.</td></tr>
+<tr><td align="center" style="padding:20px 10px 0;color:${MUTED};font-size:12px;line-height:1.6">© TrimSlot · <a href="https://trimslot.com.ng" style="color:${BRAND};text-decoration:none">trimslot.com.ng</a><br>Appointment booking, made simple.</td></tr>
 </table></body></html>`;
   return { text, html };
 }
