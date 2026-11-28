@@ -9,7 +9,10 @@ import { logger } from './logger';
 export async function sendBookingReceipt(db: Db, bookingId: number): Promise<void> {
   try {
     const r = await db.maybeOne<any>(`SELECT b.service_name, b.price_kobo, b.booking_fee_kobo, b.date, b.start_min, br.shop_name,
-        u.email, u.name, (SELECT p.reference FROM payments p WHERE p.booking_id = b.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS reference
+        u.email, u.name,
+        (SELECT p.reference FROM payments p WHERE p.booking_id = b.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS reference,
+        (SELECT p.paid_kobo FROM payments p WHERE p.booking_id = b.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS paid_kobo,
+        (SELECT p.gateway_fee_kobo FROM payments p WHERE p.booking_id = b.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS card_fee_kobo
       FROM bookings b JOIN barbers br ON br.id = b.barber_id JOIN users u ON u.id = b.customer_id WHERE b.id = $1`, [bookingId]);
     if (!r || !r.email) return;
     const fee = Number(r.booking_fee_kobo || 0);
@@ -20,7 +23,11 @@ export async function sendBookingReceipt(db: Db, bookingId: number): Promise<voi
       ['Price', naira(Number(r.price_kobo))],
     ];
     if (fee > 0) rows.push(['Booking fee', naira(fee)]);
-    rows.push(['Total paid', naira(Number(r.price_kobo) + fee)]);
+    const cardFee = Number(r.card_fee_kobo || 0);
+    if (cardFee > 0) rows.push(['Card processing fee', naira(cardFee)]);
+    // Total is what the gateway actually charged; fall back to the sum of the lines if that is not recorded.
+    const total = r.paid_kobo != null ? Number(r.paid_kobo) : Number(r.price_kobo) + fee + cardFee;
+    rows.push(['Total paid', naira(total)]);
     if (r.reference) rows.push(['Reference', r.reference]);
     const { text, html } = renderEmail({
       eyebrow: 'BOOKING CONFIRMED',
@@ -38,7 +45,9 @@ export async function sendBookingReceipt(db: Db, bookingId: number): Promise<voi
 export async function sendPlanReceipt(db: Db, purchaseId: number): Promise<void> {
   try {
     const r = await db.maybeOne<any>(`SELECT pp.plan_name, pp.price_kobo, pp.sessions_total, pp.expires_at, br.shop_name, u.email, u.name,
-        (SELECT p.reference FROM payments p WHERE p.plan_purchase_id = pp.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS reference
+        (SELECT p.reference FROM payments p WHERE p.plan_purchase_id = pp.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS reference,
+        (SELECT p.paid_kobo FROM payments p WHERE p.plan_purchase_id = pp.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS paid_kobo,
+        (SELECT p.gateway_fee_kobo FROM payments p WHERE p.plan_purchase_id = pp.id AND p.status = 'SUCCESS' ORDER BY p.id DESC LIMIT 1) AS card_fee_kobo
       FROM plan_purchases pp JOIN barbers br ON br.id = pp.barber_id JOIN users u ON u.id = pp.customer_id WHERE pp.id = $1`, [purchaseId]);
     if (!r || !r.email) return;
     const until = new Date(r.expires_at).toISOString().slice(0, 10);
@@ -47,8 +56,12 @@ export async function sendPlanReceipt(db: Db, purchaseId: number): Promise<void>
       ['Barber', r.shop_name],
       ['Sessions', String(r.sessions_total)],
       ['Valid until', until],
-      ['Total paid', naira(Number(r.price_kobo))],
+      ['Price', naira(Number(r.price_kobo))],
     ];
+    const cardFee = Number(r.card_fee_kobo || 0);
+    if (cardFee > 0) rows.push(['Card processing fee', naira(cardFee)]);
+    const total = r.paid_kobo != null ? Number(r.paid_kobo) : Number(r.price_kobo) + cardFee;
+    rows.push(['Total paid', naira(total)]);
     if (r.reference) rows.push(['Reference', r.reference]);
     const { text, html } = renderEmail({
       eyebrow: 'PLAN ACTIVE',
